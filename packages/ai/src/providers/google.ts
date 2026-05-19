@@ -82,8 +82,10 @@ export const streamGoogle: StreamFunction<"google-generative-ai", GoogleOptions>
 			const googleStream = await client.models.generateContentStream(params);
 
 			stream.push({ type: "start", partial: output });
+
 			let currentBlock: TextContent | ThinkingContent | null = null;
 			const blocks = output.content;
+
 			const blockIndex = () => blocks.length - 1;
 			for await (const chunk of googleStream) {
 				// @google/genai documents GenerateContentResponse.responseId as an output-only field

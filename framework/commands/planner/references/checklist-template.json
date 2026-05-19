@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "plan": "<plan-name>",
+  "mode": "structured",
+  "requirementsFile": "requirements.md",
+  "taskIndexFile": "task-index.md",
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Foundation setup",
+      "file": "tasks/01-foundation-setup.md",
+      "status": "pending",
+      "phase": "foundation",
+      "dependencies": [],
+      "requirements": ["FR-001"]
+    },
+    {
+      "id": "T-002",
+      "title": "API contract",
+      "file": "tasks/02-api-contract.md",
+      "status": "pending",
+      "phase": "contracts",
+      "dependencies": ["T-001"],
+      "requirements": ["FR-002", "NFR-001"]
+    }
+  ]
+}

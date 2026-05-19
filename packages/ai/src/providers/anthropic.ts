@@ -341,11 +341,13 @@ async function* iterateSseMessages(
 			}
 
 			const { value, done } = await reader.read();
+
 			if (done) {
 				break;
 			}
 
 			buffer += decoder.decode(value, { stream: true });
+
 			let consumed = consumeLine(buffer);
 			while (consumed) {
 				buffer = consumed.rest;

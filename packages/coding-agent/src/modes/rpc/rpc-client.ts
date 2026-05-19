@@ -477,6 +477,7 @@ export class RpcClient {
 		}
 
 		const id = `req_${++this.requestId}`;
+
 		const fullCommand = { ...command, id } as RpcCommand;
 
 		return new Promise((resolve, reject) => {

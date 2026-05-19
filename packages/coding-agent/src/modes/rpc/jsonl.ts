@@ -34,7 +34,6 @@ export function attachJsonlLineReader(stream: Readable, onLine: (line: string) =
 			if (newlineIndex === -1) {
 				return;
 			}
-
 			emitLine(buffer.slice(0, newlineIndex));
 			buffer = buffer.slice(newlineIndex + 1);
 		}
