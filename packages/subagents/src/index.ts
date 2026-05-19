@@ -1,20 +1,7 @@
 // Types
 
-// Artifact I/O
-export {
-	artifactExists,
-	ensureDelegationsDir,
-	listResultArtifacts,
-	readArtifact,
-	readResultArtifact,
-	writeDelegationArtifact,
-	writeEventLog,
-	writeResultArtifact,
-} from "./artifacts/index.js";
-
 // Config resolver
 export { resolveEffectiveConfig } from "./config-resolver.js";
-
 // Controller
 export { SubAgentController } from "./controller.js";
 // Built-in definitions
@@ -25,7 +12,6 @@ export {
 	plannerDefinition,
 	reviewerDefinition,
 } from "./definitions/index.js";
-
 // Event bus
 export { SubAgentEventBus } from "./event-bus.js";
 // Execution strategies
@@ -35,10 +21,25 @@ export {
 	executeParallel,
 	executeSequential,
 } from "./execution/index.js";
+// File-system artifact store (optional addon)
+export { FsArtifactStore } from "./fs-artifact-store.js";
 // Extension factory
 // export { default as subagentsExtension } from "./extensions/subagents/index.js";
 // Instance
 export { SubAgentInstance } from "./instance.js";
+// Instruction builders
+export {
+	ANALYZER_BUILDER,
+	bulletList,
+	DEFAULT_BUILDER,
+	EXECUTOR_BUILDER,
+	minimalChanges,
+	onlyFlagSecurity,
+	PLANNER_BUILDER,
+	REVIEWER_BUILDER,
+	withSummary,
+} from "./instructions/index.js";
+export type { InstructionBuilder, InstructionContext } from "./instructions/types.js";
 // Session factory
 export { createSubAgentSession } from "./session-factory.js";
 // Summarizer
@@ -56,6 +57,7 @@ export type {
 	ExecutionStrategy,
 	QueryRequest,
 	QueryResponse,
+	SubAgentArtifactStore,
 	SubAgentCapabilities,
 	SubAgentControllerOptions,
 	SubAgentDefinition,
@@ -67,3 +69,9 @@ export type {
 	SubAgentState,
 	SummarizerOptions,
 } from "./types.js";
+export type {
+	SubAgentWorkspaceHandle,
+	SubAgentWorkspaceOptions,
+	WorktreeEntry,
+} from "./workspace/index.js";
+export { SubAgentWorkspace } from "./workspace/index.js";

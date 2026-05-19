@@ -18,6 +18,8 @@
 			"@earendil-works/pi-tui/*": ["./packages/tui/src/*"],
 			"@earendil-works/pi-web-ui": ["./packages/web-ui/src/index.ts"],
 			"@earendil-works/pi-web-ui/*": ["./packages/web-ui/src/*"],
+			"@local/pi-subagents": ["./packages/subagents/src/index.ts"],
+			"@local/pi-subagents/*": ["./packages/subagents/src/*"],
 			"@earendil-works/pi-agent-old": ["./packages/agent-old/src/index.ts"],
 			"@earendil-works/pi-agent-old/*": ["./packages/agent-old/src/*"]
 		}

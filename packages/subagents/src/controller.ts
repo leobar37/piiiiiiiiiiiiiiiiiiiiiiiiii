@@ -1,7 +1,6 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model } from "@earendil-works/pi-ai";
 import type { CompactionResult, ModelCycleResult } from "@earendil-works/pi-coding-agent";
-import { ensureDelegationsDir } from "./artifacts/index.js";
 import { resolveEffectiveConfig } from "./config-resolver.js";
 import { SubAgentEventBus } from "./event-bus.js";
 import { execute } from "./execution/index.js";
@@ -14,6 +13,7 @@ import type {
 	ExecutionPlan,
 	QueryRequest,
 	QueryResponse,
+	SubAgentArtifactStore,
 	SubAgentControllerOptions,
 	SubAgentDefinition,
 	SubAgentRpcState,
@@ -24,7 +24,7 @@ export class SubAgentController {
 	private definitions: Map<string, SubAgentDefinition>;
 	private instances: Map<string, SubAgentInstance> = new Map();
 	private cwd: string;
-	private artifactsDir: string;
+	private artifactStore: SubAgentArtifactStore | undefined;
 	private eventBus: SubAgentEventBus;
 	private authStorage?: import("@earendil-works/pi-coding-agent").AuthStorage;
 	private modelRegistry?: import("@earendil-works/pi-coding-agent").ModelRegistry;
@@ -32,7 +32,10 @@ export class SubAgentController {
 
 	constructor(options: SubAgentControllerOptions) {
 		this.cwd = options.cwd;
-		this.artifactsDir = options.artifactsDir ?? ".delegations";
+		this.artifactStore = options.artifactStore;
+		this.authStorage = options.authStorage;
+		this.modelRegistry = options.modelRegistry;
+		this.settingsManager = options.settingsManager;
 		this.eventBus = new SubAgentEventBus();
 		this.definitions = new Map();
 
@@ -45,6 +48,16 @@ export class SubAgentController {
 		}
 		if (options.onLifecycleChange) {
 			this.eventBus.on("lifecycle.change", options.onLifecycleChange);
+		}
+
+		if (this.artifactStore) {
+			this.eventBus.on("task.end", async (event) => {
+				try {
+					await this.artifactStore!.saveResult(event.taskId, event.result);
+				} catch {
+					/* best effort */
+				}
+			});
 		}
 	}
 
@@ -94,7 +107,6 @@ export class SubAgentController {
 			definition,
 			task,
 			cwd: this.cwd,
-			artifactsDir: this.artifactsDir,
 			eventBus: this.eventBus,
 			authStorage: this.authStorage,
 			modelRegistry: this.modelRegistry,
@@ -111,8 +123,6 @@ export class SubAgentController {
 	}
 
 	async executePlan(plan: ExecutionPlan): Promise<DelegationResult[]> {
-		ensureDelegationsDir(this.artifactsDir);
-
 		for (const task of plan.tasks) {
 			if (!this.definitions.has(task.definition)) {
 				throw new Error(`Sub-agent definition "${task.definition}" not found`);
@@ -173,7 +183,7 @@ export class SubAgentController {
 		return instance.query(request);
 	}
 
-	summarizeInstance(taskId: string, options?: SummarizerOptions): ConversationSummary | null {
+	async summarizeInstance(taskId: string, options?: SummarizerOptions): Promise<ConversationSummary | null> {
 		const instance = this.getInstance(taskId);
 		if (!instance) return null;
 		return instance.summarize(options);
@@ -335,9 +345,5 @@ export class SubAgentController {
 		}
 		this.instances.clear();
 		this.eventBus.clear();
-	}
-
-	getArtifactsDir(): string {
-		return this.artifactsDir;
 	}
 }

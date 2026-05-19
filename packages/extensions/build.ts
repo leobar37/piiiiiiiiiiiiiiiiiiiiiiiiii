@@ -58,6 +58,7 @@ const EXTERNAL = [
 	"@mariozechner/pi-ai/oauth",
 	"@mariozechner/pi-tui",
 	"@mariozechner/pi-coding-agent",
+	"@local/pi-subagents",
 	"typebox",
 	"typebox/compile",
 	"typebox/value",

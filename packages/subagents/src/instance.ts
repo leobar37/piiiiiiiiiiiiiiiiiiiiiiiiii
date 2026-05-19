@@ -10,7 +10,6 @@ import type {
 	SettingsManager,
 	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
-import { readResultArtifact, writeEventLog, writeResultArtifact } from "./artifacts/index.js";
 import type { SubAgentEventBus } from "./event-bus.js";
 import { createSubAgentSession } from "./session-factory.js";
 import { SubAgentSummarizer } from "./summarizer.js";
@@ -27,6 +26,7 @@ import type {
 	SubAgentState,
 	SummarizerOptions,
 } from "./types.js";
+import { SubAgentWorkspace } from "./workspace/index.js";
 
 export class SubAgentInstance {
 	readonly instanceId: string;
@@ -46,7 +46,6 @@ export class SubAgentInstance {
 	private definition: import("./types.js").SubAgentDefinition;
 	private task: import("./types.js").DelegationTask;
 	private cwd: string;
-	private artifactsDir: string;
 	private cleanupFn: (() => Promise<void>) | null = null;
 	private completionResolve: ((result: DelegationResult) => void) | null = null;
 	private queryResolvers = new Map<
@@ -72,7 +71,6 @@ export class SubAgentInstance {
 		this.definition = options.definition;
 		this.task = options.task;
 		this.cwd = options.cwd;
-		this.artifactsDir = options.artifactsDir;
 		this.eventBus = options.eventBus;
 		this.authStorage = options.authStorage;
 		this.modelRegistry = options.modelRegistry;
@@ -161,11 +159,20 @@ export class SubAgentInstance {
 	}
 
 	private async runAgentLoop(): Promise<void> {
-		const { session, cleanup } = await createSubAgentSession({
+		const workspace = new SubAgentWorkspace(this.cwd);
+		const handle = await workspace.prepare({
+			taskId: this.task.id,
+			relativeCwd: this.config.cwd,
+			isolated: this.config.isolated,
+		});
+
+		this.cwd = handle.cwd;
+		this.cleanupFn = handle.cleanup;
+
+		const { session } = await createSubAgentSession({
 			config: this.config,
 			task: this.task,
-			cwd: this.cwd,
-			artifactsDir: this.artifactsDir,
+			cwd: handle.cwd,
 			eventBus: this.eventBus,
 			instanceId: this.instanceId,
 			authStorage: this.authStorage,
@@ -174,7 +181,6 @@ export class SubAgentInstance {
 		});
 
 		this.session = session;
-		this.cleanupFn = cleanup;
 
 		this.unsubscribeSession = session.subscribe(this.handleSessionEvent.bind(this));
 		await session.sendUserMessage(this.task.prompt);
@@ -292,28 +298,8 @@ export class SubAgentInstance {
 
 	private handleCompletion(): void {
 		this.endTime = Date.now();
-		const resultContent = readResultArtifact(this.artifactsDir, this.taskId);
-		const summary = resultContent ?? "No result artifact found";
+		const summary = this.getLastAssistantText() ?? "Completed";
 		const result = this.buildResult("completed", summary);
-
-		try {
-			writeResultArtifact(this.artifactsDir, this.taskId, {
-				status: result.status,
-				summary: result.summary,
-				outputPath: result.outputPath,
-				turnCount: result.turnCount,
-				duration: result.duration,
-			});
-		} catch {
-			/* best effort */
-		}
-
-		try {
-			writeEventLog(this.artifactsDir, this.taskId, this.eventLog);
-		} catch {
-			/* best effort */
-		}
-
 		this.transition("completed");
 		const endEvent: SubAgentEvent = {
 			type: "task.end",
@@ -324,7 +310,11 @@ export class SubAgentInstance {
 		};
 		this.logEvent(endEvent);
 		this.eventBus.emit(endEvent);
-		this.completionResolve?.(result);
+
+		if (this.completionResolve) {
+			this.completionResolve(result);
+			this.completionResolve = null;
+		}
 	}
 
 	private buildResult(status: DelegationResult["status"], summary: string): DelegationResult {
@@ -332,7 +322,6 @@ export class SubAgentInstance {
 			taskId: this.taskId,
 			agent: this.definitionName,
 			status,
-			outputPath: this.task.outputArtifact,
 			summary,
 			duration: this.endTime && this.startTime ? this.endTime - this.startTime : 0,
 			turnCount: this.turnCount,
@@ -445,10 +434,34 @@ export class SubAgentInstance {
 	// Summarize
 	// =====================================================================
 
-	summarize(options?: SummarizerOptions): ConversationSummary | null {
+	async summarize(options?: SummarizerOptions): Promise<ConversationSummary | null> {
 		if (!this.session) return null;
+
 		const summarizer = new SubAgentSummarizer();
-		const summary = summarizer.summarize(this.session.sessionManager, options);
+		const useAI = options?.useAI !== false;
+
+		let summary: ConversationSummary;
+		if (useAI && this.session.model && this.modelRegistry) {
+			try {
+				const authResult = await this.modelRegistry.getApiKeyAndHeaders(this.session.model);
+				if (authResult.ok && authResult.apiKey) {
+					summary = await summarizer.summarizeWithAI(
+						this.session.sessionManager,
+						this.session.model,
+						authResult.apiKey,
+						authResult.headers,
+						options,
+					);
+				} else {
+					summary = summarizer.summarize(this.session.sessionManager, options);
+				}
+			} catch {
+				summary = summarizer.summarize(this.session.sessionManager, options);
+			}
+		} else {
+			summary = summarizer.summarize(this.session.sessionManager, options);
+		}
+
 		const event: SubAgentEvent = {
 			type: "summary.available",
 			instanceId: this.instanceId,

@@ -23,7 +23,6 @@ export async function executeParallel(
 				taskId: task.taskId,
 				agent: task.definitionName,
 				status: "failed",
-				outputPath: "",
 				summary: result.reason instanceof Error ? result.reason.message : String(result.reason),
 				duration: 0,
 				turnCount: 0,

@@ -20,9 +20,10 @@
   "exports": {
     "./shared/*": "./src/shared/*.ts"
   },
-  "dependencies": {
-    "diff": "^8.0.2"
-  },
+	"dependencies": {
+		"@local/pi-subagents": "workspace:*",
+		"diff": "^8.0.2"
+	},
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",
     "@earendil-works/pi-coding-agent": "*",

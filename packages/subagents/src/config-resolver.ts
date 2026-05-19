@@ -37,6 +37,7 @@ export function resolveEffectiveConfig(definition: SubAgentDefinition, task: Del
 		timeout: task.timeout ?? definition.timeout,
 		allowQuery: task.allowQuery ?? definition.allowQuery,
 		verboseTools: task.verboseTools ?? definition.verboseTools,
+		instructionBuilder: task.instructionBuilder ?? definition.instructionBuilder,
 	};
 }
 

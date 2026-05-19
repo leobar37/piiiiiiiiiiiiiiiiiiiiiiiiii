@@ -1,3 +1,4 @@
+import { ANALYZER_BUILDER } from "../instructions/defaults.js";
 import type { SubAgentDefinition } from "../types.js";
 
 /**
@@ -16,4 +17,5 @@ export const analyzerDefinition: SubAgentDefinition = {
 	thinkingLevel: "low",
 	allowQuery: true,
 	verboseTools: false,
+	instructionBuilder: ANALYZER_BUILDER,
 };

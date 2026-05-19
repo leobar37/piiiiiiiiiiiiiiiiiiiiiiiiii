@@ -49,6 +49,19 @@ export interface SubAgentCapabilities {
 }
 
 // =============================================================================
+// Instruction Builder (customizable instruction generation)
+// =============================================================================
+
+export interface InstructionContext {
+	/** The full task with all overrides */
+	task: DelegationTask;
+	/** The effective config after merging definition + task overrides */
+	config: EffectiveSubAgentConfig;
+}
+
+export type InstructionBuilder = (ctx: InstructionContext) => string;
+
+// =============================================================================
 // Definition (template / base configuration)
 // =============================================================================
 
@@ -68,6 +81,8 @@ export interface SubAgentDefinition {
 	timeout?: number;
 	allowQuery?: boolean;
 	verboseTools?: boolean;
+	/** Custom instruction builder for this agent type. Falls back to DEFAULT_BUILDER. */
+	instructionBuilder?: InstructionBuilder;
 }
 
 // =============================================================================
@@ -90,6 +105,7 @@ export interface EffectiveSubAgentConfig {
 	timeout?: number;
 	allowQuery?: boolean;
 	verboseTools?: boolean;
+	instructionBuilder?: InstructionBuilder;
 }
 
 // =============================================================================
@@ -130,11 +146,13 @@ export interface DelegationTask {
 	allowQuery?: boolean;
 	/** Override verboseTools */
 	verboseTools?: boolean;
+	/** Custom instruction builder for this specific task. Overrides definition.instructionBuilder. */
+	instructionBuilder?: InstructionBuilder;
 
 	/** Paths to files to inject as context */
 	inputArtifacts?: string[];
-	/** Path where the sub-agent writes its result */
-	outputArtifact: string;
+	/** Path where the sub-agent writes its result (optional, only when using an artifact store) */
+	outputArtifact?: string;
 	/** Task IDs that must complete before this one starts */
 	dependsOn?: string[];
 }
@@ -160,7 +178,6 @@ export interface DelegationResult {
 	taskId: string;
 	agent: string;
 	status: DelegationStatus;
-	outputPath: string;
 	summary: string;
 	duration: number;
 	error?: string;
@@ -259,13 +276,26 @@ export type SubAgentEventType = keyof SubAgentEventMap;
 export type SubAgentEvent = SubAgentEventMap[SubAgentEventType];
 
 // =============================================================================
+// Artifact Store (optional addon)
+// =============================================================================
+
+export interface SubAgentArtifactStore {
+	saveResult(taskId: string, result: DelegationResult): Promise<void>;
+	saveEventLog(taskId: string, events: SubAgentEvent[]): Promise<void>;
+	readResult(taskId: string): Promise<string | null>;
+}
+
+// =============================================================================
 // Controller Options
 // =============================================================================
 
 export interface SubAgentControllerOptions {
 	definitions: SubAgentDefinition[];
 	cwd: string;
-	artifactsDir?: string;
+	artifactStore?: SubAgentArtifactStore;
+	authStorage?: AuthStorage;
+	modelRegistry?: ModelRegistry;
+	settingsManager?: SettingsManager;
 	onEvent?: (event: SubAgentEvent) => void;
 	onLifecycleChange?: (event: SubAgentEventMap["lifecycle.change"]) => void;
 }
@@ -296,6 +326,8 @@ export interface SummarizerOptions {
 	maxMessages?: number;
 	maxTurns?: number;
 	includeTools?: boolean;
+	useAI?: boolean;
+	prompt?: string;
 }
 
 export interface ConversationSummary {
@@ -347,8 +379,8 @@ export interface CreateSubAgentSessionOptions {
 	/** Effective config after merging definition + task overrides */
 	config: EffectiveSubAgentConfig;
 	task: DelegationTask;
+	/** Already-resolved cwd (after workspace resolution, may be a worktree) */
 	cwd: string;
-	artifactsDir: string;
 	eventBus: import("./event-bus.js").SubAgentEventBus;
 	instanceId: string;
 	authStorage?: AuthStorage;
@@ -358,7 +390,6 @@ export interface CreateSubAgentSessionOptions {
 
 export interface CreateSubAgentSessionResult {
 	session: AgentSession;
-	cleanup: () => Promise<void>;
 }
 
 export interface CreateSubAgentInstanceOptions {
@@ -368,7 +399,6 @@ export interface CreateSubAgentInstanceOptions {
 	definition: SubAgentDefinition;
 	task: DelegationTask;
 	cwd: string;
-	artifactsDir: string;
 	eventBus: import("./event-bus.js").SubAgentEventBus;
 	authStorage?: AuthStorage;
 	modelRegistry?: ModelRegistry;

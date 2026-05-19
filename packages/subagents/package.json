@@ -7,7 +7,11 @@
   "keywords": ["pi-package"],
   "scripts": {
     "build": "bun run build.ts",
-    "watch": "bun run build.ts --watch"
+    "watch": "bun run build.ts --watch",
+    "test": "vitest --run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

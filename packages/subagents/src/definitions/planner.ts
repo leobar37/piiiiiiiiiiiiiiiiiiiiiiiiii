@@ -1,3 +1,4 @@
+import { PLANNER_BUILDER } from "../instructions/defaults.js";
 import type { SubAgentDefinition } from "../types.js";
 
 /**
@@ -15,4 +16,5 @@ export const plannerDefinition: SubAgentDefinition = {
 	thinkingLevel: "medium",
 	allowQuery: true,
 	verboseTools: false,
+	instructionBuilder: PLANNER_BUILDER,
 };

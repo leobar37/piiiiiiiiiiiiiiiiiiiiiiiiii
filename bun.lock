@@ -148,6 +148,9 @@
     "packages/subagents": {
       "name": "@local/pi-subagents",
       "version": "0.0.1",
+      "devDependencies": {
+        "vitest": "^3.2.4",
+      },
       "peerDependencies": {
         "@earendil-works/pi-agent-core": "*",
         "@earendil-works/pi-ai": "*",

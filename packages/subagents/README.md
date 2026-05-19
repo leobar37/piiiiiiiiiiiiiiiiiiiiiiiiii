@@ -59,7 +59,7 @@ const task: DelegationTask = {
   tools: ["read", "edit", "bash"],
   thinkingLevel: "high",
   maxTurns: 10,
-  outputArtifact: ".delegations/fix-auth-bug.output.md",
+  outputArtifact: ".delegations/fix-auth-bug.output.md", // optional — only needed with FsArtifactStore
 }
 ```
 
@@ -84,7 +84,6 @@ import { SubAgentController, BUILTIN_DEFINITIONS } from "@local/pi-subagents";
 const controller = new SubAgentController({
   definitions: BUILTIN_DEFINITIONS,
   cwd: process.cwd(),
-  artifactsDir: ".delegations",
   onEvent: (event) => {
     console.log(`[${event.type}] ${event.instanceId}`);
   },
@@ -97,7 +96,6 @@ const result = await controller.executeTask({
   description: "Audit package.json for outdated dependencies",
   prompt: "Read package.json and report all dependencies that have major version updates available.",
   systemPromptMode: "append",
-  outputArtifact: ".delegations/audit-deps.output.md",
 });
 
 console.log(result.status, result.summary);
@@ -186,10 +184,10 @@ Execute multiple tasks with dependency resolution:
 const plan: ExecutionPlan = {
   strategy: "dependency-graph",
   tasks: [
-    { id: "scout", definition: "analyzer", prompt: "Map the auth flow", outputArtifact: "scout.md" },
-    { id: "plan", definition: "planner", prompt: "Plan the migration", outputArtifact: "plan.md", dependsOn: ["scout"] },
-    { id: "implement", definition: "executor", prompt: "Implement the plan", outputArtifact: "impl.md", dependsOn: ["plan"] },
-    { id: "review", definition: "reviewer", prompt: "Review the implementation", outputArtifact: "review.md", dependsOn: ["implement"] },
+    { id: "scout", definition: "analyzer", prompt: "Map the auth flow" },
+    { id: "plan", definition: "planner", prompt: "Plan the migration", dependsOn: ["scout"] },
+    { id: "implement", definition: "executor", prompt: "Implement the plan", dependsOn: ["plan"] },
+    { id: "review", definition: "reviewer", prompt: "Review the implementation", dependsOn: ["implement"] },
   ],
 };
 
@@ -253,15 +251,40 @@ await controller.cancelInstance("audit-deps");  // Abort, state → cancelled
 
 ---
 
-## Artifacts
+## Artifacts (Optional Addon)
 
-Each task produces artifacts under `.delegations/` (or the configured `artifactsDir`):
+Artifact persistence is **not** part of the core controller. It is an optional addon via `SubAgentArtifactStore`. The library ships with a filesystem implementation:
+
+```typescript
+import { SubAgentController, FsArtifactStore } from "@local/pi-subagents";
+
+const controller = new SubAgentController({
+  definitions: BUILTIN_DEFINITIONS,
+  cwd: process.cwd(),
+  artifactStore: new FsArtifactStore(".delegations"),
+});
+```
+
+When a store is provided, the controller automatically persists each task result on completion:
 
 ```
 .delegations/
-├── <taskId>.md           # Delegation instructions (input)
 ├── <taskId>.result.md    # Result summary (output)
 └── <taskId>.events.jsonl # NDJSON event log
+```
+
+Without a store, the controller runs entirely in-memory — no files are written.
+
+### Custom Store
+
+Implement the interface for custom backends (S3, database, etc.):
+
+```typescript
+class MyStore implements SubAgentArtifactStore {
+  async saveResult(taskId: string, result: DelegationResult): Promise<void> { ... }
+  async saveEventLog(taskId: string, events: SubAgentEvent[]): Promise<void> { ... }
+  async readResult(taskId: string): Promise<string | null> { ... }
+}
 ```
 
 ---

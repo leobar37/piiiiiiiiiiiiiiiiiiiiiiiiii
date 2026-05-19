@@ -1,3 +1,4 @@
+import { REVIEWER_BUILDER } from "../instructions/defaults.js";
 import type { SubAgentDefinition } from "../types.js";
 
 /**
@@ -16,4 +17,5 @@ export const reviewerDefinition: SubAgentDefinition = {
 	thinkingLevel: "medium",
 	allowQuery: true,
 	verboseTools: false,
+	instructionBuilder: REVIEWER_BUILDER,
 };

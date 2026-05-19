@@ -1,3 +1,4 @@
+import { EXECUTOR_BUILDER } from "../instructions/defaults.js";
 import type { SubAgentDefinition } from "../types.js";
 
 /**
@@ -21,4 +22,5 @@ export const executorDefinition: SubAgentDefinition = {
 	thinkingLevel: "high",
 	allowQuery: true,
 	verboseTools: true,
+	instructionBuilder: EXECUTOR_BUILDER,
 };
