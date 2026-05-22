@@ -7,5 +7,7 @@ export function parseReviewVerdict(summary: string): LionReviewVerdict {
 		.filter(Boolean);
 	if (lines.includes("lion_review_status: approved")) return "approved";
 	if (lines.includes("lion_review_status: rejected")) return "rejected";
+	if (lines.some((line) => line.includes("<lion-approve>"))) return "approved";
+	if (lines.some((line) => line.includes("<lion-rejected>"))) return "rejected";
 	return "unknown";
 }

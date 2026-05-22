@@ -56,6 +56,8 @@ export class SubAgentInstance {
 			timer?: ReturnType<typeof setTimeout>;
 		}
 	>();
+	private toolCount = 0;
+	private currentToolStartedAt: number | null = null;
 	private eventLog: SubAgentEvent[] = [];
 	private unsubscribeSession?: () => void;
 	private authStorage?: AuthStorage;
@@ -75,6 +77,16 @@ export class SubAgentInstance {
 		this.authStorage = options.authStorage;
 		this.modelRegistry = options.modelRegistry;
 		this.settingsManager = options.settingsManager;
+
+		const createdEvent: SubAgentEvent = {
+			type: "instance.created",
+			instanceId: this.instanceId,
+			taskId: this.taskId,
+			definitionName: this.definitionName,
+			timestamp: Date.now(),
+		};
+		this.logEvent(createdEvent);
+		this.eventBus.emit(createdEvent);
 	}
 
 	// =====================================================================
@@ -82,6 +94,7 @@ export class SubAgentInstance {
 	// =====================================================================
 
 	getState(): SubAgentInstanceState {
+		const now = Date.now();
 		return {
 			instanceId: this.instanceId,
 			taskId: this.taskId,
@@ -90,9 +103,12 @@ export class SubAgentInstance {
 			startTime: this.startTime,
 			endTime: this.endTime,
 			turnCount: this.turnCount,
-			lastActivityAt: Date.now(),
+			lastActivityAt: now,
 			currentTool: this.currentTool,
 			error: this.error,
+			toolCount: this.toolCount,
+			currentToolStartedAt: this.currentToolStartedAt,
+			durationMs: this.startTime ? now - this.startTime : 0,
 		};
 	}
 
@@ -105,6 +121,19 @@ export class SubAgentInstance {
 			instanceId: this.instanceId,
 			previous: from,
 			current: to,
+			timestamp: Date.now(),
+		};
+		this.logEvent(event);
+		this.eventBus.emit(event);
+		this.emitState();
+	}
+
+	private emitState(): void {
+		const event: SubAgentEvent = {
+			type: "instance.state",
+			instanceId: this.instanceId,
+			taskId: this.taskId,
+			state: this.getState(),
 			timestamp: Date.now(),
 		};
 		this.logEvent(event);
@@ -230,8 +259,20 @@ export class SubAgentInstance {
 
 			case "tool_execution_start": {
 				this.currentTool = event.toolName;
+				this.toolCount++;
+				this.currentToolStartedAt = now;
+				const toolEvent: SubAgentEvent = {
+					type: "tool.start",
+					instanceId: this.instanceId,
+					taskId: this.taskId,
+					toolName: event.toolName,
+					toolCallId: event.toolCallId,
+					timestamp: now,
+				};
+				this.logEvent(toolEvent);
+				this.eventBus.emit(toolEvent);
 				if (this.config.verboseTools) {
-					const toolEvent: SubAgentEvent = {
+					const legacyEvent: SubAgentEvent = {
 						type: "tool.execute",
 						instanceId: this.instanceId,
 						taskId: this.taskId,
@@ -240,16 +281,28 @@ export class SubAgentInstance {
 						isError: false,
 						timestamp: now,
 					};
-					this.logEvent(toolEvent);
-					this.eventBus.emit(toolEvent);
+					this.logEvent(legacyEvent);
+					this.eventBus.emit(legacyEvent);
 				}
 				break;
 			}
 
 			case "tool_execution_end": {
 				this.currentTool = null;
+				this.currentToolStartedAt = null;
+				const toolEvent: SubAgentEvent = {
+					type: "tool.end",
+					instanceId: this.instanceId,
+					taskId: this.taskId,
+					toolName: event.toolName,
+					toolCallId: event.toolCallId,
+					isError: event.isError,
+					timestamp: now,
+				};
+				this.logEvent(toolEvent);
+				this.eventBus.emit(toolEvent);
 				if (this.config.verboseTools) {
-					const toolEvent: SubAgentEvent = {
+					const legacyEvent: SubAgentEvent = {
 						type: "tool.execute",
 						instanceId: this.instanceId,
 						taskId: this.taskId,
@@ -258,8 +311,8 @@ export class SubAgentInstance {
 						isError: event.isError,
 						timestamp: now,
 					};
-					this.logEvent(toolEvent);
-					this.eventBus.emit(toolEvent);
+					this.logEvent(legacyEvent);
+					this.eventBus.emit(legacyEvent);
 				}
 				break;
 			}

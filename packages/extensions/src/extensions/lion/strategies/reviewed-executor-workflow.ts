@@ -1,8 +1,95 @@
 import { LionEvents } from "../events/defs.js";
 import { buildCorrectionPrompt, buildExecutorPrompt, buildReviewerPrompt } from "../prompts/index.js";
-import { runExecutorDelegation, runReviewerDelegation } from "../subagents/index.js";
 import type { LionBuildResult, LionDelegationRunResult, LionTaskWorkflowOptions } from "../types.js";
 import { parseReviewVerdict } from "./review-verdict.js";
+
+async function runExecutorDelegation(options: {
+	controller: import("../types.js").LionTaskWorkflowOptions["controller"];
+	runId: string;
+	plan: import("../types.js").LionPlan;
+	task: import("../types.js").LionTask;
+	attempt: number;
+	prompt: string;
+	emit: import("../types.js").LionEventSink;
+}): Promise<LionDelegationRunResult> {
+	const { controller, runId, plan, task, attempt, prompt, emit } = options;
+	const taskId = `${task.id}-executor-${attempt}`;
+	const delegationTask: import("@local/pi-subagents").DelegationTask = {
+		id: taskId,
+		definition: "executor",
+		description: `Implement ${task.id}: ${task.title}`,
+		prompt,
+		systemPromptMode: "append",
+	};
+	emit({
+		type: "lion.delegation.start",
+		timestamp: Date.now(),
+		runId,
+		planSlug: plan.slug,
+		planPath: plan.rootPath,
+		taskId: task.id,
+		attempt,
+		agent: "executor",
+	});
+	const result = await controller.executeTask(delegationTask);
+	emit({
+		type: "lion.delegation.end",
+		timestamp: Date.now(),
+		runId,
+		planSlug: plan.slug,
+		planPath: plan.rootPath,
+		taskId: task.id,
+		attempt,
+		agent: "executor",
+		status: result.status,
+		summary: result.summary,
+	});
+	return { result, summary: result.summary, status: result.status };
+}
+
+async function runReviewerDelegation(options: {
+	controller: import("../types.js").LionTaskWorkflowOptions["controller"];
+	runId: string;
+	plan: import("../types.js").LionPlan;
+	task: import("../types.js").LionTask;
+	attempt: number;
+	prompt: string;
+	emit: import("../types.js").LionEventSink;
+}): Promise<LionDelegationRunResult> {
+	const { controller, runId, plan, task, attempt, prompt, emit } = options;
+	const taskId = `${task.id}-reviewer-${attempt}`;
+	const delegationTask: import("@local/pi-subagents").DelegationTask = {
+		id: taskId,
+		definition: "reviewer",
+		description: `Review ${task.id}: ${task.title}`,
+		prompt,
+		systemPromptMode: "append",
+	};
+	emit({
+		type: "lion.delegation.start",
+		timestamp: Date.now(),
+		runId,
+		planSlug: plan.slug,
+		planPath: plan.rootPath,
+		taskId: task.id,
+		attempt,
+		agent: "reviewer",
+	});
+	const result = await controller.executeTask(delegationTask);
+	emit({
+		type: "lion.delegation.end",
+		timestamp: Date.now(),
+		runId,
+		planSlug: plan.slug,
+		planPath: plan.rootPath,
+		taskId: task.id,
+		attempt,
+		agent: "reviewer",
+		status: result.status,
+		summary: result.summary,
+	});
+	return { result, summary: result.summary, status: result.status };
+}
 
 export async function runReviewedExecutorWorkflow(options: LionTaskWorkflowOptions): Promise<LionBuildResult> {
 	let executorSummary = "";
@@ -122,7 +209,7 @@ function runExecutor(
 ): Promise<LionDelegationRunResult> {
 	return runExecutorDelegation({
 		controller: options.controller,
-		emit: (event) => options.bus.emit(event),
+		emit: (event) => options.bus.emit(event as any),
 		runId: options.runId,
 		plan: options.plan,
 		task: options.task,
@@ -138,7 +225,7 @@ function runReviewer(
 ): Promise<LionDelegationRunResult> {
 	return runReviewerDelegation({
 		controller: options.controller,
-		emit: (event) => options.bus.emit(event),
+		emit: (event) => options.bus.emit(event as any),
 		runId: options.runId,
 		plan: options.plan,
 		task: options.task,

@@ -35,6 +35,9 @@ export interface SubAgentInstanceState {
 	lastActivityAt: number;
 	currentTool: string | null;
 	error: string | null;
+	toolCount: number;
+	currentToolStartedAt: number | null;
+	durationMs: number;
 }
 
 // =============================================================================
@@ -161,11 +164,18 @@ export interface DelegationTask {
 // Execution Plan
 // =============================================================================
 
-export type ExecutionStrategy = "sequential" | "parallel" | "dependency-graph";
+export type ExecutionStrategy = "sequential" | "parallel" | "chain";
 
 export interface ExecutionPlan {
 	strategy: ExecutionStrategy;
 	tasks: DelegationTask[];
+	concurrency?: number;
+	chainOptions?: {
+		passOutputToNext?: boolean;
+		outputMode?: "append" | "replace" | "template";
+		template?: string;
+		stopOnFailure?: boolean;
+	};
 }
 
 // =============================================================================
@@ -222,6 +232,41 @@ export interface SubAgentEventMap {
 		turnIndex: number;
 		toolCount: number;
 		hadError: boolean;
+		timestamp: number;
+	};
+
+	"tool.start": {
+		type: "tool.start";
+		instanceId: string;
+		taskId: string;
+		toolName: string;
+		toolCallId: string;
+		timestamp: number;
+	};
+
+	"tool.end": {
+		type: "tool.end";
+		instanceId: string;
+		taskId: string;
+		toolName: string;
+		toolCallId: string;
+		isError: boolean;
+		timestamp: number;
+	};
+
+	"instance.created": {
+		type: "instance.created";
+		instanceId: string;
+		taskId: string;
+		definitionName: string;
+		timestamp: number;
+	};
+
+	"instance.state": {
+		type: "instance.state";
+		instanceId: string;
+		taskId: string;
+		state: SubAgentInstanceState;
 		timestamp: number;
 	};
 

@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DashboardDaemon } from "@local/pi-dashboard";
 import { registerLionCommands } from "./commands.js";
+import { LionDashboardBridge } from "./dashboard-bridge.js";
 import { buildPlanningSystemPrompt } from "./prompts/index.js";
 import { createLionRuntime } from "./runtime.js";
 import { registerLionTools } from "./tools.js";
@@ -10,7 +11,9 @@ import { showLionMessage } from "./ui.js";
 export default function lionExtension(pi: ExtensionAPI): void {
 	const runtime = createLionRuntime(pi);
 	const dashboard = new DashboardDaemon();
+	const dashboardBridge = new LionDashboardBridge(runtime, dashboard);
 	runtime.dashboard = dashboard;
+	runtime.dashboardBridge = dashboardBridge;
 
 	function restore(ctx: ExtensionContext): void {
 		runtime.persistence.restore(runtime, ctx);
@@ -18,11 +21,12 @@ export default function lionExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		restore(ctx);
-		dashboard.bridge(runtime.events, "lion");
+		dashboardBridge.start();
 	});
 	pi.on("session_tree", async (_event, ctx) => restore(ctx));
 	pi.on("session_shutdown", async () => {
 		stopLionSubagentWidget(runtime);
+		dashboardBridge.stop();
 		dashboard.stop();
 	});
 

@@ -1,5 +1,13 @@
 import { createEvent, type SubAgentEvent } from "@local/pi-subagents";
-import type { LionBuildResult, LionDelegationAgent, LionMode, LionPlanKind, LionReviewVerdict } from "../types.js";
+import type {
+	LionBuildResult,
+	LionDelegationAgent,
+	LionMode,
+	LionPlanKind,
+	LionReviewVerdict,
+	LionTaskStrategy,
+	LionTasksResult,
+} from "../types.js";
 
 // =============================================================================
 // Lion Event Creators
@@ -142,6 +150,49 @@ export const LionEvents = {
 		"lion.subagent.event",
 		{ runId: string; planSlug: string; planPath: string; taskId: string; subagentEvent: SubAgentEvent }
 	>("lion.subagent.event"),
+
+	tasksStart: createEvent<
+		"lion.tasks.start",
+		{
+			runId: string;
+			planSlug: string;
+			planPath: string;
+			strategy: LionTaskStrategy;
+			taskCount: number;
+			concurrency?: number;
+		}
+	>("lion.tasks.start"),
+
+	tasksComplete: createEvent<
+		"lion.tasks.complete",
+		{ runId: string; planSlug: string; planPath: string; result: LionTasksResult }
+	>("lion.tasks.complete"),
+
+	tasksTaskStart: createEvent<
+		"lion.tasks.task.start",
+		{
+			runId: string;
+			planSlug: string;
+			planPath: string;
+			index: number;
+			title: string;
+			definition: string;
+		}
+	>("lion.tasks.task.start"),
+
+	tasksTaskEnd: createEvent<
+		"lion.tasks.task.end",
+		{
+			runId: string;
+			planSlug: string;
+			planPath: string;
+			index: number;
+			title: string;
+			definition: string;
+			status: string;
+			summary: string;
+		}
+	>("lion.tasks.task.end"),
 } as const;
 
 export type LionEventCreators = typeof LionEvents;

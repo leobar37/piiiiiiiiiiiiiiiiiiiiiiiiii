@@ -1,20 +1,11 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { LionEventBus, LionEventStore, LionRuleMonitor } from "./events/index.js";
 import { persistLionState } from "./persistence.js";
-import {
-	getNextPendingTask,
-	loadLionPlan,
-	markStructuredTaskComplete,
-	readPlanContent,
-	resolvePlanPath,
-	updateStructuredTaskStatus,
-} from "./plans/index.js";
-import { activatePlan, activatePlanning, applyBuildResult, setActiveTask, setLastRun, setMode } from "./state.js";
-import { runLinearPipeline } from "./strategies/index.js";
-import { createLionSubAgentController, runExecutorDelegation, runReviewerDelegation } from "./subagents/index.js";
+import { loadLionPlan, resolvePlanPath } from "./plans/index.js";
+import { activatePlan, activatePlanning, setMode } from "./state.js";
 import type { LionEvent, LionEventSink, LionState } from "./types.js";
 import { showLionMessage, updateLionStatus } from "./ui.js";
-import { createRunId, formatBuildResult, formatPlanSummary } from "./utils.js";
+import { createRunId, formatPlanSummary } from "./utils.js";
 
 export interface LionRuntime {
 	state: LionState;
@@ -89,7 +80,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 	});
 
 	pi.registerCommand("lion-build", {
-		description: "Execute the active Lion plan through executor/reviewer sub-agent delegation",
+		description: "Activate Lion build mode for the active plan",
 		handler: async (_args, ctx) => {
 			const activePlanPath = runtime.state.activePlanPath;
 			if (!activePlanPath) {
@@ -99,96 +90,36 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 
 			await ctx.waitForIdle();
 			const runId = createRunId();
-			const bus = new LionEventBus();
-			const emit = createEventSink(ctx, bus);
-			runtime.state = setLastRun(setMode(runtime.state, "building"), runId);
+			runtime.state = setMode(runtime.state, "building");
 			persistLionState(pi, runtime.state, "mode");
 			updateLionStatus(ctx, runtime.state);
 
-			try {
-				const plan = loadLionPlan(activePlanPath);
-				emit({
-					type: "lion.build.start",
-					timestamp: Date.now(),
+			const message = {
+				customType: "lion-orchestrator-feedback",
+				content: [
+					"Lion build mode activated.",
+					`Plan: ${runtime.state.activePlanSlug || activePlanPath}`,
+					"The orchestrator is now in control of task execution.",
+					"Use lion_tasks to execute one or more tasks with parallel, sequential, or chain strategy.",
+					"After tasks complete, you may call lion_finish_current_task to mark complete.",
+				].join("\n"),
+				display: false,
+				details: {
 					runId,
-					planSlug: plan.slug,
-					planPath: plan.rootPath,
-				});
-				const task = getNextPendingTask(plan);
-				if (!task) {
-					runtime.state = setMode(runtime.state, "planning");
-					persistLionState(pi, runtime.state, "mode");
-					updateLionStatus(ctx, runtime.state);
-					showLionMessage(pi, `Lion build complete\n\nNo pending unblocked tasks in ${plan.slug}.`);
-					return;
-				}
+					planSlug: runtime.state.activePlanSlug,
+					planPath: activePlanPath,
+					mode: "building",
+					nextTools: ["lion_tasks", "lion_task_list", "lion_get_run"],
+				},
+			};
 
-				runtime.state = setActiveTask(runtime.state, task.id);
-				updateStructuredTaskStatus(plan, task.id, "in_progress");
-				persistLionState(pi, runtime.state, "build");
-				emit({
-					type: "lion.task.selected",
-					timestamp: Date.now(),
-					runId,
-					planSlug: plan.slug,
-					planPath: plan.rootPath,
-					taskId: task.id,
-					title: task.title,
-				});
-				const content = readPlanContent(plan, task);
-				const controller = createLionSubAgentController({ ctx, runId, plan, task, emit });
-				const runner = {
-					runExecutor: (prompt: string, attempt: number) =>
-						runExecutorDelegation({ controller, runId, plan, task, attempt, prompt, emit }),
-					runReviewer: (prompt: string, attempt: number) =>
-						runReviewerDelegation({ controller, runId, plan, task, attempt, prompt, emit }),
-				};
-				const result = await runLinearPipeline({
-					runId,
-					plan,
-					task,
-					content,
-					config: { maxAttempts: runtime.state.maxAttempts },
-					runner,
-					emit,
-				});
-
-				if (result.status === "approved") {
-					markStructuredTaskComplete(plan, task.id);
-					emit({
-						type: "lion.task.marked_complete",
-						timestamp: Date.now(),
-						runId,
-						planSlug: plan.slug,
-						planPath: plan.rootPath,
-						taskId: task.id,
-					});
-				}
-				if (result.status !== "approved") {
-					updateStructuredTaskStatus(plan, task.id, "blocked");
-				}
-
-				runtime.state = applyBuildResult(runtime.state, result);
-				persistLionState(pi, runtime.state, "build");
-				updateLionStatus(ctx, runtime.state);
-				emit({
-					type: "lion.build.complete",
-					timestamp: Date.now(),
-					runId,
-					planSlug: plan.slug,
-					planPath: plan.rootPath,
-					taskId: task.id,
-					result,
-				});
-				showLionMessage(pi, `Lion build result\n\n${formatBuildResult(result)}`);
-			} catch (err) {
-				const error = err instanceof Error ? err.message : String(err);
-				emit({ type: "lion.build.failed", timestamp: Date.now(), runId, error });
-				runtime.state = setMode(runtime.state, "planning");
-				persistLionState(pi, runtime.state, "build");
-				updateLionStatus(ctx, runtime.state);
-				showLionMessage(pi, `Lion build failed\n\n${error}`);
+			if (ctx.isIdle()) {
+				pi.sendMessage(message, { triggerTurn: true });
+			} else {
+				pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
 			}
+
+			showLionMessage(pi, `Lion build mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`);
 		},
 	});
 }

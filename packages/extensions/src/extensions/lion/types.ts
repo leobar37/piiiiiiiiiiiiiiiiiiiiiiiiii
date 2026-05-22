@@ -1,5 +1,39 @@
 import type { DelegationResult, DelegationStatus, SubAgentEvent } from "@local/pi-subagents";
 
+export type LionTaskStrategy = "parallel" | "sequential" | "chain";
+
+export interface LionTaskConfig {
+	definition: string;
+	title: string;
+	prompt: string;
+	capabilities?: Partial<{
+		canEdit: boolean;
+		canWrite: boolean;
+		canExecute: boolean;
+		canResearch: boolean;
+	}>;
+}
+
+export interface LionTaskResult {
+	taskId: string;
+	title: string;
+	definition: string;
+	status: DelegationStatus;
+	summary: string;
+	duration: number;
+	turnCount: number;
+	error?: string;
+}
+
+export interface LionTasksResult {
+	runId: string;
+	strategy: LionTaskStrategy;
+	tasks: LionTaskResult[];
+	completedCount: number;
+	failedCount: number;
+	completedAt: number;
+}
+
 export const LION_STATE_ENTRY_TYPE = "lion-state";
 export const LION_MESSAGE_TYPE = "lion-message";
 export const LION_DEFAULT_MAX_ATTEMPTS = 3;
@@ -165,4 +199,28 @@ export interface LionEventMap {
 	"lion.build.failed": LionEventBase & { type: "lion.build.failed"; error: string };
 	"lion.rule.violation": LionEventBase & { type: "lion.rule.violation"; rule: string; message: string };
 	"lion.subagent.event": LionEventBase & { type: "lion.subagent.event"; subagentEvent: SubAgentEvent };
+	"lion.tasks.start": LionEventBase & {
+		type: "lion.tasks.start";
+		strategy: LionTaskStrategy;
+		taskCount: number;
+		concurrency?: number;
+	};
+	"lion.tasks.complete": LionEventBase & {
+		type: "lion.tasks.complete";
+		result: LionTasksResult;
+	};
+	"lion.tasks.task.start": LionEventBase & {
+		type: "lion.tasks.task.start";
+		index: number;
+		title: string;
+		definition: string;
+	};
+	"lion.tasks.task.end": LionEventBase & {
+		type: "lion.tasks.task.end";
+		index: number;
+		title: string;
+		definition: string;
+		status: DelegationStatus;
+		summary: string;
+	};
 }

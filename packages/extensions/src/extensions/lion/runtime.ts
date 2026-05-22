@@ -9,6 +9,7 @@ import {
 	type LionSubagentRole,
 	restoreLionCore,
 } from "./core.js";
+import type { LionDashboardBridge } from "./dashboard-bridge.js";
 import { LionEventBus } from "./events/bus.js";
 import { createInitialLionState } from "./state.js";
 import { LION_STATE_ENTRY_TYPE, type LionState, type PersistedLionState } from "./types.js";
@@ -70,6 +71,7 @@ export interface LionSubagentUiState {
 	startedAt: number;
 	updatedAt: number;
 	completedAt: number | null;
+	definition?: string;
 }
 
 export interface LionSubagentJob {
@@ -101,6 +103,7 @@ export interface LionRuntime {
 	lastUiContext: ExtensionContext | null;
 	widgetTimer: ReturnType<typeof setInterval> | null;
 	dashboard?: DashboardDaemon;
+	dashboardBridge?: LionDashboardBridge;
 }
 
 export function createLionRuntime(pi: ExtensionAPI): LionRuntime {
@@ -120,8 +123,6 @@ export function createLionRuntime(pi: ExtensionAPI): LionRuntime {
 		widgetTimer: null,
 	};
 }
-
-// LionEventBus is available via ./events/index.js
 
 export function retainSubagent(runtime: LionRuntime, options: RetainedLionSubagent): void {
 	runtime.retainedInstances.set(options.taskId, options);
@@ -216,8 +217,11 @@ export function recordLionSubagentUiEvent(runtime: LionRuntime, event: SubAgentE
 			next.turnCount = Math.max(next.turnCount, event.turnIndex + 1);
 			next.toolCount += event.toolCount;
 			break;
-		case "tool.execute":
-			next.currentTool = event.isError ? null : event.toolName;
+		case "tool.start":
+			next.currentTool = event.toolName;
+			break;
+		case "tool.end":
+			next.currentTool = null;
 			break;
 		case "progress.update":
 			next.summary = event.message || next.summary;
@@ -234,6 +238,10 @@ export function recordLionSubagentUiEvent(runtime: LionRuntime, event: SubAgentE
 			next.currentTool = null;
 			next.summary = event.error;
 			next.completedAt = event.timestamp;
+			break;
+		case "instance.state":
+			next.turnCount = event.state.turnCount;
+			next.currentTool = event.state.currentTool;
 			break;
 		default:
 			break;

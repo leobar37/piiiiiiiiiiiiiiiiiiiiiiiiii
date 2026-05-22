@@ -1,5 +1,3 @@
-// Types
-
 // Config resolver
 export { resolveEffectiveConfig } from "./config-resolver.js";
 // Controller
@@ -22,7 +20,6 @@ export { SubAgentEvents } from "./event-defs.js";
 // Execution strategies
 export {
 	execute,
-	executeDependencyGraph,
 	executeParallel,
 	executeSequential,
 } from "./execution/index.js";
@@ -49,6 +46,8 @@ export type { InstructionBuilder, InstructionContext } from "./instructions/type
 export { createSubAgentSession } from "./session-factory.js";
 // Summarizer
 export { SubAgentSummarizer } from "./summarizer.js";
+export type { TaskExecutionResult, TaskExecutorOptions } from "./task-executor.js"; // Types
+export { TaskExecutor } from "./task-executor.js";
 export type {
 	ConversationSummary,
 	CreateSubAgentInstanceOptions,
