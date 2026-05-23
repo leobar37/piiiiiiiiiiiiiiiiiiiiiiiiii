@@ -5,4 +5,4 @@
  * can import them without pulling in server-side runtime dependencies.
  */
 
-export type { DashboardEventPayload, DashboardRouter, DashboardState } from "./router.js";
+export type { DashboardEventPayload, DashboardRouter, DashboardState, LionDashboardState } from "./router.js";

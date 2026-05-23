@@ -1,5 +1,38 @@
 import { useMemo, useRef, useEffect, useState } from "react";
-import { useDashboardStore } from "../store/dashboard.js";
+import { type DashboardEventPayload, useDashboardStore } from "../store/dashboard.js";
+
+function getEventColor(type: string): string {
+	if (type.startsWith("lion.build.")) return "text-blue-300";
+	if (type.startsWith("lion.delegation.")) return "text-purple-300";
+	if (type.startsWith("lion.task.")) return "text-green-300";
+	if (type.startsWith("lion.review.")) return "text-orange-300";
+	if (type.startsWith("lion.validation.")) return "text-yellow-300";
+	if (type.startsWith("lion.rule.")) return "text-red-300";
+	if (type.startsWith("task.")) return "text-cyan-300";
+	if (type.startsWith("turn.")) return "text-gray-300";
+	if (type.startsWith("tool.")) return "text-pink-300";
+	return "text-gray-300";
+}
+
+function EventMetadata({ event }: { event: DashboardEventPayload }) {
+	const badges = [
+		event.planSlug ? `plan: ${event.planSlug}` : null,
+		event.taskId ? `task: ${event.taskId}` : null,
+		event.runId ? `run: ${event.runId.slice(0, 8)}` : null,
+		event.attempt !== undefined ? `attempt: ${event.attempt}` : null,
+	].filter((badge): badge is string => Boolean(badge));
+
+	if (badges.length === 0) return null;
+	return (
+		<div className="mt-1 flex flex-wrap gap-1">
+			{badges.map((badge) => (
+				<span key={badge} className="rounded border border-gray-700 bg-gray-950 px-1.5 py-0.5 text-[10px] text-gray-400">
+					{badge}
+				</span>
+			))}
+		</div>
+	);
+}
 
 function formatTimeAgo(timestamp: number): string {
 	const diff = Date.now() - timestamp;
@@ -104,11 +137,12 @@ export function EventLog() {
 						</span>
 						<div className="flex-1 min-w-0">
 							<div className="flex items-center gap-2">
-								<span className="text-xs text-gray-300 font-mono">{event.type}</span>
+								<span className={`text-xs font-mono ${getEventColor(event.type)}`}>{event.type}</span>
 								<span className="text-[10px] text-gray-500" title={formatTimestamp(event.timestamp)}>
 									{formatTimeAgo(event.timestamp)}
 								</span>
 							</div>
+							<EventMetadata event={event} />
 							{expandedId === event.id && (
 								<pre className="text-[11px] text-gray-400 mt-1 overflow-x-auto bg-gray-950 p-2 rounded">
 									{JSON.stringify(event.payload, null, 2)}

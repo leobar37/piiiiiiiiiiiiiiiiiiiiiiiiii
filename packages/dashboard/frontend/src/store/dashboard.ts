@@ -7,6 +7,37 @@ export interface DashboardEventPayload {
 	source: "lion" | "subagent";
 	payload: unknown;
 	timestamp: number;
+	runId?: string;
+	planSlug?: string;
+	planPath?: string;
+	taskId?: string;
+	attempt?: number;
+}
+
+export interface LionDashboardState {
+	active: boolean;
+	mode: "planning" | "building" | null;
+	activePlan: { slug: string | null; path: string | null; kind: string | null } | null;
+	activeTask: { id: string | null; title: string | null; status: string } | null;
+	activeRun: { runId: string | null; status: string; attempt: number } | null;
+	subagents: Array<{
+		taskId: string;
+		role: string;
+		status: string;
+		turnCount: number;
+		currentTool: string | null;
+		summary: string | null;
+		startedAt: number;
+		updatedAt: number;
+	}>;
+	runHistory: Array<{
+		runId: string;
+		planSlug: string;
+		taskTitle: string;
+		status: string;
+		attempts: number;
+		createdAt: number;
+	}>;
 }
 
 export interface DashboardState {
@@ -14,6 +45,7 @@ export interface DashboardState {
 	bridgeCount: number;
 	subscriberCount: number;
 	recentEvents: DashboardEventPayload[];
+	lion: LionDashboardState | null;
 }
 
 interface DashboardStoreState {
@@ -25,8 +57,10 @@ interface DashboardStoreState {
 	clearEvents: () => void;
 	uptime: number;
 	bridgeCount: number;
+	lionState: LionDashboardState | null;
 	setConnected: (connected: boolean) => void;
 	setServerInfo: (uptime: number, bridgeCount: number) => void;
+	setLionState: (state: LionDashboardState | null) => void;
 	sourceFilter: "all" | "lion" | "subagent";
 	setSourceFilter: (filter: "all" | "lion" | "subagent") => void;
 	typeFilter: string | null;
@@ -49,8 +83,10 @@ export const useDashboardStore = create<DashboardStoreState>((set) => ({
 	clearEvents: () => set({ events: [] }),
 	uptime: 0,
 	bridgeCount: 0,
+	lionState: null,
 	setConnected: (connected: boolean) => set({ connected }),
 	setServerInfo: (uptime, bridgeCount) => set({ uptime, bridgeCount }),
+	setLionState: (lionState) => set({ lionState }),
 	sourceFilter: "all",
 	setSourceFilter: (filter) => set({ sourceFilter: filter }),
 	typeFilter: null,

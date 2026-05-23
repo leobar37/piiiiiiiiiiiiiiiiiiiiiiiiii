@@ -5,12 +5,11 @@
 
 import { randomUUID } from "node:crypto";
 import type { Goal, GoalStatus, PersistedGoalState } from "./types.js";
-import { cloneGoal, nowSeconds, validateObjective, validateTokenBudget } from "./utils.js";
+import { cloneGoal, nowSeconds, validateObjective } from "./utils.js";
 
 export interface GoalCore {
 	goal: Goal | null;
 	activeSinceMs: number | null;
-	activeGoalIdAtAgentStart: string | null;
 	continuationQueued: boolean;
 }
 
@@ -18,7 +17,6 @@ export function createCore(): GoalCore {
 	return {
 		goal: null,
 		activeSinceMs: null,
-		activeGoalIdAtAgentStart: null,
 		continuationQueued: false,
 	};
 }
@@ -42,16 +40,13 @@ export function accountElapsed(core: GoalCore): boolean {
 	return true;
 }
 
-export function setGoal(core: GoalCore, objectiveInput: string, tokenBudgetInput?: number): Goal {
+export function setGoal(core: GoalCore, objectiveInput: string): Goal {
 	const objective = validateObjective(objectiveInput);
-	const tokenBudget = validateTokenBudget(tokenBudgetInput);
 	const ts = nowSeconds();
 	core.goal = {
 		id: randomUUID(),
 		objective,
 		status: "active",
-		tokenBudget,
-		tokensUsed: 0,
 		timeUsedSeconds: 0,
 		createdAt: ts,
 		updatedAt: ts,
@@ -83,26 +78,7 @@ export function clearGoal(core: GoalCore): boolean {
 	if (core.goal.status === "active") accountElapsed(core);
 	core.goal = null;
 	core.activeSinceMs = null;
-	core.activeGoalIdAtAgentStart = null;
 	core.continuationQueued = false;
-	return true;
-}
-
-export function maybeApplyBudgetLimit(core: GoalCore): boolean {
-	if (!core.goal || core.goal.status !== "active" || core.goal.tokenBudget === undefined) return false;
-	if (core.goal.tokensUsed < core.goal.tokenBudget) return false;
-	accountElapsed(core);
-	core.goal.status = "budgetLimited";
-	core.goal.updatedAt = nowSeconds();
-	core.activeSinceMs = null;
-	core.continuationQueued = false;
-	return true;
-}
-
-export function addTokens(core: GoalCore, tokens: number): boolean {
-	if (!core.goal || tokens <= 0) return false;
-	core.goal.tokensUsed += tokens;
-	core.goal.updatedAt = nowSeconds();
 	return true;
 }
 
@@ -117,6 +93,5 @@ export function buildPersistedState(core: GoalCore, action: PersistedGoalState["
 export function restoreFromState(core: GoalCore, state: PersistedGoalState | undefined): void {
 	core.goal = state?.goal ? cloneGoal(state.goal) : null;
 	core.activeSinceMs = core.goal?.status === "active" ? Date.now() : null;
-	core.activeGoalIdAtAgentStart = null;
 	core.continuationQueued = false;
 }

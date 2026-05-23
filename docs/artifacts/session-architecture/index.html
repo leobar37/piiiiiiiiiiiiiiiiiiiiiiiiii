@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arquitectura de Sesiones Vivas - Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { --c-fg: #0f172a; --c-bg: #f8fafc; --c-border: #cbd5e1; }
+    @media (prefers-color-scheme: dark) {
+      :root { --c-fg: #f1f5f9; --c-bg: #0f172a; --c-border: #334155; }
+    }
+    body { background: var(--c-bg); color: var(--c-fg); }
+    .diagram-box { rx: 8; }
+    .arrow { fill: none; stroke-width: 2; stroke-linecap: round; marker-end: url(#arrowhead); }
+    .dashed { stroke-dasharray: 6,4; }
+    .dot { stroke-dasharray: 2,3; }
+    .group-box { fill: none; stroke-width: 1.5; rx: 12; stroke-dasharray: 8,4; }
+    text { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    .label { font-size: 11px; font-weight: 600; }
+    .sublabel { font-size: 9px; opacity: 0.7; }
+    .title { font-size: 13px; font-weight: 700; }
+    .badge { font-size: 9px; font-weight: 700; }
+    code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85em; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<div class="max-w-7xl mx-auto px-6 py-10">
+
+  <header class="mb-10">
+    <h1 class="text-3xl font-bold tracking-tight mb-2">Arquitectura de Sesiones Vivas</h1>
+    <p class="text-base opacity-70 max-w-3xl">
+      Diagrama de integracion propuesta para el <code>DashboardDaemon</code>: de observador pasivo a orquestador de sesiones de agente con runtime vivo en memoria.
+    </p>
+  </header>
+
+  <!-- ============================================================ -->
+  <!-- DIAGRAMA 1: ARQUITECTURA ACTUAL -->
+  <!-- ============================================================ -->
+  <section class="mb-14">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-500/15 text-red-500 text-sm font-bold">1</span>
+      <h2 class="text-xl font-semibold">Arquitectura Actual (Problemas)</h2>
+    </div>
+
+    <svg viewBox="0 0 900 420" class="w-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+      <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/>
+        </marker>
+        <marker id="arrowhead-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#ef4444"/>
+        </marker>
+      </defs>
+
+      <!-- GROUP: Dashboard Daemon -->
+      <rect x="40" y="30" width="340" height="360" class="group-box" stroke="#94a3b8"/>
+      <text x="60" y="55" class="title" fill="#64748b">DashboardDaemon</text>
+
+      <rect x="70" y="80" width="280" height="50" class="diagram-box" fill="#f1f5f9" stroke="#cbd5e1"/>
+      <text x="210" y="100" text-anchor="middle" class="label" fill="#334155">Bun.serve HTTP</text>
+      <text x="210" y="115" text-anchor="middle" class="sublabel" fill="#64748b">/api (oRPC) + / (static)</text>
+
+      <rect x="70" y="155" width="280" height="50" class="diagram-box" fill="#f1f5f9" stroke="#cbd5e1"/>
+      <text x="210" y="175" text-anchor="middle" class="label" fill="#334155">DashboardEventBridge</text>
+      <text x="210" y="190" text-anchor="middle" class="sublabel" fill="#64748b">solo observa eventos pasivos</text>
+
+      <rect x="70" y="230" width="280" height="50" class="diagram-box" fill="#fef2f2" stroke="#fca5a5"/>
+      <text x="210" y="250" text-anchor="middle" class="label" fill="#991b1b">Router oRPC</text>
+      <text x="210" y="265" text-anchor="middle" class="sublabel" fill="#b91c1c">state.get + events.stream</text>
+
+      <rect x="70" y="305" width="280" height="50" class="diagram-box" fill="#fef2f2" stroke="#fca5a5"/>
+      <text x="210" y="325" text-anchor="middle" class="label" fill="#991b1b">NO tiene SessionHost</text>
+      <text x="210" y="340" text-anchor="middle" class="sublabel" fill="#b91c1c">sin runtime de agente vivo</text>
+
+      <!-- GROUP: Session Server (separado) -->
+      <rect x="420" y="30" width="240" height="360" class="group-box" stroke="#ef4444"/>
+      <text x="440" y="55" class="title" fill="#dc2626">Session Server (separado)</text>
+
+      <rect x="450" y="80" width="180" height="50" class="diagram-box" fill="#fef2f2" stroke="#fca5a5"/>
+      <text x="540" y="100" text-anchor="middle" class="label" fill="#991b1b">Bun.serve HTTP</text>
+      <text x="540" y="115" text-anchor="middle" class="sublabel" fill="#b91c1c">puerto distinto</text>
+
+      <rect x="450" y="155" width="180" height="50" class="diagram-box" fill="#fef2f2" stroke="#fca5a5"/>
+      <text x="540" y="175" text-anchor="middle" class="label" fill="#991b1b">SessionManager</text>
+      <text x="540" y="190" text-anchor="middle" class="sublabel" fill="#b91c1c">solo lectura/escritura disco</text>
+
+      <rect x="450" y="230" width="180" height="50" class="diagram-box" fill="#fef2f2" stroke="#fca5a5"/>
+      <text x="540" y="250" text-anchor="middle" class="label" fill="#991b1b">POST /prompt</text>
+      <text x="540" y="265" text-anchor="middle" class="sublabel" fill="#b91c1c">devuelve 501 Not Implemented</text>
+
+      <rect x="450" y="305" width="180" height="50" class="diagram-box" fill="#fef2f2" stroke="#fca5a5"/>
+      <text x="540" y="325" text-anchor="middle" class="label" fill="#991b1b">NO tiene AgentSession</text>
+      <text x="540" y="340" text-anchor="middle" class="sublabel" fill="#b91c1c">sin ciclo de vida de agente</text>
+
+      <!-- GROUP: Disco -->
+      <rect x="700" y="30" width="160" height="160" class="group-box" stroke="#64748b"/>
+      <text x="720" y="55" class="title" fill="#475569">Disco (.jsonl)</text>
+
+      <rect x="730" y="80" width="100" height="40" class="diagram-box" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="780" y="105" text-anchor="middle" class="label" fill="#334155">sessions/*.jsonl</text>
+
+      <!-- Arrows -->
+      <line x1="540" y1="205" x2="780" y2="120" class="arrow" stroke="#94a3b8"/>
+      <text x="670" y="155" text-anchor="middle" class="sublabel" fill="#64748b">lee/escribe archivos</text>
+
+      <line x1="350" y1="255" x2="450" y2="105" class="arrow dashed" stroke="#ef4444" marker-end="url(#arrowhead-red)"/>
+      <text x="400" y="170" text-anchor="middle" class="badge" fill="#ef4444">sin comunicacion</text>
+
+      <!-- Problems callout -->
+      <rect x="700" y="220" width="160" height="170" rx="8" fill="#fef2f2" stroke="#fca5a5"/>
+      <text x="710" y="245" class="label" fill="#991b1b">Problemas:</text>
+      <text x="710" y="265" class="sublabel" fill="#b91c1c">- 2 servidores HTTP</text>
+      <text x="710" y="280" class="sublabel" fill="#b91c1c">- Sin runtime vivo</text>
+      <text x="710" y="295" class="sublabel" fill="#b91c1c">- Sin encolacion</text>
+      <text x="710" y="310" class="sublabel" fill="#b91c1c">- Sin eventos SSE</text>
+      <text x="710" y="325" class="sublabel" fill="#b91c1c">- Sin paralelismo</text>
+      <text x="710" y="340" class="sublabel" fill="#b91c1c">- Prompt = 501</text>
+    </svg>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- DIAGRAMA 2: ARQUITECTURA PROPUESTA -->
+  <!-- ============================================================ -->
+  <section class="mb-14">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-500/15 text-emerald-500 text-sm font-bold">2</span>
+      <h2 class="text-xl font-semibold">Arquitectura Propuesta (SessionHost)</h2>
+    </div>
+
+    <svg viewBox="0 0 900 480" class="w-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+      <defs>
+        <marker id="arrowhead2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/>
+        </marker>
+        <marker id="arrowhead-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#22c55e"/>
+        </marker>
+      </defs>
+
+      <!-- GROUP: DashboardDaemon (unificado) -->
+      <rect x="30" y="20" width="540" height="440" class="group-box" stroke="#22c55e"/>
+      <text x="50" y="45" class="title" fill="#15803d">DashboardDaemon (servidor unificado)</text>
+
+      <!-- HTTP Layer -->
+      <rect x="60" y="65" width="220" height="55" class="diagram-box" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="170" y="88" text-anchor="middle" class="label" fill="#166534">Bun.serve HTTP</text>
+      <text x="170" y="105" text-anchor="middle" class="sublabel" fill="#15803d">/api/* (oRPC) + / (SPA)</text>
+
+      <!-- Router oRPC -->
+      <rect x="60" y="145" width="220" height="70" class="diagram-box" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="170" y="168" text-anchor="middle" class="label" fill="#166534">Router oRPC</text>
+      <text x="170" y="183" text-anchor="middle" class="sublabel" fill="#15803d">sessions.* + dashboard.*</text>
+      <text x="170" y="198" text-anchor="middle" class="sublabel" fill="#15803d">state.get | events.stream</text>
+
+      <!-- SessionHost -->
+      <rect x="310" y="65" width="240" height="150" class="diagram-box" fill="#dcfce7" stroke="#4ade80"/>
+      <text x="430" y="90" text-anchor="middle" class="label" fill="#166534">SessionHost</text>
+
+      <rect x="330" y="110" width="200" height="30" class="diagram-box" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="430" y="130" text-anchor="middle" class="sublabel" fill="#15803d">Map&lt;sessionId, LiveSession&gt;</text>
+
+      <rect x="330" y="155" width="95" height="40" class="diagram-box" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="377" y="175" text-anchor="middle" class="sublabel" fill="#15803d">create()</text>
+      <text x="377" y="188" text-anchor="middle" class="sublabel" fill="#15803d">start()</text>
+
+      <rect x="435" y="155" width="95" height="40" class="diagram-box" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="482" y="175" text-anchor="middle" class="sublabel" fill="#15803d">prompt()</text>
+      <text x="482" y="188" text-anchor="middle" class="sublabel" fill="#15803d">steer()</text>
+
+      <!-- LiveSession 1 -->
+      <rect x="60" y="245" width="240" height="190" class="diagram-box" fill="#f0fdf4" stroke="#bbf7d0"/>
+      <text x="180" y="268" text-anchor="middle" class="label" fill="#166534">LiveSession #A1B2</text>
+      <text x="180" y="283" text-anchor="middle" class="sublabel" fill="#15803d">status: streaming</text>
+
+      <rect x="80" y="300" width="200" height="45" class="diagram-box" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="180" y="320" text-anchor="middle" class="label" fill="#166534">AgentSessionRuntime</text>
+      <text x="180" y="335" text-anchor="middle" class="sublabel" fill="#15803d">agent.prompt() | subscribe()</text>
+
+      <rect x="80" y="360" width="200" height="45" class="diagram-box" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="180" y="380" text-anchor="middle" class="label" fill="#166534">EventPublisher</text>
+      <text x="180" y="395" text-anchor="middle" class="sublabel" fill="#15803d">SSE para frontend</text>
+
+      <!-- LiveSession 2 -->
+      <rect x="330" y="245" width="220" height="190" class="diagram-box" fill="#f0fdf4" stroke="#bbf7d0"/>
+      <text x="440" y="268" text-anchor="middle" class="label" fill="#166534">LiveSession #C3D4</text>
+      <text x="440" y="283" text-anchor="middle" class="sublabel" fill="#15803d">status: idle</text>
+
+      <rect x="350" y="300" width="180" height="45" class="diagram-box" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="440" y="320" text-anchor="middle" class="label" fill="#166534">AgentSessionRuntime</text>
+      <text x="440" y="335" text-anchor="middle" class="sublabel" fill="#15803d">inactivo (sin streaming)</text>
+
+      <rect x="350" y="360" width="180" height="45" class="diagram-box" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="440" y="380" text-anchor="middle" class="label" fill="#166534">EventPublisher</text>
+      <text x="440" y="395" text-anchor="middle" class="sublabel" fill="#15803d">sin suscriptores</text>
+
+      <!-- DashboardEventBridge -->
+      <rect x="310" y="210" width="240" height="25" rx="4" fill="#fef9c3" stroke="#fde047"/>
+      <text x="430" y="227" text-anchor="middle" class="sublabel" fill="#854d0e">DashboardEventBridge (global events)</text>
+
+      <!-- GROUP: Disco -->
+      <rect x="600" y="20" width="270" height="200" class="group-box" stroke="#64748b"/>
+      <text x="620" y="45" class="title" fill="#475569">Persistencia</text>
+
+      <rect x="630" y="65" width="210" height="45" class="diagram-box" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="735" y="85" text-anchor="middle" class="label" fill="#334155">SessionManager</text>
+      <text x="735" y="100" text-anchor="middle" class="sublabel" fill="#64748b">appendMessage() | getTree()</text>
+
+      <rect x="630" y="130" width="210" height="45" class="diagram-box" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="735" y="150" text-anchor="middle" class="label" fill="#334155">sessions/*.jsonl</text>
+      <text x="735" y="165" text-anchor="middle" class="sublabel" fill="#64748b">archivos de sesion en disco</text>
+
+      <!-- GROUP: Frontend -->
+      <rect x="600" y="250" width="270" height="210" class="group-box" stroke="#3b82f6"/>
+      <text x="620" y="275" class="title" fill="#2563eb">Frontend (React + Vite)</text>
+
+      <rect x="630" y="295" width="210" height="45" class="diagram-box" fill="#eff6ff" stroke="#93c5fd"/>
+      <text x="735" y="315" text-anchor="middle" class="label" fill="#1e40af">useSession(sessionId)</text>
+      <text x="735" y="330" text-anchor="middle" class="sublabel" fill="#3b82f6">TanStack Query + SSE</text>
+
+      <rect x="630" y="360" width="210" height="45" class="diagram-box" fill="#eff6ff" stroke="#93c5fd"/>
+      <text x="735" y="380" text-anchor="middle" class="label" fill="#1e40af">Panel de Sesiones</text>
+      <text x="735" y="395" text-anchor="middle" class="sublabel" fill="#3b82f6">list | create | prompt | stop</text>
+
+      <!-- Arrows -->
+      <!-- Router -> SessionHost -->
+      <line x1="280" y1="180" x2="330" y2="140" class="arrow" stroke="#22c55e" marker-end="url(#arrowhead-green)"/>
+
+      <!-- SessionHost -> LiveSession 1 -->
+      <line x1="380" y1="215" x2="180" y2="245" class="arrow" stroke="#22c55e" marker-end="url(#arrowhead-green)"/>
+      <text x="260" y="235" text-anchor="middle" class="badge" fill="#15803d">gestiona</text>
+
+      <!-- SessionHost -> LiveSession 2 -->
+      <line x1="480" y1="215" x2="400" y2="245" class="arrow" stroke="#22c55e" marker-end="url(#arrowhead-green)"/>
+
+      <!-- LiveSession -> Disco -->
+      <line x1="300" y1="345" x2="630" y2="155" class="arrow" stroke="#64748b" marker-end="url(#arrowhead2)"/>
+      <text x="480" y="240" text-anchor="middle" class="sublabel" fill="#64748b">persiste entries</text>
+
+      <!-- LiveSession 1 events -> Frontend -->
+      <line x1="280" y1="382" x2="630" y2="317" class="arrow dot" stroke="#3b82f6" marker-end="url(#arrowhead2)"/>
+      <text x="460" y="355" text-anchor="middle" class="sublabel" fill="#3b82f6">SSE events.stream</text>
+
+      <!-- Frontend -> Router -->
+      <line x1="630" y1="317" x2="280" y2="160" class="arrow" stroke="#3b82f6" marker-end="url(#arrowhead2)"/>
+      <text x="460" y="210" text-anchor="middle" class="sublabel" fill="#3b82f6">HTTP requests</text>
+
+      <!-- DashboardEventBridge -->
+      <line x1="550" y1="222" x2="600" y2="140" class="arrow dot" stroke="#ca8a04" marker-end="url(#arrowhead2)"/>
+      <text x="585" y="175" text-anchor="middle" class="sublabel" fill="#ca8a04">global events</text>
+    </svg>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- DIAGRAMA 3: FLUJO DE PROMPT -->
+  <!-- ============================================================ -->
+  <section class="mb-14">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-blue-500/15 text-blue-500 text-sm font-bold">3</span>
+      <h2 class="text-xl font-semibold">Flujo de Datos: Prompt a una Sesion Viva</h2>
+    </div>
+
+    <svg viewBox="0 0 900 200" class="w-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+      <defs>
+        <marker id="ah3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#3b82f6"/>
+        </marker>
+      </defs>
+
+      <!-- Steps -->
+      <rect x="30" y="60" width="140" height="80" class="diagram-box" fill="#eff6ff" stroke="#93c5fd"/>
+      <text x="100" y="85" text-anchor="middle" class="label" fill="#1e40af">1. Frontend</text>
+      <text x="100" y="103" text-anchor="middle" class="sublabel" fill="#3b82f6">POST sessions.prompt</text>
+      <text x="100" y="118" text-anchor="middle" class="sublabel" fill="#3b82f6">{sessionId, message}</text>
+
+      <rect x="210" y="60" width="140" height="80" class="diagram-box" fill="#f0fdf4" stroke="#86efac"/>
+      <text x="280" y="85" text-anchor="middle" class="label" fill="#166534">2. Router oRPC</text>
+      <text x="280" y="103" text-anchor="middle" class="sublabel" fill="#15803d">valida + despacha</text>
+      <text x="280" y="118" text-anchor="middle" class="sublabel" fill="#15803d">a SessionHost</text>
+
+      <rect x="390" y="60" width="140" height="80" class="diagram-box" fill="#f0fdf4" stroke="#86efac"/>
+      <text x="460" y="85" text-anchor="middle" class="label" fill="#166534">3. SessionHost</text>
+      <text x="460" y="103" text-anchor="middle" class="sublabel" fill="#15803d">busca LiveSession</text>
+      <text x="460" y="118" text-anchor="middle" class="sublabel" fill="#15803d">en Map&lt;id&gt;</text>
+
+      <rect x="570" y="60" width="140" height="80" class="diagram-box" fill="#f0fdf4" stroke="#86efac"/>
+      <text x="640" y="85" text-anchor="middle" class="label" fill="#166534">4. LiveSession</text>
+      <text x="640" y="103" text-anchor="middle" class="sublabel" fill="#15803d">session.prompt()</text>
+      <text x="640" y="118" text-anchor="middle" class="sublabel" fill="#15803d">agent.prompt()</text>
+
+      <rect x="750" y="60" width="120" height="80" class="diagram-box" fill="#fff7ed" stroke="#fdba74"/>
+      <text x="810" y="85" text-anchor="middle" class="label" fill="#9a3412">5. LLM Provider</text>
+      <text x="810" y="103" text-anchor="middle" class="sublabel" fill="#c2410c">stream tokens</text>
+      <text x="810" y="118" text-anchor="middle" class="sublabel" fill="#c2410c">tool calls</text>
+
+      <!-- Arrows -->
+      <line x1="170" y1="100" x2="210" y2="100" class="arrow" stroke="#3b82f6" marker-end="url(#ah3)"/>
+      <line x1="350" y1="100" x2="390" y2="100" class="arrow" stroke="#3b82f6" marker-end="url(#ah3)"/>
+      <line x1="530" y1="100" x2="570" y2="100" class="arrow" stroke="#3b82f6" marker-end="url(#ah3)"/>
+      <line x1="710" y1="100" x2="750" y2="100" class="arrow" stroke="#3b82f6" marker-end="url(#ah3)"/>
+
+      <!-- Return: SSE Events -->
+      <path d="M 810 60 Q 810 30 460 30 Q 110 30 100 60" fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#arrowhead-amber)"/>
+      <text x="460" y="25" text-anchor="middle" class="sublabel" fill="#d97706">SSE: agent_start, message_update, tool_execution, agent_end</text>
+
+      <defs>
+        <marker id="arrowhead-amber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b"/>
+        </marker>
+      </defs>
+    </svg>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- DIAGRAMA 4: CICLO DE VIDA -->
+  <!-- ============================================================ -->
+  <section class="mb-14">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-violet-500/15 text-violet-500 text-sm font-bold">4</span>
+      <h2 class="text-xl font-semibold">Ciclo de Vida de una LiveSession</h2>
+    </div>
+
+    <svg viewBox="0 0 900 320" class="w-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+      <defs>
+        <marker id="ah4" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#8b5cf6"/>
+        </marker>
+      </defs>
+
+      <!-- States -->
+      <circle cx="100" cy="160" r="45" fill="#f5f3ff" stroke="#c4b5fd"/>
+      <text x="100" y="155" text-anchor="middle" class="label" fill="#5b21b6">CREATED</text>
+      <text x="100" y="170" text-anchor="middle" class="sublabel" fill="#7c3aed">SessionManager</text>
+      <text x="100" y="183" text-anchor="middle" class="sublabel" fill="#7c3aed">sin runtime</text>
+
+      <circle cx="300" cy="100" r="45" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="300" y="95" text-anchor="middle" class="label" fill="#166534">STARTING</text>
+      <text x="300" y="110" text-anchor="middle" class="sublabel" fill="#15803d">createAgentSession()</text>
+      <text x="300" y="123" text-anchor="middle" class="sublabel" fill="#15803d">carga modelos/tools</text>
+
+      <circle cx="500" cy="100" r="45" fill="#ecfdf5" stroke="#86efac"/>
+      <text x="500" y="95" text-anchor="middle" class="label" fill="#166534">IDLE</text>
+      <text x="500" y="110" text-anchor="middle" class="sublabel" fill="#15803d">esperando input</text>
+      <text x="500" y="123" text-anchor="middle" class="sublabel" fill="#15803d">event bridge listo</text>
+
+      <circle cx="700" cy="100" r="45" fill="#dbeafe" stroke="#93c5fd"/>
+      <text x="700" y="95" text-anchor="middle" class="label" fill="#1e40af">STREAMING</text>
+      <text x="700" y="110" text-anchor="middle" class="sublabel" fill="#3b82f6">agent.prompt()</text>
+      <text x="700" y="123" text-anchor="middle" class="sublabel" fill="#3b82f6">tokens + tools</text>
+
+      <circle cx="500" cy="230" r="45" fill="#fef2f2" stroke="#fca5a5"/>
+      <text x="500" y="225" text-anchor="middle" class="label" fill="#991b1b">STOPPED</text>
+      <text x="500" y="240" text-anchor="middle" class="sublabel" fill="#b91c1c">runtime.dispose()</text>
+      <text x="500" y="253" text-anchor="middle" class="sublabel" fill="#b91c1c">persistencia ok</text>
+
+      <!-- Transitions -->
+      <line x1="145" y1="130" x2="255" y2="105" class="arrow" stroke="#8b5cf6" marker-end="url(#ah4)"/>
+      <text x="200" y="110" text-anchor="middle" class="badge" fill="#7c3aed">sessions.start()</text>
+
+      <line x1="345" y1="100" x2="455" y2="100" class="arrow" stroke="#8b5cf6" marker-end="url(#ah4)"/>
+      <text x="400" y="92" text-anchor="middle" class="badge" fill="#7c3aed">runtime creado</text>
+
+      <line x1="545" y1="100" x2="655" y2="100" class="arrow" stroke="#8b5cf6" marker-end="url(#ah4)"/>
+      <text x="600" y="92" text-anchor="middle" class="badge" fill="#7c3aed">prompt/steer</text>
+
+      <!-- Loop: idle -> streaming -> idle -->
+      <path d="M 700 55 Q 750 55 750 100 Q 750 145 700 145" fill="none" stroke="#93c5fd" stroke-width="2" marker-end="url(#ah4)"/>
+      <text x="785" y="105" text-anchor="start" class="sublabel" fill="#3b82f6">agent_end</text>
+      <text x="785" y="120" text-anchor="start" class="sublabel" fill="#3b82f6">-> IDLE</text>
+
+      <line x1="500" y1="145" x2="500" y2="185" class="arrow" stroke="#8b5cf6" marker-end="url(#ah4)"/>
+      <text x="520" y="170" text-anchor="start" class="badge" fill="#7c3aed">sessions.stop()</text>
+
+      <line x1="460" y1="205" x2="140" y2="175" class="arrow dashed" stroke="#94a3b8" marker-end="url(#arrowhead2)"/>
+      <text x="280" y="215" text-anchor="middle" class="sublabel" fill="#64748b">sessions.start() reanuda desde disco</text>
+
+      <!-- Timeout annotation -->
+      <rect x="620" y="170" width="230" height="50" rx="6" fill="#fffbeb" stroke="#fcd34d"/>
+      <text x="630" y="190" class="sublabel" fill="#92400e">Timeout de inactividad:</text>
+      <text x="630" y="208" class="sublabel" fill="#92400e">auto-stop despues de N min sin prompt</text>
+    </svg>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- ENDPOINTS DEL ROUTER -->
+  <!-- ============================================================ -->
+  <section class="mb-10">
+    <div class="flex items-center gap-3 mb-4">
+      <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-500/15 text-slate-500 text-sm font-bold">5</span>
+      <h2 class="text-xl font-semibold">Endpoints oRPC Propuestos</h2>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+        <h3 class="text-sm font-bold text-emerald-600 mb-3 uppercase tracking-wide">Gestion de Sesiones</h3>
+        <ul class="space-y-2 text-sm">
+          <li class="flex items-center gap-2"><code class="text-xs bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded">POST</code> <code>sessions.create</code> — nueva sesion en disco</li>
+          <li class="flex items-center gap-2"><code class="text-xs bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">GET</code> <code>sessions.list</code> — listar todas las sesiones</li>
+          <li class="flex items-center gap-2"><code class="text-xs bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">GET</code> <code>sessions.get</code> — metadata de una sesion</li>
+          <li class="flex items-center gap-2"><code class="text-xs bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded">POST</code> <code>sessions.start</code> — iniciar runtime (resume)</li>
+          <li class="flex items-center gap-2"><code class="text-xs bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded">POST</code> <code>sessions.stop</code> — detener runtime</li>
+          <li class="flex items-center gap-2"><code class="text-xs bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 px-1.5 py-0.5 rounded">DELETE</code> <code>sessions.delete</code> — eliminar sesion</li>
+        </ul>
+      </div>
+
+      <div class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+        <h3 class="text-sm font-bold text-blue-600 mb-3 uppercase tracking-wide">Interaccion en Tiempo Real</h3>
+        <ul class="space-y-2 text-sm">
+          <li class="flex items-center gap-2"><code class="text-xs bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded">POST</code> <code>sessions.prompt</code> — enviar mensaje al agente</li>
+          <li class="flex items-center gap-2"><code class="text-xs bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded">POST</code> <code>sessions.steer</code> — interrumpir streaming</li>
+          <li class="flex items-center gap-2"><code class="text-xs bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded">POST</code> <code>sessions.followUp</code> — encolar mensaje</li>
+          <li class="flex items-center gap-2"><code class="text-xs bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded">POST</code> <code>sessions.abort</code> — abortar operacion</li>
+          <li class="flex items-center gap-2"><code class="text-xs bg-violet-50 dark:bg-violet-950 text-violet-700 dark:text-violet-400 px-1.5 py-0.5 rounded">SSE</code> <code>sessions.events.stream</code> — eventos por sesion</li>
+          <li class="flex items-center gap-2"><code class="text-xs bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">GET</code> <code>sessions.messages.get</code> — historial</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer class="text-center text-xs opacity-50 pt-8 pb-4 border-t border-slate-200 dark:border-slate-800">
+    Generado para el analisis de arquitectura del dashboard — packages/dashboard
+  </footer>
+
+</div>
+
+</body>
+</html>

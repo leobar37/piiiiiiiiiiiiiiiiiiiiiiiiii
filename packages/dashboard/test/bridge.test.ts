@@ -40,6 +40,32 @@ describe("DashboardEventBridge", () => {
 		expect(bridge.bridgeCount).toBe(1);
 	});
 
+	it("publishes enriched events directly", () => {
+		const bridge = new DashboardEventBridge();
+
+		bridge.publish({
+			id: "enriched-1",
+			type: "task.start",
+			source: "subagent",
+			payload: { taskId: "T-001" },
+			timestamp: 1234,
+			runId: "run-1",
+			planSlug: "plan-a",
+			planPath: ".plans/plan-a",
+			taskId: "T-001",
+			attempt: 1,
+		});
+
+		expect(bridge.getRecentEvents()[0]).toMatchObject({
+			id: "enriched-1",
+			source: "subagent",
+			runId: "run-1",
+			planSlug: "plan-a",
+			taskId: "T-001",
+			attempt: 1,
+		});
+	});
+
 	it("tracks subscriber count", () => {
 		const bridge = new DashboardEventBridge();
 		expect(bridge.getSubscriberCount()).toBe(0);

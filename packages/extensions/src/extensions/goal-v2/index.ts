@@ -10,21 +10,20 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { GoalContextTracker } from "./context-store.js";
 import {
 	accountElapsed,
-	addTokens,
 	buildPersistedState,
 	clearGoal,
 	createCore,
 	currentGoalSnapshot,
-	maybeApplyBudgetLimit,
 	restoreFromState,
 	setGoal,
 	setGoalStatus,
 } from "./core.js";
 import { activeGoalSystemPrompt, continuationPrompt } from "./prompts.js";
 import type { PersistedGoalState } from "./types.js";
-import { assistantUsageTokens, goalResponse, goalSummary, validateObjective } from "./utils.js";
+import { goalResponse, goalSummary, validateObjective } from "./utils.js";
 
 const STATE_TYPE = "goal-v2";
 const UI_MESSAGE_TYPE = "goal-v2-ui";
@@ -35,7 +34,6 @@ const CreateGoalParams = Type.Object({
 		description:
 			"Required. The concrete objective to start pursuing. This starts a new active goal only when no goal is currently defined; if a goal already exists, this tool fails.",
 	}),
-	token_budget: Type.Optional(Type.Number({ description: "Optional positive token budget for the new active goal." })),
 });
 
 const UpdateGoalParams = Type.Object({
@@ -58,17 +56,11 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 		const theme = ctx.ui.theme;
 		switch (core.goal.status) {
 			case "active": {
-				const snapshot = currentGoalSnapshot(core) ?? core.goal;
-				const usage =
-					snapshot.tokenBudget === undefined ? "" : ` (${snapshot.tokensUsed} / ${snapshot.tokenBudget})`;
-				ctx.ui.setStatus("goal-v2", theme.fg("accent", `Pursuing goal${usage}`));
+				ctx.ui.setStatus("goal-v2", theme.fg("accent", "Pursuing goal"));
 				break;
 			}
 			case "paused":
 				ctx.ui.setStatus("goal-v2", theme.fg("warning", "Goal paused (/goal resume)"));
-				break;
-			case "budgetLimited":
-				ctx.ui.setStatus("goal-v2", theme.fg("warning", "Goal budget reached"));
 				break;
 			case "complete":
 				ctx.ui.setStatus("goal-v2", theme.fg("success", "Goal complete"));
@@ -85,6 +77,30 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 			},
 			{ triggerTurn: false },
 		);
+	}
+
+	async function initializeGoalContext(ctx: ExtensionContext): Promise<void> {
+		if (!core.goal) return;
+		const tracker = new GoalContextTracker(ctx.sessionManager.getCwd(), ctx.sessionManager.getSessionId());
+		core.goal.contextPath = await tracker.initialize(core.goal);
+	}
+
+	async function recordGoalStatus(ctx: ExtensionContext, summary: string): Promise<void> {
+		if (!core.goal) return;
+		const tracker = new GoalContextTracker(ctx.sessionManager.getCwd(), ctx.sessionManager.getSessionId());
+		await tracker.recordStatus(core.goal, summary);
+	}
+
+	async function recordGoalWork(ctx: ExtensionContext, summary: string, details?: string): Promise<void> {
+		if (!core.goal) return;
+		const tracker = new GoalContextTracker(ctx.sessionManager.getCwd(), ctx.sessionManager.getSessionId());
+		await tracker.recordWork(core.goal, summary, details);
+	}
+
+	async function recordGoalCompletion(ctx: ExtensionContext): Promise<void> {
+		if (!core.goal) return;
+		const tracker = new GoalContextTracker(ctx.sessionManager.getCwd(), ctx.sessionManager.getSessionId());
+		await tracker.recordCompletion(core.goal);
 	}
 
 	function queueContinuation(ctx: ExtensionContext): void {
@@ -141,32 +157,21 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 
 	pi.on("agent_start", async (_event, _ctx) => {
 		core.continuationQueued = false;
-		core.activeGoalIdAtAgentStart = core.goal?.status === "active" ? core.goal.id : null;
 	});
 
-	pi.on("agent_end", async (event, ctx) => {
+	pi.on("agent_end", async (_event, ctx) => {
 		if (!core.goal) return;
 		let changed = false;
-
-		if (core.activeGoalIdAtAgentStart === core.goal.id) {
-			const tokens = assistantUsageTokens(event.messages as unknown[]);
-			if (tokens > 0 && addTokens(core, tokens)) {
-				changed = true;
-			}
-		}
 
 		if (core.goal.status === "active" && accountElapsed(core)) {
 			changed = true;
 		}
 
-		if (maybeApplyBudgetLimit(core)) {
-			changed = true;
-			showGoalMessage(`Goal limited by budget\n\n${goalSummary(core.goal)}`);
+		if (changed) {
+			await recordGoalWork(ctx, "Agent turn completed", `Elapsed time: ${core.goal.timeUsedSeconds} seconds`);
+			persist("account");
 		}
-
-		if (changed) persist("account");
 		updateStatus(ctx);
-		core.activeGoalIdAtAgentStart = null;
 
 		if (core.goal.status === "active") {
 			queueContinuation(ctx);
@@ -224,6 +229,10 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 
 			switch (trimmed.toLowerCase()) {
 				case "clear": {
+					const previousGoal = core.goal;
+					if (previousGoal) {
+						await recordGoalStatus(ctx, "Goal cleared");
+					}
 					const cleared = clearGoal(core);
 					persist("clear");
 					showGoalMessage(
@@ -235,6 +244,7 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 				case "pause": {
 					try {
 						setGoalStatus(core, "paused");
+						await recordGoalStatus(ctx, "Goal paused");
 						persist("status");
 						showGoalMessage(`Goal paused\n\n${goalSummary(core.goal!)}`);
 						updateStatus(ctx);
@@ -246,6 +256,7 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 				case "resume": {
 					try {
 						setGoalStatus(core, "active");
+						await recordGoalStatus(ctx, "Goal resumed");
 						persist("status");
 						showGoalMessage(`Goal active\n\n${goalSummary(currentGoalSnapshot(core)!)}`);
 						updateStatus(ctx);
@@ -277,6 +288,7 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 			}
 
 			setGoal(core, objective);
+			await initializeGoalContext(ctx);
 			persist("set");
 			showGoalMessage(`Goal active\n\n${goalSummary(core.goal!)}`);
 			updateStatus(ctx);
@@ -291,9 +303,8 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "get_goal",
 		label: "Get Goal",
-		description:
-			"Get the current goal for this thread, including status, budgets, token and elapsed-time usage, and remaining token budget.",
-		promptSnippet: "Get the current long-running thread goal and its usage/budget state",
+		description: "Get the current goal for this thread, including status and elapsed-time usage.",
+		promptSnippet: "Get the current long-running thread goal and its elapsed-time state",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			const snapshot = currentGoalSnapshot(core);
@@ -309,7 +320,7 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 		name: "create_goal",
 		label: "Create Goal",
 		description:
-			"Create a goal only when explicitly requested by the user or system/developer instructions; do not infer goals from ordinary tasks. Set token_budget only when an explicit token budget is requested. Fails if a goal exists; use update_goal only for status.",
+			"Create a goal only when explicitly requested by the user or system/developer instructions; do not infer goals from ordinary tasks. Fails if a goal exists; use update_goal only for status.",
 		promptSnippet: "Create a new active long-running thread goal when explicitly requested",
 		promptGuidelines: [
 			"Use create_goal only when the user explicitly asks to create a long-running goal; do not infer goals from ordinary tasks.",
@@ -322,7 +333,8 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 					"cannot create a new goal because this thread already has a goal; use update_goal only when the existing goal is complete",
 				);
 			}
-			setGoal(core, params.objective, params.token_budget);
+			setGoal(core, params.objective);
+			await initializeGoalContext(ctx);
 			persist("set");
 			updateStatus(ctx);
 			const response = goalResponse(currentGoalSnapshot(core), ctx.sessionManager.getSessionId());
@@ -337,22 +349,23 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 		name: "update_goal",
 		label: "Update Goal",
 		description:
-			"Update the existing goal. Use this tool only to mark the goal achieved. Set status to complete only when the objective has actually been achieved and no required work remains. Do not mark a goal complete merely because its budget is nearly exhausted or because you are stopping work.",
+			"Update the existing goal. Use this tool only to mark the goal achieved. Set status to complete only when the objective has actually been achieved and no required work remains. Do not mark a goal complete merely because you are stopping work.",
 		promptSnippet: "Mark the current goal complete after verifying all requirements are satisfied",
 		promptGuidelines: [
-			"Use update_goal only to mark the active goal complete after verifying the objective is achieved; never use it for pause, resume, or budget-limit changes.",
+			"Use update_goal only to mark the active goal complete after verifying the objective is achieved; never use it for pause or resume changes.",
 		],
 		parameters: UpdateGoalParams,
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			if (params.status !== "complete") {
 				throw new Error(
-					"update_goal can only mark the existing goal complete; pause, resume, and budget-limited status changes are controlled by the user or system",
+					"update_goal can only mark the existing goal complete; pause and resume status changes are controlled by the user or system",
 				);
 			}
 			setGoalStatus(core, "complete");
+			await recordGoalCompletion(ctx);
 			persist("status");
 			updateStatus(ctx);
-			const response = goalResponse(currentGoalSnapshot(core), ctx.sessionManager.getSessionId(), true);
+			const response = goalResponse(currentGoalSnapshot(core), ctx.sessionManager.getSessionId());
 			return {
 				content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
 				details: response,

@@ -16,11 +16,12 @@ function createMockBus(): GenericEventBus & { emit(event: Record<string, unknown
 }
 
 describe("DashboardDaemon integration", () => {
-	const originalBun = globalThis.Bun;
 	let mockServer: { port: number; stop: ReturnType<typeof vi.fn>; hostname: string } | null = null;
 	let serveCalls: unknown[] = [];
 	let fileExists = new Map<string, boolean>();
 	let fileContents = new Map<string, string>();
+	let serveSpy: { mockRestore: () => void } | null = null;
+	let fileSpy: { mockRestore: () => void } | null = null;
 
 	function setupMockBun() {
 		serveCalls = [];
@@ -28,32 +29,29 @@ describe("DashboardDaemon integration", () => {
 		fileExists = new Map();
 		fileContents = new Map();
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(globalThis as any).Bun = {
-			serve: vi.fn((options: any) => {
-				serveCalls.push(options);
-				mockServer = {
-					port: options.port,
-					hostname: options.hostname,
-					stop: vi.fn(),
-				};
-				// Return server immediately; fetch can be called directly for assertions
-				return mockServer;
-			}),
-			file: vi.fn((path: string) => {
-				return {
-					exists: () => Promise.resolve(fileExists.get(path) ?? false),
-					size: (fileContents.get(path) ?? "").length,
-					[Symbol.toStringTag]: "Blob",
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				} as any;
-			}),
-		};
+		// Use spyOn instead of reassigning globalThis.Bun
+		serveSpy = vi.spyOn(Bun, "serve").mockImplementation((options: any) => {
+			serveCalls.push(options);
+			mockServer = {
+				port: options.port,
+				hostname: options.hostname,
+				stop: vi.fn(),
+			};
+			return mockServer as any;
+		});
+
+		fileSpy = vi.spyOn(Bun, "file").mockImplementation((path: string) => {
+			return {
+				exists: () => Promise.resolve(fileExists.get(path) ?? false),
+				size: (fileContents.get(path) ?? "").length,
+				[Symbol.toStringTag]: "Blob",
+			} as any;
+		});
 	}
 
 	function restoreBun() {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(globalThis as any).Bun = originalBun;
+		serveSpy?.mockRestore();
+		fileSpy?.mockRestore();
 	}
 
 	beforeEach(() => {

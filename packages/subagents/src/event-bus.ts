@@ -1,23 +1,21 @@
 import type { SubAgentEvent, SubAgentEventMap, SubAgentEventType } from "./types.js";
 
-export class SubAgentEventBus {
-	private listeners = new Map<SubAgentEventType | "*", Set<(event: SubAgentEvent) => void>>();
+export class EventBusBase<TEvent extends { type: string }, TType extends string = string> {
+	private listeners = new Map<TType | "*", Set<(event: TEvent) => void>>();
 
-	on<T extends SubAgentEventType>(type: T | "*", listener: (event: SubAgentEventMap[T]) => void): () => void {
-		const key = type;
-		if (!this.listeners.has(key)) {
-			this.listeners.set(key, new Set());
+	on(type: TType | "*", listener: (event: TEvent) => void): () => void {
+		if (!this.listeners.has(type)) {
+			this.listeners.set(type, new Set());
 		}
-		const wrapped = (event: SubAgentEvent) => listener(event as SubAgentEventMap[T]);
-		this.listeners.get(key)!.add(wrapped);
+		this.listeners.get(type)!.add(listener);
 
 		return () => {
-			this.listeners.get(key)?.delete(wrapped);
+			this.listeners.get(type)?.delete(listener);
 		};
 	}
 
-	emit<T extends SubAgentEventType>(event: SubAgentEventMap[T]): void {
-		const specific = this.listeners.get(event.type);
+	emit(event: TEvent): void {
+		const specific = this.listeners.get(event.type as TType);
 		if (specific) {
 			for (const listener of specific) {
 				try {
@@ -39,15 +37,17 @@ export class SubAgentEventBus {
 		}
 	}
 
-	off(type: SubAgentEventType | "*", listener: (event: SubAgentEvent) => void): void {
-		this.listeners.get(type)?.delete(listener);
-	}
-
-	subscribe(handler: (event: SubAgentEvent) => void): () => void {
+	subscribe(handler: (event: TEvent) => void): () => void {
 		return this.on("*", handler);
 	}
 
 	clear(): void {
 		this.listeners.clear();
+	}
+}
+
+export class SubAgentEventBus extends EventBusBase<SubAgentEvent, SubAgentEventType> {
+	on<T extends SubAgentEventType>(type: T | "*", listener: (event: SubAgentEventMap[T]) => void): () => void {
+		return super.on(type, listener as (event: SubAgentEvent) => void);
 	}
 }

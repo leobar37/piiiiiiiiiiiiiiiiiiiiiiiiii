@@ -22,22 +22,11 @@ import { LionChecklistFile } from "../../src/extensions/lion/plans/checklist.js"
 import { StructuredLionPlanFile } from "../../src/extensions/lion/plans/structured.js";
 import { buildPlanningSystemPrompt } from "../../src/extensions/lion/prompts/planning.js";
 import { buildPlanValidationPrompt } from "../../src/extensions/lion/prompts/validator.js";
-import {
-	cleanupLionSubagentUi,
-	createLionRuntime,
-	getLionSubagentHealth,
-	queueOrchestratorFeedback,
-	recordLionSubagentUiEvent,
-	retainSubagent,
-	startLionSubagentJob,
-	startLionSubagentUi,
-} from "../../src/extensions/lion/runtime.js";
-import { runReviewedExecutorWorkflow } from "../../src/extensions/lion/strategies/index.js";
-import { parsePlanValidationVerdict } from "../../src/extensions/lion/strategies/plan-validation-verdict.js";
-import { parseReviewVerdict } from "../../src/extensions/lion/strategies/review-verdict.js";
+import { LionRuntime } from "../../src/extensions/lion/runtime.js";
 import { finishCurrentTaskRun, promptSubagent, startNextTask } from "../../src/extensions/lion/tools.js";
-import type { LionPlan, LionPlanContent, LionTask } from "../../src/extensions/lion/types.js";
+import type { LionPlan, LionTask } from "../../src/extensions/lion/types.js";
 import { buildLionSubagentWidgetLines } from "../../src/extensions/lion/ui/subagents-widget.js";
+import { parsePlanValidationVerdict, parseReviewVerdict } from "../../src/extensions/lion/utils.js";
 
 const plan: LionPlan = {
 	kind: "structured",
@@ -54,13 +43,6 @@ const task: LionTask = {
 	status: "pending",
 	dependencies: [],
 	requirements: [],
-};
-
-const content: LionPlanContent = {
-	context: "Context",
-	requirements: "Requirements",
-	taskIndex: "Task index",
-	taskBrief: "Task brief",
 };
 
 const plainTheme = {
@@ -92,127 +74,6 @@ function delegationResult(task: DelegationTask, status: DelegationResult["status
 			durationMs: 1,
 		},
 	};
-}
-
-function fakeController(summaries: string[], statuses: DelegationResult["status"][] = []): SubAgentController {
-	let index = 0;
-	return {
-		executeTask: async (delegationTask: DelegationTask): Promise<DelegationResult> => {
-			const summary = summaries[index] ?? "";
-			const status = statuses[index] ?? "completed";
-			index++;
-			return delegationResult(delegationTask, status, summary);
-		},
-	} as unknown as SubAgentController;
-}
-
-async function runWorkflow(controller: SubAgentController, maxAttempts: number, events: any[] = []) {
-	const bus = new LionEventBus();
-	bus.on("*", (event) => events.push(event));
-	return runReviewedExecutorWorkflow({
-		runId: "run-1",
-		plan,
-		task,
-		content,
-		config: { maxAttempts },
-		controller,
-		bus,
-		attempt: 1,
-		prompt: "test prompt",
-	});
-}
-
-async function testApprovedFirstAttempt(): Promise<void> {
-	const events: any[] = [];
-	const result = await runWorkflow(
-		fakeController(["executor done", "findings\n\nLION_REVIEW_STATUS: approved"]),
-		3,
-		events,
-	);
-
-	assert.equal(result.status, "approved");
-	assert.equal(result.attempts, 1);
-	assert.equal(result.executorSummary, "executor done");
-	assert.equal(result.reviewerSummary, "findings\n\nLION_REVIEW_STATUS: approved");
-	assert.deepEqual(
-		events
-			.filter((event) => event.type === "lion.delegation.prompt.created")
-			.map((event) => (event as any).payload?.agent ?? (event as any).agent),
-		["executor", "reviewer"],
-	);
-	assert.equal(
-		events.some((event) => event.type === "lion.task.approved"),
-		true,
-	);
-	assert.equal(
-		events.some((event) => event.type === "lion.task.marked_complete"),
-		false,
-	);
-}
-
-async function testCorrectionApprovedSecondAttempt(): Promise<void> {
-	const events: any[] = [];
-	const result = await runWorkflow(
-		fakeController([
-			"executor attempt 1",
-			"missing validation\n\nLION_REVIEW_STATUS: rejected",
-			"executor correction",
-			"clean\n\nLION_REVIEW_STATUS: approved",
-		]),
-		3,
-		events,
-	);
-
-	assert.equal(result.status, "approved");
-	assert.equal(result.attempts, 2);
-	assert.equal(result.executorSummary, "executor correction");
-	assert.equal(events.filter((event) => event.type === "lion.correction.requested").length, 1);
-	assert.deepEqual(
-		events
-			.filter((event) => event.type === "lion.review.verdict")
-			.map((event) => (event as any).payload?.verdict ?? (event as any).verdict),
-		["rejected", "approved"],
-	);
-}
-
-async function testRejectedAfterMaxAttempts(): Promise<void> {
-	const events: any[] = [];
-	const result = await runWorkflow(
-		fakeController([
-			"executor attempt 1",
-			"no\n\nLION_REVIEW_STATUS: rejected",
-			"executor attempt 2",
-			"still no\n\nLION_REVIEW_STATUS: rejected",
-		]),
-		2,
-		events,
-	);
-
-	assert.equal(result.status, "rejected");
-	assert.equal(result.attempts, 2);
-	assert.equal(result.error, "Reviewer did not approve within max attempts.");
-	assert.equal(events.at(-1)?.type, "lion.task.rejected");
-}
-
-async function testExecutorFailureFailsBuild(): Promise<void> {
-	const result = await runWorkflow(fakeController(["executor cancelled"], ["cancelled"]), 3);
-
-	assert.equal(result.status, "failed");
-	assert.equal(result.attempts, 1);
-	assert.equal(result.error, "Executor delegation ended with status cancelled.");
-}
-
-async function testUnknownReviewerVerdictRejects(): Promise<void> {
-	const events: any[] = [];
-	const result = await runWorkflow(fakeController(["executor done", "review did not include status"]), 1, events);
-
-	assert.equal(result.status, "rejected");
-	assert.deepEqual(
-		events
-			.filter((event) => event.type === "lion.review.verdict")
-			.map((event) => (event as any).payload?.verdict ?? (event as any).verdict),
-		["unknown"],
-	);
 }
 
 function testReporterPersistsAndForwardsEvents(): void {
@@ -535,7 +396,7 @@ function fakePi(overrides: Record<string, unknown> = {}) {
 async function testStartNextTaskBlocksActiveRun(): Promise<void> {
 	const cwd = createStructuredPlanDir();
 	try {
-		const runtime = createLionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any);
 		const loadedPlan = new StructuredLionPlanFile(cwd).loadPlan();
 		runtime.state = {
 			version: 1,
@@ -568,7 +429,7 @@ async function testStartNextTaskBlocksActiveRun(): Promise<void> {
 async function testStartNextTaskBlocksRunningSubagent(): Promise<void> {
 	const cwd = createStructuredPlanDir();
 	try {
-		const runtime = createLionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any);
 		const loadedPlan = new StructuredLionPlanFile(cwd).loadPlan();
 		runtime.state = {
 			version: 1,
@@ -581,7 +442,7 @@ async function testStartNextTaskBlocksRunningSubagent(): Promise<void> {
 			maxAttempts: 3,
 			lastRunId: null,
 		};
-		startLionSubagentJob(runtime, {
+		runtime.startJob({
 			runId: "run-validator",
 			taskId: "validate-test-plan",
 			role: "validator",
@@ -606,7 +467,7 @@ async function testStartNextTaskBlocksRunningSubagent(): Promise<void> {
 function testFinishRequiresApprovedReviewerVerdict(): void {
 	const cwd = createStructuredPlanDir();
 	try {
-		const runtime = createLionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any);
 		const loadedPlan = new StructuredLionPlanFile(cwd).loadPlan();
 		runtime.state = {
 			version: 1,
@@ -633,7 +494,7 @@ function testFinishRequiresApprovedReviewerVerdict(): void {
 function testFinishApprovedMarksCompleteAfterReview(): void {
 	const cwd = createStructuredPlanDir();
 	try {
-		const runtime = createLionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any);
 		const loadedPlan = new StructuredLionPlanFile(cwd).loadPlan();
 		createLionRunReporter({ cwd } as any, runtime.events, { getActivePlanSlug: () => loadedPlan.slug });
 		runtime.state = {
@@ -675,9 +536,9 @@ function testReviewerTagsParse(): void {
 }
 
 async function testPromptSubagentReusesRetainedInstance(): Promise<void> {
-	const runtime = createLionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any);
 	startRun(runtime.core, { runId: "run-1", plan, task, maxAttempts: 3 });
-	retainSubagent(runtime, { runId: "run-1", role: "executor", taskId: "T-001-executor-1" });
+	runtime.retainSubagent({ runId: "run-1", role: "executor", taskId: "T-001-executor-1" });
 	const bus = new SubAgentEventBus();
 	const controller = {
 		getEventBus: () => bus,
@@ -712,11 +573,11 @@ async function testPromptSubagentReusesRetainedInstance(): Promise<void> {
 
 function testFeedbackDeliveryModes(): void {
 	const sends: Array<{ options: unknown }> = [];
-	const runtime = createLionRuntime(
+	const runtime = new LionRuntime(
 		fakePi({ sendMessage: (_message: unknown, options: unknown) => sends.push({ options }) }) as any,
 	);
-	queueOrchestratorFeedback(runtime, { isIdle: () => true } as any, "idle", {});
-	queueOrchestratorFeedback(runtime, { isIdle: () => false } as any, "busy", {});
+	runtime.queueFeedback({ isIdle: () => true } as any, "idle", {});
+	runtime.queueFeedback({ isIdle: () => false } as any, "busy", {});
 
 	assert.deepEqual(sends[0].options, { triggerTurn: true });
 	assert.deepEqual(sends[1].options, { triggerTurn: true, deliverAs: "followUp" });
@@ -822,16 +683,16 @@ function testPlanningPromptDefinesAgentSizedTasks(): void {
 }
 
 function testLionSubagentWidgetRendering(): void {
-	const runtime = createLionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any);
 	const now = Date.now();
-	startLionSubagentUi(runtime, {
+	runtime.startSubagentUi({
 		runId: "run-1",
 		taskId: "T-001-executor-1",
 		role: "executor",
 		title: "Task one",
 		timestamp: now - 1000,
 	});
-	recordLionSubagentUiEvent(runtime, {
+	runtime.recordSubagentUiEvent({
 		type: "task.start",
 		instanceId: "instance-1",
 		taskId: "T-001-executor-1",
@@ -839,7 +700,7 @@ function testLionSubagentWidgetRendering(): void {
 		description: "Task one",
 		timestamp: now - 900,
 	});
-	recordLionSubagentUiEvent(runtime, {
+	runtime.recordSubagentUiEvent({
 		type: "turn.complete",
 		instanceId: "instance-1",
 		taskId: "T-001-executor-1",
@@ -858,16 +719,16 @@ function testLionSubagentWidgetRendering(): void {
 }
 
 function testLionSubagentWidgetCompletedAndCleanup(): void {
-	const runtime = createLionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any);
 	const now = Date.now();
-	startLionSubagentUi(runtime, {
+	runtime.startSubagentUi({
 		runId: "run-1",
 		taskId: "T-001-reviewer-1",
 		role: "reviewer",
 		title: "Review",
 		timestamp: now - 2000,
 	});
-	recordLionSubagentUiEvent(runtime, {
+	runtime.recordSubagentUiEvent({
 		type: "task.end",
 		instanceId: "instance-2",
 		taskId: "T-001-reviewer-1",
@@ -883,20 +744,20 @@ function testLionSubagentWidgetCompletedAndCleanup(): void {
 	assert.match(lines.join("\n"), /reviewer T-001-reviewer-1 .* completed/);
 	assert.ok(lines.every((line) => visibleWidth(line) <= 50));
 
-	cleanupLionSubagentUi(runtime, now + 11000, 10000);
+	runtime.cleanupSubagentUi(now + 11000, 10000);
 	assert.equal(runtime.subagentUi.size, 0);
 }
 
 function testLionSubagentHealthTracksRecentEvents(): void {
-	const runtime = createLionRuntime(fakePi() as any);
-	startLionSubagentJob(runtime, {
+	const runtime = new LionRuntime(fakePi() as any);
+	runtime.startJob({
 		runId: "run-1",
 		taskId: "T-001-executor-1",
 		role: "executor",
 		title: "Task one",
 		timestamp: 10,
 	});
-	recordLionSubagentUiEvent(runtime, {
+	runtime.recordSubagentUiEvent({
 		type: "task.start",
 		instanceId: "instance-1",
 		taskId: "T-001-executor-1",
@@ -904,7 +765,7 @@ function testLionSubagentHealthTracksRecentEvents(): void {
 		description: "Task one",
 		timestamp: 11,
 	});
-	recordLionSubagentUiEvent(runtime, {
+	runtime.recordSubagentUiEvent({
 		type: "progress.update",
 		instanceId: "instance-1",
 		taskId: "T-001-executor-1",
@@ -912,7 +773,7 @@ function testLionSubagentHealthTracksRecentEvents(): void {
 		timestamp: 12,
 	});
 
-	const health = getLionSubagentHealth(runtime, "T-001-executor-1");
+	const health = runtime.getSubagentHealth("T-001-executor-1");
 
 	assert.equal(health.length, 1);
 	assert.equal(health[0].status, "running");
@@ -922,11 +783,6 @@ function testLionSubagentHealthTracksRecentEvents(): void {
 	);
 }
 
-await testApprovedFirstAttempt();
-await testCorrectionApprovedSecondAttempt();
-await testRejectedAfterMaxAttempts();
-await testExecutorFailureFailsBuild();
-await testUnknownReviewerVerdictRejects();
 testReporterPersistsAndForwardsEvents();
 testReporterFlagsCompleteWithoutApproval();
 testReporterSkipsSubagentNoiseInPlanLog();

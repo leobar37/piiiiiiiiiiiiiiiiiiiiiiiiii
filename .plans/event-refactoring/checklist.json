@@ -9,7 +9,7 @@
       "id": "T-001",
       "title": "Event primitives (`event-core.ts`)",
       "file": "tasks/01-event-primitives.md",
-      "status": "pending",
+      "status": "complete",
       "phase": "foundation",
       "dependencies": [],
       "requirements": [
@@ -25,7 +25,7 @@
       "id": "T-002",
       "title": "SubAgent event definitions (`event-defs.ts`)",
       "file": "tasks/02-subagent-event-defs.md",
-      "status": "pending",
+      "status": "complete",
       "phase": "foundation",
       "dependencies": [
         "T-001"
@@ -38,7 +38,7 @@
       "id": "T-003",
       "title": "Rewrite `SubAgentEventBus`",
       "file": "tasks/03-rewrite-subagent-event-bus.md",
-      "status": "pending",
+      "status": "complete",
       "phase": "subagents",
       "dependencies": [
         "T-002"
@@ -52,7 +52,7 @@
       "id": "T-004",
       "title": "Migrate `instance.ts` and `controller.ts`",
       "file": "tasks/04-migrate-subagent-consumers.md",
-      "status": "pending",
+      "status": "complete",
       "phase": "subagents",
       "dependencies": [
         "T-003"
@@ -66,7 +66,7 @@
       "id": "T-005",
       "title": "Lion event definitions",
       "file": "tasks/05-lion-event-defs.md",
-      "status": "pending",
+      "status": "complete",
       "phase": "lion",
       "dependencies": [
         "T-001"
@@ -79,7 +79,7 @@
       "id": "T-006",
       "title": "Rewrite `LionEventBus`",
       "file": "tasks/06-rewrite-lion-event-bus.md",
-      "status": "pending",
+      "status": "complete",
       "phase": "lion",
       "dependencies": [
         "T-005"
@@ -92,7 +92,7 @@
       "id": "T-007",
       "title": "Migrate lion consumers",
       "file": "tasks/07-migrate-lion-consumers.md",
-      "status": "pending",
+      "status": "complete",
       "phase": "lion",
       "dependencies": [
         "T-006"
@@ -105,7 +105,7 @@
       "id": "T-008",
       "title": "Final check and cleanup",
       "file": "tasks/08-final-check.md",
-      "status": "pending",
+      "status": "complete",
       "phase": "integration",
       "dependencies": [
         "T-004",

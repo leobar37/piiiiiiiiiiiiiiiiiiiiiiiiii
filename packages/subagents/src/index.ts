@@ -11,7 +11,7 @@ export {
 	reviewerDefinition,
 } from "./definitions/index.js";
 // Event bus
-export { SubAgentEventBus } from "./event-bus.js";
+export { EventBusBase, SubAgentEventBus } from "./event-bus.js";
 export type { AnyEventCreator, EventCreator, TypedEvent } from "./event-core.js";
 // Event primitives
 export { createEvent, TypedEventBus } from "./event-core.js";

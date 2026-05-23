@@ -3,7 +3,7 @@ import { orpc } from "../orpc.js";
 import { useDashboardStore } from "../store/dashboard.js";
 
 export function ConnectionStatus() {
-	const { connected, uptime, bridgeCount, setServerInfo } = useDashboardStore();
+	const { connected, uptime, bridgeCount, setServerInfo, setLionState } = useDashboardStore();
 	const [subscriberCount, setSubscriberCount] = useState(0);
 
 	useEffect(() => {
@@ -11,13 +11,14 @@ export function ConnectionStatus() {
 			try {
 				const state = await orpc.dashboard.state.get();
 				setServerInfo(state.uptime, state.bridgeCount);
+				setLionState(state.lion);
 				setSubscriberCount(state.subscriberCount);
 			} catch {
 				// Server might be down
 			}
 		}, 2000);
 		return () => clearInterval(interval);
-	}, [setServerInfo]);
+	}, [setServerInfo, setLionState]);
 
 	const uptimeSeconds = Math.floor(uptime / 1000);
 	const uptimeText =

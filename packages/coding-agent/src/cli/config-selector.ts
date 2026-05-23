@@ -23,7 +23,6 @@ export async function selectConfig(options: ConfigSelectorOptions): Promise<void
 	return new Promise((resolve) => {
 		const ui = new TUI(new ProcessTerminal());
 		let resolved = false;
-
 		const selector = new ConfigSelectorComponent(
 			options.resolvedPaths,
 			options.settingsManager,

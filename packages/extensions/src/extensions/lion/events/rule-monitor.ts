@@ -1,9 +1,9 @@
-import type { LionEvent, LionEventSink } from "../types.js";
+import type { LionEvent } from "../types.js";
 
 export class LionRuleMonitor {
 	private approvedTasks = new Set<string>();
 
-	constructor(private readonly emit: LionEventSink) {}
+	constructor(private readonly emit: (event: LionEvent) => void) {}
 
 	onEvent(event: LionEvent): void {
 		if (event.type === "lion.task.approved" && event.taskId) {

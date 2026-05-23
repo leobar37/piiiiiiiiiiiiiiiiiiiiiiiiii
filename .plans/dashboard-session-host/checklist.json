@@ -1,0 +1,40 @@
+{
+  "plan": "dashboard-session-host",
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Harden SessionHost and LiveSession Core",
+      "file": "tasks/01-session-host-core.md",
+      "status": "pending",
+      "dependencies": []
+    },
+    {
+      "id": "T-002",
+      "title": "Finalize Session Router and DashboardDaemon Integration",
+      "file": "tasks/02-session-router-events.md",
+      "status": "pending",
+      "dependencies": ["T-001"]
+    },
+    {
+      "id": "T-003",
+      "title": "Export Typed oRPC Contract for Clients",
+      "file": "tasks/03-orpc-contract.md",
+      "status": "pending",
+      "dependencies": ["T-002"]
+    },
+    {
+      "id": "T-004",
+      "title": "Write Backend Tests for SessionHost",
+      "file": "tasks/04-backend-tests.md",
+      "status": "pending",
+      "dependencies": ["T-002"]
+    },
+    {
+      "id": "T-005",
+      "title": "Document the Server APIs",
+      "file": "tasks/05-documentation.md",
+      "status": "pending",
+      "dependencies": ["T-002"]
+    }
+  ]
+}

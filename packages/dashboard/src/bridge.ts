@@ -19,11 +19,7 @@ export class DashboardEventBridge {
 				payload: "payload" in event ? event.payload : event,
 				timestamp: Number(event.timestamp),
 			};
-			this.ringBuffer.push(payload);
-			if (this.ringBuffer.length > this.maxEvents) {
-				this.ringBuffer.shift();
-			}
-			this.publisher.publish("*", payload);
+			this.publish(payload);
 		});
 		this.subscriptions.push(unsub);
 		return () => {
@@ -32,6 +28,15 @@ export class DashboardEventBridge {
 			unsub();
 		};
 	}
+
+	publish(payload: DashboardEventPayload): void {
+		this.ringBuffer.push(payload);
+		if (this.ringBuffer.length > this.maxEvents) {
+			this.ringBuffer.shift();
+		}
+		this.publisher.publish("*", payload);
+	}
+
 	getPublisher(): EventPublisher<Record<string, DashboardEventPayload>> {
 		return this.publisher;
 	}

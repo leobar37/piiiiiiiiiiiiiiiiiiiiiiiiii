@@ -548,8 +548,12 @@ export class SubAgentInstance {
 
 	async cancel(): Promise<void> {
 		if (this.state === "completed" || this.state === "failed" || this.state === "cancelled") return;
-		const session = this.assertSessionReady();
-		await session.abort();
+
+		// If not yet started (created/starting), no session to abort
+		if (this.session) {
+			await this.session.abort();
+		}
+
 		this.transition("cancelled");
 		this.endTime = Date.now();
 		const result = this.buildResult("cancelled", "Cancelled by orchestrator");

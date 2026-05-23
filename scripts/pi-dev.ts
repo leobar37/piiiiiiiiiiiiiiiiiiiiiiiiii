@@ -20,11 +20,11 @@ const args = process.argv.slice(2);
 
 // Build extensions first so external dependencies are bundled and imports resolve.
 const buildProc = Bun.spawnSync(["bun", "run", "build"], {
-	cwd: EXT_DIR,
-	stdio: ["inherit", "inherit", "inherit"],
+  cwd: EXT_DIR,
+  stdio: ["inherit", "inherit", "inherit"],
 });
 if (buildProc.exitCode !== 0) {
-	process.exit(buildProc.exitCode ?? 1);
+  process.exit(buildProc.exitCode ?? 1);
 }
 
 const extensionFlag = "-e";
@@ -34,8 +34,8 @@ const extensionPath = EXT_DIR;
 const bunArgs = ["run", CLI_ENTRY, extensionFlag, extensionPath, ...args];
 
 const proc = Bun.spawnSync(["bun", ...bunArgs], {
-	stdio: ["inherit", "inherit", "inherit"],
-	env: process.env,
+  stdio: ["inherit", "inherit", "inherit"],
+  env: process.env,
 });
 
 process.exit(proc.exitCode ?? 0);

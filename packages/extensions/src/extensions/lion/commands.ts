@@ -1,47 +1,24 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { LionEventBus, LionEventStore, LionRuleMonitor } from "./events/index.js";
-import { persistLionState } from "./persistence.js";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createLionRunReporter } from "./events/index.js";
 import { loadLionPlan, resolvePlanPath } from "./plans/index.js";
-import { activatePlan, activatePlanning, setMode } from "./state.js";
-import type { LionEvent, LionEventSink, LionState } from "./types.js";
-import { showLionMessage, updateLionStatus } from "./ui.js";
+import type { LionRuntime } from "./runtime.js";
 import { createRunId, formatPlanSummary } from "./utils.js";
-
-export interface LionRuntime {
-	state: LionState;
-}
-
-function createEventSink(ctx: ExtensionCommandContext, bus: LionEventBus): LionEventSink {
-	const store = new LionEventStore(ctx.cwd);
-	const monitor = new LionRuleMonitor((event) => bus.emit(event));
-	bus.on("*", (event: LionEvent) => {
-		try {
-			store.save(event);
-		} catch {
-			// Event logs are diagnostic; command behavior remains authoritative.
-		}
-		monitor.onEvent(event);
-	});
-	return (event) => bus.emit(event);
-}
 
 export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): void {
 	pi.registerCommand("lion-activate", {
 		description: "Activate Lion planning/orchestration mode",
 		handler: async (args, ctx) => {
 			const runId = createRunId();
-			const bus = new LionEventBus();
-			const emit = createEventSink(ctx, bus);
+			createLionRunReporter(ctx, runtime.events);
 			const input = args.trim();
-			emit({ type: "lion.activate.start", timestamp: Date.now(), runId, input });
+			runtime.emit({ type: "lion.activate.start", timestamp: Date.now(), runId, input });
 
 			if (!input) {
-				runtime.state = activatePlanning(runtime.state);
-				persistLionState(pi, runtime.state, "activate");
-				updateLionStatus(ctx, runtime.state);
-				emit({ type: "lion.activate.complete", timestamp: Date.now(), runId, mode: runtime.state.mode });
-				showLionMessage(
-					pi,
+				runtime.activatePlanning();
+				runtime.persist("activate");
+				runtime.ui.updateStatus(ctx, runtime.state);
+				runtime.emit({ type: "lion.activate.complete", timestamp: Date.now(), runId, mode: runtime.state.mode });
+				runtime.ui.showMessage(
 					runtime.state.activePlanSlug
 						? `Lion planning mode active\n\n${runtime.state.activePlanSlug}`
 						: "Lion planning mode active\n\nNo plan selected. I can help create or refine a structured plan, but I will not implement application code directly.",
@@ -51,21 +28,20 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 
 			const planPath = resolvePlanPath(ctx.cwd, input);
 			if (!planPath) {
-				runtime.state = activatePlanning(runtime.state);
-				persistLionState(pi, runtime.state, "activate");
-				updateLionStatus(ctx, runtime.state);
-				showLionMessage(
-					pi,
+				runtime.activatePlanning();
+				runtime.persist("activate");
+				runtime.ui.updateStatus(ctx, runtime.state);
+				runtime.ui.showMessage(
 					`Lion planning mode active\n\nPlan not found: ${input}\n\nI can help create it if you authorize plan-file edits.`,
 				);
 				return;
 			}
 
 			const plan = loadLionPlan(planPath);
-			runtime.state = activatePlan(runtime.state, plan);
-			persistLionState(pi, runtime.state, "activate");
-			updateLionStatus(ctx, runtime.state);
-			emit({
+			runtime.activatePlan(plan);
+			runtime.persist("activate");
+			runtime.ui.updateStatus(ctx, runtime.state);
+			runtime.emit({
 				type: "lion.plan.loaded",
 				timestamp: Date.now(),
 				runId,
@@ -74,8 +50,8 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 				taskCount: plan.tasks.length,
 				kind: plan.kind,
 			});
-			emit({ type: "lion.activate.complete", timestamp: Date.now(), runId, mode: runtime.state.mode });
-			showLionMessage(pi, `Lion activated\n\n${formatPlanSummary(plan)}`);
+			runtime.emit({ type: "lion.activate.complete", timestamp: Date.now(), runId, mode: runtime.state.mode });
+			runtime.ui.showMessage(`Lion activated\n\n${formatPlanSummary(plan)}`);
 		},
 	});
 
@@ -84,15 +60,15 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 		handler: async (_args, ctx) => {
 			const activePlanPath = runtime.state.activePlanPath;
 			if (!activePlanPath) {
-				showLionMessage(pi, "Lion build requires an active plan. Run /lion-activate <plan> first.");
+				runtime.ui.showMessage("Lion build requires an active plan. Run /lion-activate <plan> first.");
 				return;
 			}
 
 			await ctx.waitForIdle();
 			const runId = createRunId();
-			runtime.state = setMode(runtime.state, "building");
-			persistLionState(pi, runtime.state, "mode");
-			updateLionStatus(ctx, runtime.state);
+			runtime.setMode("building");
+			runtime.persist("mode");
+			runtime.ui.updateStatus(ctx, runtime.state);
 
 			const message = {
 				customType: "lion-orchestrator-feedback",
@@ -119,7 +95,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 				pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
 			}
 
-			showLionMessage(pi, `Lion build mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`);
+			runtime.ui.showMessage(`Lion build mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`);
 		},
 	});
 }

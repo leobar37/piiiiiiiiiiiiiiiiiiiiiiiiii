@@ -1,4 +1,4 @@
-import type { DelegationResult, DelegationStatus, SubAgentEvent } from "@local/pi-subagents";
+import type { DelegationStatus, SubAgentEvent } from "@local/pi-subagents";
 
 export type LionTaskStrategy = "parallel" | "sequential" | "chain";
 
@@ -103,27 +103,6 @@ export interface LionPipelineConfig {
 	maxAttempts: number;
 }
 
-export interface LionDelegationRunResult {
-	result: DelegationResult;
-	summary: string;
-	status: DelegationStatus;
-}
-
-export interface LionDelegationRunner {
-	runExecutor(prompt: string, attempt: number): Promise<LionDelegationRunResult>;
-	runReviewer(prompt: string, attempt: number): Promise<LionDelegationRunResult>;
-}
-
-export interface LionPipelineOptions {
-	runId: string;
-	plan: LionPlan;
-	task: LionTask;
-	content: LionPlanContent;
-	config: LionPipelineConfig;
-	runner: LionDelegationRunner;
-	emit?: LionEventSink;
-}
-
 export type LionDelegationAgent = "executor" | "reviewer" | "validator";
 export type LionPlanValidationVerdict = "valid" | "needs_work" | "unknown";
 export type LionPlanValidationResult = {
@@ -133,29 +112,8 @@ export type LionPlanValidationResult = {
 	taskId: string;
 };
 
-export interface LionTaskWorkflowOptions {
-	controller: import("@local/pi-subagents").SubAgentController;
-	runId: string;
-	plan: LionPlan;
-	task: LionTask;
-	attempt: number;
-	prompt: string;
-	content: import("./types.js").LionPlanContent;
-	bus: import("./events/bus.js").LionEventBus;
-	config: LionPipelineConfig;
-	emit?: LionEventSink;
-}
-
-export interface LionPipelineAttempt {
-	attempt: number;
-	executorSummary: string;
-	reviewerSummary: string;
-	verdict: LionReviewVerdict;
-}
-
 export type LionEventType = keyof LionEventMap;
 export type LionEvent = LionEventMap[LionEventType];
-export type LionEventSink = (event: LionEvent) => void;
 
 export interface LionEventBase {
 	type: LionEventType;
@@ -176,19 +134,26 @@ export interface LionEventMap {
 	"lion.task.selected": LionEventBase & { type: "lion.task.selected"; title: string };
 	"lion.delegation.prompt.created": LionEventBase & {
 		type: "lion.delegation.prompt.created";
-		agent: "executor" | "reviewer";
+		agent: LionDelegationAgent;
 		promptLength: number;
 	};
-	"lion.delegation.start": LionEventBase & { type: "lion.delegation.start"; agent: "executor" | "reviewer" };
+	"lion.delegation.start": LionEventBase & { type: "lion.delegation.start"; agent: LionDelegationAgent };
 	"lion.delegation.end": LionEventBase & {
 		type: "lion.delegation.end";
-		agent: "executor" | "reviewer";
+		agent: LionDelegationAgent;
 		status: string;
 		summary: string;
 	};
 	"lion.review.verdict": LionEventBase & {
 		type: "lion.review.verdict";
 		verdict: LionReviewVerdict;
+		summary: string;
+	};
+	"lion.validation.start": LionEventBase & { type: "lion.validation.start"; focus?: string };
+	"lion.validation.end": LionEventBase & { type: "lion.validation.end"; status: string; summary: string };
+	"lion.validation.verdict": LionEventBase & {
+		type: "lion.validation.verdict";
+		verdict: LionPlanValidationVerdict;
 		summary: string;
 	};
 	"lion.correction.requested": LionEventBase & { type: "lion.correction.requested"; feedback: string };

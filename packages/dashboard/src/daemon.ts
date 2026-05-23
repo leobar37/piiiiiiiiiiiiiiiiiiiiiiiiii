@@ -3,7 +3,9 @@ import { fileURLToPath } from "node:url";
 import { RPCHandler } from "@orpc/server/fetch";
 import { CORSPlugin } from "@orpc/server/plugins";
 import { DashboardEventBridge } from "./bridge.js";
+import type { DashboardEventPayload, LionDashboardState } from "./router.js";
 import { createDashboardRouter } from "./router.js";
+import { SessionHost } from "./session-host.js";
 import type { DashboardConfig, GenericEventBus } from "./types.js";
 
 /**
@@ -39,6 +41,8 @@ export class DashboardDaemon {
 	private startTime = 0;
 	private eventBridge = new DashboardEventBridge();
 	private bridgeCleanups: Array<() => void> = [];
+	private getLionState: (() => LionDashboardState | null) | null = null;
+	readonly sessionHost = new SessionHost();
 
 	constructor(config?: DashboardConfig) {
 		const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -58,6 +62,14 @@ export class DashboardDaemon {
 		this.bridgeCleanups.push(unsub);
 	}
 
+	publishEvent(payload: DashboardEventPayload): void {
+		this.eventBridge.publish(payload);
+	}
+
+	setLionStateGetter(getter: () => LionDashboardState | null): void {
+		this.getLionState = getter;
+	}
+
 	/**
 	 * Start the HTTP server. Returns the URL where the dashboard is reachable.
 	 * If already running, returns the existing URL.
@@ -69,7 +81,12 @@ export class DashboardDaemon {
 
 		this.startTime = Date.now();
 		const listenPort = port ?? this.config.port;
-		const router = createDashboardRouter(this.eventBridge, () => this.startTime);
+		const router = createDashboardRouter(
+			this.eventBridge,
+			() => this.startTime,
+			this.getLionState ?? undefined,
+			this.sessionHost,
+		);
 		this.handler = new RPCHandler(router, {
 			plugins: [
 				new CORSPlugin({
@@ -126,6 +143,9 @@ export class DashboardDaemon {
 		}
 		this.bridgeCleanups = [];
 		this.eventBridge.clear();
+
+		// Dispose all live sessions
+		this.sessionHost.dispose().catch(() => {});
 
 		// Stop HTTP server
 		this.server.stop(true);

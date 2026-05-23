@@ -31,6 +31,30 @@ describe("getDashboardState", () => {
 		expect(state.subscriberCount).toBe(0);
 		expect(state.recentEvents).toHaveLength(1);
 		expect(state.uptime).toBeGreaterThanOrEqual(0);
+		expect(state.lion).toBeNull();
+	});
+
+	it("includes lion state when a getter is provided", async () => {
+		const bridge = new DashboardEventBridge();
+		const state = await getDashboardState(
+			bridge,
+			() => 5000,
+			() => ({
+				active: true,
+				mode: "building",
+				activePlan: { slug: "plan-a", path: ".plans/plan-a", kind: "structured" },
+				activeTask: { id: "T-001", title: "Implement bridge", status: "executing" },
+				activeRun: { runId: "run-1", status: "executing", attempt: 1 },
+				subagents: [],
+				runHistory: [],
+			}),
+		);
+
+		expect(state.lion).toMatchObject({
+			active: true,
+			activePlan: { slug: "plan-a" },
+			activeRun: { runId: "run-1" },
+		});
 	});
 
 	it("computes uptime from getStartTime", async () => {

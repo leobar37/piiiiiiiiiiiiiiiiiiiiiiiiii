@@ -1,10 +1,11 @@
 {
-  "name": "@local/pi-dashboard",
-  "version": "0.0.1",
-  "description": "Real-time web dashboard for Pi showing orchestrator and sub-agent state",
+  "name": "@earendil-works/pi-web",
+  "version": "0.74.0",
+  "description": "Web dashboard for Pi sessions",
   "type": "module",
-  "private": true,
-  "keywords": ["pi-package"],
+  "bin": {
+    "pi-web": "dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -19,8 +20,8 @@
     "test": "vitest --run"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "workspace:*",
     "@orpc/server": "^1.14.3",
-    "@local/pi-subagents": "workspace:*",
     "zod": "^3.25.0"
   },
   "devDependencies": {
@@ -28,7 +29,6 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",
-    "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-tui": "*"
   }

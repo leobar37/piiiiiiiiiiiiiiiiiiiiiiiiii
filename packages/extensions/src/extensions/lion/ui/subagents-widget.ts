@@ -1,6 +1,6 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { cleanupLionSubagentUi, type LionRuntime, type LionSubagentUiState } from "../runtime.js";
+import type { LionRuntime, LionSubagentUiState } from "../runtime.js";
 
 const LION_SUBAGENT_WIDGET_KEY = "lion-subagents";
 const WIDGET_ANIMATION_MS = 120;
@@ -120,7 +120,7 @@ export function renderLionSubagentWidget(runtime: LionRuntime, ctx?: ExtensionCo
 	const uiContext = ctx?.hasUI ? ctx : runtime.lastUiContext;
 	if (!uiContext?.hasUI) return;
 	runtime.lastUiContext = uiContext;
-	cleanupLionSubagentUi(runtime);
+	runtime.cleanupSubagentUi();
 	if (runtime.subagentUi.size === 0) {
 		stopLionSubagentWidget(runtime);
 		return;
@@ -141,7 +141,7 @@ export function renderLionSubagentWidget(runtime: LionRuntime, ctx?: ExtensionCo
 	runtime.widgetTimer = setInterval(() => {
 		const latestContext = runtime.lastUiContext;
 		if (!latestContext?.hasUI) return;
-		cleanupLionSubagentUi(runtime);
+		runtime.cleanupSubagentUi();
 		if (runtime.subagentUi.size === 0) {
 			stopLionSubagentWidget(runtime);
 			return;

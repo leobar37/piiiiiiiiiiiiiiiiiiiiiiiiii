@@ -1,5 +1,11 @@
 import { basename, relative } from "node:path";
-import type { LionBuildResult, LionPlan, LionTaskStatus } from "./types.js";
+import type {
+	LionBuildResult,
+	LionPlan,
+	LionPlanValidationVerdict,
+	LionReviewVerdict,
+	LionTaskStatus,
+} from "./types.js";
 
 export function slugFromPath(path: string): string {
 	return basename(path.replace(/\/$/, ""));
@@ -19,6 +25,25 @@ export function normalizeTaskStatus(status: unknown): LionTaskStatus {
 		default:
 			return "pending";
 	}
+}
+
+export function parseReviewVerdict(summary: string): LionReviewVerdict {
+	const lines = summary
+		.split(/\r?\n/)
+		.map((line) => line.trim().toLowerCase())
+		.filter(Boolean);
+	if (lines.includes("lion_review_status: approved")) return "approved";
+	if (lines.includes("lion_review_status: rejected")) return "rejected";
+	if (lines.some((line) => line.includes("<lion-approve>"))) return "approved";
+	if (lines.some((line) => line.includes("<lion-rejected>"))) return "rejected";
+	return "unknown";
+}
+
+export function parsePlanValidationVerdict(summary: string): LionPlanValidationVerdict {
+	const normalized = summary.toLowerCase();
+	if (normalized.includes("<lion-plan-valid>")) return "valid";
+	if (normalized.includes("<lion-plan-needs-work>")) return "needs_work";
+	return "unknown";
 }
 
 export function formatPlanSummary(plan: LionPlan): string {
