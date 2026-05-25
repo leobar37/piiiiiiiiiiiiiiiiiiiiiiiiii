@@ -1,3 +1,0 @@
-{"runId":"lion-1779553856956-setyci","input":".plans/dashboard-realignment","type":"lion.activate.start","timestamp":1779553856956}
-{"runId":"lion-1779553856956-setyci","planSlug":"dashboard-realignment","planPath":"/Users/leobar37/code/opensource/pi/.plans/dashboard-realignment","taskCount":7,"kind":"structured","type":"lion.plan.loaded","timestamp":1779553856958}
-{"runId":"lion-1779553856956-setyci","mode":"planning","type":"lion.activate.complete","timestamp":1779553856958}

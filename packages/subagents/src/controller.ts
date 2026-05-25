@@ -5,6 +5,8 @@ import { resolveEffectiveConfig } from "./config-resolver.js";
 import { SubAgentEventBus } from "./event-bus.js";
 import { execute } from "./execution/index.js";
 import { SubAgentInstance } from "./instance.js";
+import { TransportManager } from "./transport/manager.js";
+
 import type {
 	BashResult,
 	ConversationSummary,
@@ -16,6 +18,7 @@ import type {
 	SubAgentArtifactStore,
 	SubAgentControllerOptions,
 	SubAgentDefinition,
+	SubAgentInstanceState,
 	SubAgentRpcState,
 	SummarizerOptions,
 } from "./types.js";
@@ -29,6 +32,7 @@ export class SubAgentController {
 	private authStorage?: import("@earendil-works/pi-coding-agent").AuthStorage;
 	private modelRegistry?: import("@earendil-works/pi-coding-agent").ModelRegistry;
 	private settingsManager?: import("@earendil-works/pi-coding-agent").SettingsManager;
+	private transportManager?: TransportManager;
 
 	constructor(options: SubAgentControllerOptions) {
 		this.cwd = options.cwd;
@@ -58,6 +62,14 @@ export class SubAgentController {
 					/* best effort */
 				}
 			});
+		}
+
+		if (options.transports && options.transports.length > 0) {
+			this.transportManager = new TransportManager(this.eventBus);
+			for (const transport of options.transports) {
+				this.transportManager.addTransport(transport);
+			}
+			this.transportManager.start();
 		}
 	}
 
@@ -143,8 +155,21 @@ export class SubAgentController {
 		return this.instances.get(taskId);
 	}
 
+	getInstanceById(instanceId: string): SubAgentInstance | undefined {
+		for (const instance of this.instances.values()) {
+			if (instance.instanceId === instanceId) {
+				return instance;
+			}
+		}
+		return undefined;
+	}
+
 	getInstances(): SubAgentInstance[] {
 		return Array.from(this.instances.values());
+	}
+
+	getInstanceStates(): SubAgentInstanceState[] {
+		return Array.from(this.instances.values()).map((i) => i.getState());
 	}
 
 	// =====================================================================
@@ -336,6 +361,7 @@ export class SubAgentController {
 	// =====================================================================
 
 	async dispose(): Promise<void> {
+		await this.transportManager?.stop();
 		for (const instance of this.instances.values()) {
 			try {
 				await instance.dispose();
