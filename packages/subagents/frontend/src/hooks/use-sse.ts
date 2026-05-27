@@ -86,9 +86,8 @@ export function useSseEvents(instanceId?: string) {
 			startMockEmitter().then((usedMock) => {
 				if (usedMock) return;
 
-				// Fall back to real SSE fetch
+				// Fall back to real SSE fetch — stream all events, no instanceId filter
 				const url = new URL("/events", window.location.origin);
-				if (instanceId) url.searchParams.set("instanceId", instanceId);
 
 				abortRef.current?.abort();
 				const controller = new AbortController();

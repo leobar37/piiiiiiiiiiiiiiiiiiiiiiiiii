@@ -1,10 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { startLionDashboard } from "./dashboard.js";
+import { getOrStartLionDashboard } from "./dashboard.js";
 import { createLionRunReporter } from "./events/index.js";
 import { loadLionPlan, resolvePlanPath } from "./plans/index.js";
 import type { LionRuntime } from "./runtime.js";
-import { validateActivePlan } from "./tools.js";
 import { createRunId, formatPlanSummary } from "./utils.js";
+import { Validator } from "./validate.js";
 
 export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): void {
 	pi.registerCommand("lion-activate", {
@@ -58,7 +58,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 	});
 
 	pi.registerCommand("lion-validate", {
-		description: "Validate the active Lion plan with a read-only analyzer sub-agent",
+		description: "Review the active Lion plan as a second opinion, find issues, and fix them automatically",
 		handler: async (args, ctx) => {
 			const activePlanPath = runtime.state.activePlanPath;
 			if (!activePlanPath) {
@@ -72,21 +72,20 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 
 			const focus = args.trim() || undefined;
 			const plan = loadLionPlan(activePlanPath);
-			runtime.ui.showMessage(`Validating plan ${plan.slug}...`);
+			runtime.ui.showMessage(`Reviewing plan ${plan.slug} as a second opinion...`);
 
 			try {
-				const response = await validateActivePlan(runtime, ctx, focus);
+				const validator = new Validator(runtime);
+				const response = await validator.validate(ctx, focus);
 				const validation = response.validation;
 				if (validation) {
-					const verdictLine =
-						validation.verdict === "valid"
-							? "Valid"
-							: validation.verdict === "needs_work"
-								? "Needs work"
-								: "Unknown";
-					runtime.ui.showMessage([`Lion validation: ${verdictLine}`, ``, validation.summary].join("\n"));
+					runtime.ui.showMessage(
+						validation.summary
+							? `Lion review\n\n${validation.summary}`
+							: "Lion review complete: no issues found.",
+					);
 				} else {
-					runtime.ui.showMessage(response.message);
+					runtime.ui.showMessage("Review returned no result.");
 				}
 			} catch (err: unknown) {
 				const error = err instanceof Error ? err.message : String(err);
@@ -142,7 +141,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 	pi.registerCommand("lion-dashboard", {
 		description: "Open the Lion subagent dashboard in browser",
 		handler: async (_args, _ctx) => {
-			const dashboard = startLionDashboard(runtime);
+			const dashboard = getOrStartLionDashboard(runtime);
 			try {
 				const url = await dashboard.start();
 				// Open browser using the system's default browser

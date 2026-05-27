@@ -41,7 +41,6 @@ export const useSubAgentStore = create<SubAgentStore>((set) => ({
 
 	addEvent: (event) =>
 		set((state) => {
-			// Update agent state if the event carries state info
 			const nextAgents = state.agents.map((a) => {
 				if (a.instanceId !== event.instanceId) return a;
 				if (event.type === "instance.state") {
@@ -49,6 +48,34 @@ export const useSubAgentStore = create<SubAgentStore>((set) => ({
 				}
 				if (event.type === "lifecycle.change") {
 					return { ...a, state: (event as unknown as { current: SubAgentInstanceState["state"] }).current };
+				}
+				if (event.type === "tool.start") {
+					return {
+						...a,
+						currentTool: (event as unknown as { toolName: string }).toolName,
+					};
+				}
+				if (event.type === "tool.end") {
+					return { ...a, currentTool: null };
+				}
+				if (event.type === "turn.complete") {
+					const te = event as unknown as { turnIndex: number; toolCount: number };
+					return {
+						...a,
+						turnCount: Math.max(a.turnCount, te.turnIndex + 1),
+						toolCount: a.toolCount + te.toolCount,
+					};
+				}
+				if (event.type === "task.end" || event.type === "error") {
+					return {
+						...a,
+						state: event.type === "error"
+							? "failed"
+							: (event as unknown as { result: { status: string } }).result.status === "completed"
+								? "completed"
+								: "failed" as SubAgentInstanceState["state"],
+						currentTool: null,
+					};
 				}
 				return a;
 			});

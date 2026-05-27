@@ -1,4 +1,3 @@
-import type { SubAgentTransportEvent } from "@local/pi-subagents";
 import { HttpServerTransport } from "@local/pi-subagents";
 import type { LionRuntime } from "./runtime.js";
 
@@ -7,8 +6,11 @@ export interface LionDashboard {
 	stop(): Promise<void>;
 }
 
-export function startLionDashboard(runtime: LionRuntime): LionDashboard {
-	return new LionDashboardServer(runtime);
+export function getOrStartLionDashboard(runtime: LionRuntime): LionDashboard {
+	if (!runtime.dashboard) {
+		runtime.dashboard = new LionDashboardServer(runtime);
+	}
+	return runtime.dashboard;
 }
 
 class LionDashboardServer implements LionDashboard {
@@ -20,7 +22,7 @@ class LionDashboardServer implements LionDashboard {
 	async start(): Promise<URL> {
 		const controller = this.runtime.activeController;
 		if (!controller) {
-			throw new Error("No active subagent controller. Start a Lion run first.");
+			throw new Error("No active subagent controller. Start a Lion run first (/lion-build or /lion-validate).");
 		}
 
 		this.transport = new HttpServerTransport({
@@ -31,8 +33,7 @@ class LionDashboardServer implements LionDashboard {
 
 		// Wire the transport into the controller's event bus so events flow to the dashboard
 		this.unsubscribeBus = controller.getEventBus().subscribe((event) => {
-			const transportEvent = event as unknown as SubAgentTransportEvent;
-			this.transport?.emit(transportEvent);
+			this.transport?.emit(event);
 		});
 
 		await this.transport.start();

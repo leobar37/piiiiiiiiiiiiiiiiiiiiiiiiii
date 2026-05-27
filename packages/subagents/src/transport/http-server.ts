@@ -17,7 +17,6 @@ export interface HttpServerTransportOptions {
 
 interface SseClient {
 	controller: ReadableStreamDefaultController<string>;
-	instanceId?: string;
 }
 
 function resolveStaticDir(options: HttpServerTransportOptions): string {
@@ -71,15 +70,12 @@ export class HttpServerTransport implements SubAgentTransport {
 		// Log events per instance for historical retrieval
 		if ("instanceId" in event && typeof event.instanceId === "string") {
 			const log = this.eventLogs.get(event.instanceId) ?? [];
-			log.push(event as unknown as SubAgentEvent);
+			log.push(event);
 			this.eventLogs.set(event.instanceId, log);
 		}
 
 		const payload = `data: ${JSON.stringify(event)}\n\n`;
 		for (const client of this.clients) {
-			if (client.instanceId && client.instanceId !== event.instanceId) {
-				continue;
-			}
 			try {
 				client.controller.enqueue(payload);
 			} catch {
@@ -202,12 +198,10 @@ export class HttpServerTransport implements SubAgentTransport {
 		});
 	}
 
-	private serveEvents(req: Request, url: URL): Response {
-		const instanceId = url.searchParams.get("instanceId") ?? undefined;
-
+	private serveEvents(req: Request, _url: URL): Response {
 		const stream = new ReadableStream<string>({
 			start: (controller) => {
-				const client: SseClient = { controller, instanceId };
+				const client: SseClient = { controller };
 				this.clients.add(client);
 
 				req.signal.addEventListener("abort", () => {

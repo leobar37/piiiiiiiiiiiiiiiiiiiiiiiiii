@@ -86,18 +86,6 @@ export const LionEvents = {
 		{ runId: string; planSlug: string; planPath: string; taskId?: string; status: string; summary: string }
 	>("lion.validation.end"),
 
-	validationVerdict: createEvent<
-		"lion.validation.verdict",
-		{
-			runId: string;
-			planSlug: string;
-			planPath: string;
-			taskId?: string;
-			verdict: "valid" | "needs_work" | "unknown";
-			summary: string;
-		}
-	>("lion.validation.verdict"),
-
 	reviewVerdict: createEvent<
 		"lion.review.verdict",
 		{

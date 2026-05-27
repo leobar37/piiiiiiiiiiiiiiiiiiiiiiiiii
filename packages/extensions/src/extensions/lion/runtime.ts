@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { DelegationResult, SubAgentController, SubAgentEvent } from "@local/pi-subagents";
 import {
 	buildPersistedLionCore,
@@ -8,8 +8,10 @@ import {
 	type LionSubagentRole,
 	restoreLionCore,
 } from "./core.js";
+import type { LionDashboard } from "./dashboard.js";
 import { LionEventBus } from "./events/bus.js";
 import { createInitialLionState } from "./state.js";
+import { createLionSubAgentController } from "./subagents/index.js";
 import {
 	LION_STATE_ENTRY_TYPE,
 	type LionBuildResult,
@@ -103,6 +105,7 @@ export class LionRuntime {
 	#subagentUi: Map<string, LionSubagentUiState>;
 	#lastUiContext: ExtensionContext | null;
 	#widgetTimer: ReturnType<typeof setInterval> | null;
+	dashboard: LionDashboard | null;
 
 	constructor(pi: ExtensionAPI) {
 		this.#pi = pi;
@@ -119,6 +122,7 @@ export class LionRuntime {
 		this.#subagentUi = new Map();
 		this.#lastUiContext = null;
 		this.#widgetTimer = null;
+		this.dashboard = null;
 	}
 
 	get pi(): ExtensionAPI {
@@ -191,6 +195,16 @@ export class LionRuntime {
 
 	set widgetTimer(value: ReturnType<typeof setInterval> | null) {
 		this.#widgetTimer = value;
+	}
+
+	createSubAgentController(ctx: ExtensionContext, runId: string): SubAgentController {
+		const controller = createLionSubAgentController({
+			ctx: ctx as ExtensionCommandContext,
+		});
+		this.#controllers.set(runId, controller);
+		this.#activeController = controller;
+		this.#activeRunId = runId;
+		return controller;
 	}
 
 	restore(ctx: ExtensionContext): void {

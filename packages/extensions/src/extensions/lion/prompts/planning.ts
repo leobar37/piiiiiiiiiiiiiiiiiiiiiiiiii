@@ -59,7 +59,6 @@ When executing a structured plan, follow this loop:
 ## Plan Management Tools
 
 - lion_activate_plan: Activate a plan by reference
-- lion_validate_plan: Validate plan with read-only analyzer
 - lion_retry_task: Reset a blocked/failed task to retryable
 
 ## Execution Example

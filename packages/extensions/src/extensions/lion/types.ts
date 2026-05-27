@@ -104,9 +104,7 @@ export interface LionPipelineConfig {
 }
 
 export type LionDelegationAgent = "executor" | "reviewer" | "validator";
-export type LionPlanValidationVerdict = "valid" | "needs_work" | "unknown";
 export type LionPlanValidationResult = {
-	verdict: LionPlanValidationVerdict;
 	status: DelegationStatus;
 	summary: string;
 	taskId: string;
@@ -152,11 +150,6 @@ export interface LionEventMap {
 	};
 	"lion.validation.start": LionEventBase & { type: "lion.validation.start"; focus?: string };
 	"lion.validation.end": LionEventBase & { type: "lion.validation.end"; status: string; summary: string };
-	"lion.validation.verdict": LionEventBase & {
-		type: "lion.validation.verdict";
-		verdict: LionPlanValidationVerdict;
-		summary: string;
-	};
 	"lion.correction.requested": LionEventBase & { type: "lion.correction.requested"; feedback: string };
 	"lion.task.approved": LionEventBase & { type: "lion.task.approved" };
 	"lion.task.rejected": LionEventBase & { type: "lion.task.rejected"; reason: string };

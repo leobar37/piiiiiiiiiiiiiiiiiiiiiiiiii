@@ -1,6 +1,5 @@
 import type { SubAgentEventBus } from "../event-bus.js";
-import type { SubAgentEvent, SubAgentInstanceState } from "../types.js";
-import type { SubAgentTransport, SubAgentTransportEvent } from "./types.js";
+import type { SubAgentTransport } from "./types.js";
 
 export class TransportManager {
 	private transports: SubAgentTransport[] = [];
@@ -25,7 +24,7 @@ export class TransportManager {
 		this.unsubscribe = this.eventBus.on("*", (event) => {
 			for (const transport of this.transports) {
 				try {
-					transport.emit(toTransportEvent(event));
+					transport.emit(event);
 				} catch {
 					/* best effort */
 				}
@@ -46,20 +45,4 @@ export class TransportManager {
 		}
 		this.transports = [];
 	}
-}
-
-function toTransportEvent(event: SubAgentEvent): SubAgentTransportEvent {
-	if (event.type === "instance.state") {
-		return {
-			type: "instance.state",
-			instanceId: event.instanceId,
-			state: event.state as SubAgentInstanceState,
-		};
-	}
-	return {
-		type: event.type,
-		instanceId: "instanceId" in event ? (event as any).instanceId : "",
-		taskId: "taskId" in event ? (event as any).taskId : "",
-		timestamp: "timestamp" in event ? (event as any).timestamp : Date.now(),
-	};
 }

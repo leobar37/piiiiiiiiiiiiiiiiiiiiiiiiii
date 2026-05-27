@@ -1,4 +1,4 @@
-import type { SubAgentEvent, SubAgentInstanceState } from "../types.js";
+import type { SubAgentEvent } from "../types.js";
 
 export interface SubAgentTransport {
 	readonly id: string;
@@ -7,15 +7,4 @@ export interface SubAgentTransport {
 	emit(event: SubAgentTransportEvent): void;
 }
 
-export type SubAgentTransportEvent =
-	| {
-			type: "instance.state";
-			instanceId: string;
-			state: SubAgentInstanceState;
-	  }
-	| {
-			type: Exclude<SubAgentEvent["type"], "instance.state">;
-			instanceId: string;
-			taskId: string;
-			timestamp: number;
-	  };
+export type SubAgentTransportEvent = SubAgentEvent;

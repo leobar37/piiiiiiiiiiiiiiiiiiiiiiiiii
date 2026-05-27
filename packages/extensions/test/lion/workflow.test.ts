@@ -15,13 +15,13 @@ import { LionEvents } from "../../src/extensions/lion/events/defs.js";
 import { createLionRunReporter, LionEventBus } from "../../src/extensions/lion/events/index.js";
 import { LionChecklistFile } from "../../src/extensions/lion/plans/checklist.js";
 import { StructuredLionPlanFile } from "../../src/extensions/lion/plans/structured.js";
+import { buildPlanReviewPrompt } from "../../src/extensions/lion/prompts/plan-reviewer.js";
 import { buildPlanningSystemPrompt } from "../../src/extensions/lion/prompts/planning.js";
-import { buildPlanValidationPrompt } from "../../src/extensions/lion/prompts/validator.js";
 import { LionRuntime } from "../../src/extensions/lion/runtime.js";
 
 import type { LionPlan, LionTask } from "../../src/extensions/lion/types.js";
 import { buildLionSubagentWidgetLines } from "../../src/extensions/lion/ui/subagents-widget.js";
-import { parsePlanValidationVerdict, parseReviewVerdict } from "../../src/extensions/lion/utils.js";
+import { parseReviewVerdict } from "../../src/extensions/lion/utils.js";
 
 const plan: LionPlan = {
 	kind: "structured",
@@ -430,13 +430,19 @@ function testFeedbackDeliveryModes(): void {
 	assert.deepEqual(sends[1].options, { triggerTurn: true, deliverAs: "followUp" });
 }
 
-function testPlanValidationVerdictParser(): void {
-	assert.equal(parsePlanValidationVerdict("Plan is coherent\n<LION-PLAN-VALID>"), "valid");
-	assert.equal(parsePlanValidationVerdict("Missing acceptance criteria\n<LION-PLAN-NEEDS-WORK>"), "needs_work");
-	assert.equal(parsePlanValidationVerdict("No tag"), "unknown");
+function testPlanReviewPrompt(): void {
+	const prompt = buildPlanReviewPrompt(plan);
+	assert.ok(prompt.includes(plan.slug));
+	assert.ok(prompt.includes(plan.indexFile));
+	assert.ok(prompt.includes(plan.tasks[0].file));
 }
 
-async function testPlanValidatorDelegationUsesAnalyzer(): Promise<void> {
+function _testPlanReviewPromptWithFocus(): void {
+	const prompt = buildPlanReviewPrompt(plan, "requirements");
+	assert.ok(prompt.includes("requirements"));
+}
+
+async function testPlanValidatorDelegationUsesExecutor(): Promise<void> {
 	const executed: DelegationTask[] = [];
 	const controller = {
 		executeTask: async (delegationTask: DelegationTask): Promise<DelegationResult> => {
@@ -451,12 +457,11 @@ async function testPlanValidatorDelegationUsesAnalyzer(): Promise<void> {
 	const taskId = `${plan.slug}-validator-run-validate`;
 	const delegationTask: DelegationTask = {
 		id: taskId,
-		definition: "analyzer",
-		description: `Validate Lion plan ${plan.slug}`,
-		prompt: buildPlanValidationPrompt(plan),
+		definition: "executor",
+		description: `Validate and fix Lion plan ${plan.slug}`,
+		prompt: buildPlanReviewPrompt(plan),
 		systemPromptMode: "append",
-		capabilities: { canEdit: false, canWrite: false, canExecute: false, canResearch: true },
-		disabledTools: ["edit", "write", "multi-edit"],
+		capabilities: { canEdit: true, canWrite: true, canExecute: false, canResearch: true },
 	};
 	bus.publish(LionEvents.delegationStart, {
 		runId: "run-validate",
@@ -497,18 +502,6 @@ async function testPlanValidatorDelegationUsesAnalyzer(): Promise<void> {
 			: undefined,
 		"validator",
 	);
-}
-
-function testPlanValidationPromptIsReadOnly(): void {
-	const prompt = buildPlanValidationPrompt(plan, "requirements");
-
-	assert.match(prompt, /read-only planning validation task/);
-	assert.match(prompt, /Focus: requirements/);
-	assert.match(prompt, /Do not edit files/);
-	assert.match(prompt, /agent-sized rather than microtasks/);
-	assert.match(prompt, /recommend consolidating tiny tasks before build/);
-	assert.match(prompt, /<LION-PLAN-VALID>/);
-	assert.match(prompt, /<LION-PLAN-NEEDS-WORK>/);
 }
 
 function testPlanningPromptDefinesAgentSizedTasks(): void {
@@ -645,9 +638,8 @@ testCoreRecordsRunAndFinishes();
 testFinishRunMarksComplete();
 testReviewerTagsParse();
 testFeedbackDeliveryModes();
-testPlanValidationVerdictParser();
-await testPlanValidatorDelegationUsesAnalyzer();
-testPlanValidationPromptIsReadOnly();
+testPlanReviewPrompt();
+await testPlanValidatorDelegationUsesExecutor();
 testPlanningPromptDefinesAgentSizedTasks();
 testLionSubagentWidgetRendering();
 testLionSubagentWidgetCompletedAndCleanup();
