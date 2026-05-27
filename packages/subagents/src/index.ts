@@ -48,6 +48,10 @@ export { createSubAgentSession } from "./session-factory.js";
 export { SubAgentSummarizer } from "./summarizer.js";
 export type { TaskExecutionResult, TaskExecutorOptions } from "./task-executor.js"; // Types
 export { TaskExecutor } from "./task-executor.js";
+export type { HttpServerTransportOptions } from "./transport/http-server.js";
+// Transport
+export { HttpServerTransport } from "./transport/http-server.js";
+export type { SubAgentTransport, SubAgentTransportEvent } from "./transport/types.js";
 export type {
 	ConversationSummary,
 	CreateSubAgentInstanceOptions,

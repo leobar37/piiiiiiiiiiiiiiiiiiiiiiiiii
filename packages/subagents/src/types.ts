@@ -315,6 +315,15 @@ export interface SubAgentEventMap {
 		fatal: boolean;
 		timestamp: number;
 	};
+
+	"session.event": {
+		type: "session.event";
+		instanceId: string;
+		taskId: string;
+		/** Raw AgentSessionEvent from the underlying coding-agent session */
+		sessionEvent: Record<string, unknown>;
+		timestamp: number;
+	};
 }
 
 export type SubAgentEventType = keyof SubAgentEventMap;

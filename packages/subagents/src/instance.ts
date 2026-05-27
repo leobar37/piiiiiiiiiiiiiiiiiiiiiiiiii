@@ -218,6 +218,18 @@ export class SubAgentInstance {
 	private handleSessionEvent: AgentSessionEventListener = (event) => {
 		const now = Date.now();
 
+		// Forward all raw session events to the event bus so the dashboard
+		// can reconstruct the full message stream with blocks.
+		const sessionEvent: SubAgentEvent = {
+			type: "session.event",
+			instanceId: this.instanceId,
+			taskId: this.taskId,
+			sessionEvent: event as unknown as Record<string, unknown>,
+			timestamp: now,
+		};
+		this.logEvent(sessionEvent);
+		this.eventBus.emit(sessionEvent);
+
 		switch (event.type) {
 			case "agent_start": {
 				this.transition("running");
