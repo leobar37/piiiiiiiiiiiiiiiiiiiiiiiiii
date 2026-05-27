@@ -6,7 +6,13 @@
  */
 
 import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import {
+	AuthStorage,
+	getAgentDir,
+	getModelsPath,
+	ModelRegistry,
+	SessionManager,
+} from "@earendil-works/pi-coding-agent";
 import type { EventStreamProvider } from "../events/provider.js";
 import { logger } from "../logging.js";
 import { LiveSession } from "./live-session.js";
@@ -22,6 +28,7 @@ export class SessionHost {
 		idleTimeoutMs: number;
 	};
 	private eventProvider: EventStreamProvider | null = null;
+	private modelRegistry: ModelRegistry;
 
 	constructor(config?: SessionHostConfig) {
 		this.config = {
@@ -30,6 +37,9 @@ export class SessionHost {
 			maxActiveSessions: config?.maxActiveSessions ?? 10,
 			idleTimeoutMs: config?.idleTimeoutMs ?? 1000 * 60 * 30,
 		};
+
+		const authStorage = AuthStorage.create(getAgentDir());
+		this.modelRegistry = ModelRegistry.create(authStorage, getModelsPath());
 	}
 
 	/**
@@ -66,7 +76,7 @@ export class SessionHost {
 		const sessionCwd = cwd ?? this.config.defaultCwd;
 		logger.info("Creating session", { cwd: sessionCwd });
 		const manager = SessionManager.create(sessionCwd, this.config.sessionsDir);
-		const live = new LiveSession(manager, this.eventProvider ?? undefined);
+		const live = new LiveSession(manager, this.eventProvider ?? undefined, this.modelRegistry);
 		this.sessions.set(live.id, live);
 		this.emitSessionEvent(live.id, "session_created");
 		logger.info("Session created", { sessionId: live.id, cwd: live.cwd });
@@ -75,7 +85,7 @@ export class SessionHost {
 
 	async open(sessionFile: string, cwdOverride?: string): Promise<LiveSession> {
 		const manager = SessionManager.open(sessionFile, this.config.sessionsDir, cwdOverride);
-		const live = new LiveSession(manager, this.eventProvider ?? undefined);
+		const live = new LiveSession(manager, this.eventProvider ?? undefined, this.modelRegistry);
 		this.sessions.set(live.id, live);
 		this.emitSessionEvent(live.id, "session_created");
 		return live;
@@ -84,7 +94,7 @@ export class SessionHost {
 	async continueRecent(cwd?: string): Promise<LiveSession> {
 		const sessionCwd = cwd ?? this.config.defaultCwd;
 		const manager = SessionManager.continueRecent(sessionCwd, this.config.sessionsDir);
-		const live = new LiveSession(manager, this.eventProvider ?? undefined);
+		const live = new LiveSession(manager, this.eventProvider ?? undefined, this.modelRegistry);
 		this.sessions.set(live.id, live);
 		this.emitSessionEvent(live.id, "session_created");
 		return live;
@@ -107,7 +117,7 @@ export class SessionHost {
 
 		logger.info("Lazy-loading session from disk", { sessionId, sessionFile });
 		const manager = SessionManager.open(sessionFile, this.config.sessionsDir);
-		const loaded = new LiveSession(manager, this.eventProvider ?? undefined);
+		const loaded = new LiveSession(manager, this.eventProvider ?? undefined, this.modelRegistry);
 		this.sessions.set(loaded.id, loaded);
 		logger.info("Session lazy-loaded", { sessionId: loaded.id, cwd: loaded.cwd });
 		return loaded;
@@ -292,6 +302,32 @@ export class SessionHost {
 	}
 
 	// -------------------------------------------------------------------------
+	// Model management
+	// -------------------------------------------------------------------------
+
+	getAvailableModels(): Array<{ provider: string; id: string; name: string; api: string; reasoning: boolean }> {
+		return this.modelRegistry.getAvailable().map((m) => ({
+			provider: m.provider,
+			id: m.id,
+			name: m.name,
+			api: m.api,
+			reasoning: m.reasoning != null ? m.reasoning : false,
+		}));
+	}
+
+	getSessionModel(sessionId: string): { provider: string; id: string; name: string } | undefined {
+		const session = this.sessions.get(sessionId);
+		if (!session) return undefined;
+		return session.getModel();
+	}
+
+	async setSessionModel(sessionId: string, provider: string, modelId: string): Promise<void> {
+		const session = await this._resolveSession(sessionId);
+		await this._ensureStarted(session);
+		await session.setModel(this.modelRegistry, provider, modelId);
+	}
+
+	// -------------------------------------------------------------------------
 	// Internal
 	// -------------------------------------------------------------------------
 
@@ -310,7 +346,7 @@ export class SessionHost {
 
 		logger.info("Lazy-loading session from disk", { sessionId, sessionFile });
 		const manager = SessionManager.open(sessionFile, this.config.sessionsDir);
-		const loaded = new LiveSession(manager, this.eventProvider ?? undefined);
+		const loaded = new LiveSession(manager, this.eventProvider ?? undefined, this.modelRegistry);
 		this.sessions.set(loaded.id, loaded);
 		logger.info("Session lazy-loaded", { sessionId: loaded.id, cwd: loaded.cwd });
 		return loaded;

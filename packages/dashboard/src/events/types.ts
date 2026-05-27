@@ -153,7 +153,16 @@ export type ServerEvent =
 	  })
 	| (ServerEventBase & { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string })
 	// Model select (from AgentEvent)
-	| (ServerEventBase & { type: "model_select" })
+	| (ServerEventBase & {
+			type: "model_select";
+			payload: {
+				provider: string;
+				id: string;
+				name: string;
+				api: string;
+				reasoning: boolean;
+			};
+	  })
 	// Turn events
 	| (ServerEventBase & { type: "turn_start" })
 	| (ServerEventBase & { type: "turn_end" })

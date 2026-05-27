@@ -1,5 +1,6 @@
 import { orpc } from "../orpc.js";
-import type { SessionRuntime } from "./runtime.js";
+import type { ModelInfo } from "../api-types.js";
+import type { SessionRuntime, ChatMessage } from "./runtime.js";
 import type { OptimisticManager } from "./optimistic.js";
 import { generateMessageId } from "./utils.js";
 import { normalizeMessageContent } from "./message-blocks.js";
@@ -87,7 +88,7 @@ export function createActions(runtime: SessionRuntime, optimistic: OptimisticMan
 			const messages = result.messages.map((m) => ({
 				id: generateMessageId(),
 				sessionId,
-				role: (m.role as string) ?? "custom",
+				role: ((m.role as string) ?? "custom") as ChatMessage["role"],
 				blocks: normalizeMessageContent(m),
 				timestamp: (m.timestamp as number) ?? Date.now(),
 				streaming: false,
@@ -96,6 +97,15 @@ export function createActions(runtime: SessionRuntime, optimistic: OptimisticMan
 				runtime.store.set(runtime.maps.messages.mapAtom, { type: "set", key: msg.id, value: msg });
 			}
 			return messages;
+		},
+
+		async loadAvailableModels(sessionId?: string): Promise<ModelInfo[]> {
+			const result = await orpc.sessions.models.list({ sessionId });
+			return result.models;
+		},
+
+		async setSessionModel(sessionId: string, provider: string, modelId: string): Promise<void> {
+			await orpc.sessions.models.set({ sessionId, provider, modelId });
 		},
 	};
 }

@@ -1,5 +1,6 @@
 import { createStore } from "jotai";
 import type { LiveSessionInfo, ServerEvent } from "@local/pi-dashboard";
+import type { ModelInfo } from "../api-types.js";
 import { createReactiveMap, type ReactiveMapAtoms } from "./reactive-map.js";
 import { createDerivedIndex, type DerivedIndexAtoms } from "./derived-index.js";
 import { applyEvent } from "./event-bridge.js";
@@ -51,6 +52,7 @@ export interface SessionEntry {
 	streaming: boolean;
 	compacting: boolean;
 	pendingMessages: number;
+	model?: ModelInfo;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,6 +75,7 @@ export interface SessionRuntime {
 	untrackSession(sessionId: string): void;
 	isTracked(sessionId: string): boolean;
 	subscribeSession(sessionId: string): () => void;
+	subscribeGlobal(): () => void;
 }
 
 export function createSessionRuntime(): SessionRuntime {
@@ -196,6 +199,89 @@ export function createSessionRuntime(): SessionRuntime {
 		};
 	};
 
+	// -------------------------------------------------------------------------
+	// Global subscription — listens to all session events without a sessionId
+	// -------------------------------------------------------------------------
+	const subscribeGlobal = (): (() => void) => {
+		let cancelled = false;
+		let retryCount = 0;
+		let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+		let lastEventTime = Date.now();
+		let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+
+		const getBackoffMs = () => {
+			const base = Math.min(1000 * 2 ** retryCount, 30000);
+			const jitter = Math.random() * 1000;
+			return base + jitter;
+		};
+
+		const INACTIVITY_TIMEOUT_MS = 45000;
+
+		const scheduleInactivityCheck = () => {
+			if (inactivityTimer) clearTimeout(inactivityTimer);
+			inactivityTimer = setTimeout(() => {
+				if (cancelled) return;
+				const elapsed = Date.now() - lastEventTime;
+				if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+					console.warn("[SSE] Global inactivity timeout, reconnecting...");
+					retryCount++;
+					connect();
+				}
+			}, INACTIVITY_TIMEOUT_MS);
+		};
+
+		const connect = async () => {
+			if (cancelled) return;
+			if (reconnectTimer) {
+				clearTimeout(reconnectTimer);
+				reconnectTimer = null;
+			}
+			try {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				const stream = await (orpc as any).events.stream({});
+				retryCount = 0;
+				lastEventTime = Date.now();
+				scheduleInactivityCheck();
+				try {
+					for await (const event of stream) {
+						if (cancelled) break;
+						lastEventTime = Date.now();
+						scheduleInactivityCheck();
+						applyEvent(runtime, event);
+					}
+				} catch (err) {
+					if (!cancelled) {
+						console.error("[SSE] Global stream error:", err);
+					}
+				}
+				if (!cancelled) {
+					console.warn(`[SSE] Global stream ended, reconnecting in ${getBackoffMs()}ms...`);
+					retryCount++;
+					reconnectTimer = setTimeout(connect, getBackoffMs());
+				}
+			} catch (err) {
+				if (!cancelled) {
+					console.error("[SSE] Global connection error:", err);
+					retryCount++;
+					reconnectTimer = setTimeout(connect, getBackoffMs());
+				}
+			}
+		};
+
+		connect();
+		return () => {
+			cancelled = true;
+			if (reconnectTimer) {
+				clearTimeout(reconnectTimer);
+				reconnectTimer = null;
+			}
+			if (inactivityTimer) {
+				clearTimeout(inactivityTimer);
+				inactivityTimer = null;
+			}
+		};
+	};
+
 	const runtime: SessionRuntime = {
 		store,
 		maps: { sessions, messages, streaming },
@@ -205,6 +291,7 @@ export function createSessionRuntime(): SessionRuntime {
 		untrackSession,
 		isTracked,
 		subscribeSession,
+		subscribeGlobal,
 	};
 
 	return runtime;

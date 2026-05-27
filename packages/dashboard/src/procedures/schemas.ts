@@ -44,3 +44,11 @@ export const SessionEventSchema = z
 		type: z.string(),
 	})
 	.passthrough() as z.ZodType<AgentSessionEvent>;
+
+export const ModelInfoSchema = z.object({
+	provider: z.string(),
+	id: z.string(),
+	name: z.string(),
+	api: z.string(),
+	reasoning: z.boolean(),
+});

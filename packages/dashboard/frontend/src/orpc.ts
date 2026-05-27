@@ -27,5 +27,5 @@ const client = createORPCClient(link) as unknown as DashboardClient;
 export const orpc = client;
 
 // Re-export types for convenience
-export type { ServerEvent } from "./api-types.js";
+export type { ServerEvent } from "@local/pi-dashboard";
 export type { SessionInfo, SessionStatus } from "@local/pi-dashboard";

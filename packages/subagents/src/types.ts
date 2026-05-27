@@ -343,6 +343,7 @@ export interface SubAgentControllerOptions {
 	settingsManager?: SettingsManager;
 	onEvent?: (event: SubAgentEvent) => void;
 	onLifecycleChange?: (event: SubAgentEventMap["lifecycle.change"]) => void;
+	transports?: import("./transport/types.js").SubAgentTransport[];
 }
 
 // =============================================================================

@@ -10,7 +10,7 @@ import { z } from "zod";
 import type { EventStreamProvider } from "../events/provider.js";
 import { logger } from "../logging.js";
 import type { SessionHost } from "../session/host.js";
-import { SessionInfoSchema, SessionStateSchema } from "./schemas.js";
+import { ModelInfoSchema, SessionInfoSchema, SessionStateSchema } from "./schemas.js";
 
 // ============================================================================
 // Session procedures
@@ -216,6 +216,45 @@ export function createSessionProcedures(sessionHost: SessionHost, _eventProvider
 					const session = await sessionHost.resolve(input.sessionId);
 					if (!session) throw new Error(`Session ${input.sessionId} not found`);
 					return { messages: session.getMessages() };
+				}),
+		},
+
+		// ---------------------------------------------------------------------
+		// Models
+		// ---------------------------------------------------------------------
+
+		models: {
+			list: os
+				.input(z.object({ sessionId: z.string().optional() }))
+				.output(
+					z.object({
+						models: z.array(ModelInfoSchema),
+						current: ModelInfoSchema.optional(),
+					}),
+				)
+				.handler(async ({ input }) => {
+					const models = sessionHost.getAvailableModels();
+					const current = input.sessionId ? sessionHost.getSessionModel(input.sessionId) : undefined;
+					return {
+						models,
+						current: current
+							? models.find((m) => m.provider === current.provider && m.id === current.id)
+							: undefined,
+					};
+				}),
+
+			set: os
+				.input(
+					z.object({
+						sessionId: z.string(),
+						provider: z.string(),
+						modelId: z.string(),
+					}),
+				)
+				.output(z.object({ success: z.boolean() }))
+				.handler(async ({ input }) => {
+					await sessionHost.setSessionModel(input.sessionId, input.provider, input.modelId);
+					return { success: true };
 				}),
 		},
 	};

@@ -5,6 +5,7 @@ export {
 	useSessionStreaming,
 	useSessionList,
 	useSessionsByCwd,
+	useSessionModel,
 } from "./hooks.js";
 export { useSessionEvents } from "./use-session-events.js";
 export { createActions } from "./actions.js";

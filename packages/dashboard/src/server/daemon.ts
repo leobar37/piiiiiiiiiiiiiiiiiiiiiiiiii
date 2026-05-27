@@ -25,6 +25,9 @@ import { SessionHost } from "../session/host.js";
 import type { DashboardConfig } from "../types.js";
 import { serveStaticFile } from "./static.js";
 
+// Lazy import vite to avoid loading it in production
+let viteModule: typeof import("vite") | undefined;
+
 async function fileExists(path: string): Promise<boolean> {
 	try {
 		const f = Bun.file(path);
@@ -37,7 +40,7 @@ async function fileExists(path: string): Promise<boolean> {
 }
 
 /** Wait for a URL to be reachable with a timeout. */
-async function waitForServer(url: string, timeoutMs = 30000, intervalMs = 200): Promise<void> {
+async function _waitForServer(url: string, timeoutMs = 30000, intervalMs = 200): Promise<void> {
 	const start = Date.now();
 	while (Date.now() - start < timeoutMs) {
 		try {
@@ -61,6 +64,7 @@ export class DashboardDaemon {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private viteProcess: any | null = null;
 	private viteDevUrl = "http://127.0.0.1:5173";
+	private viteServer: import("vite").ViteDevServer | null = null;
 	readonly eventProvider = new EventStreamProvider();
 	readonly sessionHost = new SessionHost();
 
@@ -88,6 +92,11 @@ export class DashboardDaemon {
 		// Wire up event forwarding so agent events reach SSE subscribers
 		this.sessionHost.setEventProvider(this.eventProvider);
 
+		// In dev mode, also log to console for visibility
+		if (this.config.dev) {
+			logger.setConsoleOutput(true);
+		}
+
 		// In dev mode, spawn Vite dev server instead of serving static files
 		if (this.config.dev) {
 			await this._startViteDevServer();
@@ -110,6 +119,8 @@ export class DashboardDaemon {
 		this.server = Bun.serve({
 			hostname: this.config.host,
 			port: listenPort,
+			// @ts-expect-error idleTimeout is available in Bun 1.1.26+ but not in types yet
+			idleTimeout: 0,
 			fetch: async (req: Request) => {
 				const url = new URL(req.url);
 				const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -176,6 +187,10 @@ export class DashboardDaemon {
 		if (this.viteProcess) {
 			this._killViteDevServer();
 		}
+		if (this.viteServer) {
+			this.viteServer.close().catch(() => {});
+			this.viteServer = null;
+		}
 
 		// Clean up event subscribers
 		this.eventProvider.clear();
@@ -222,59 +237,24 @@ export class DashboardDaemon {
 
 		logger.info("Starting Vite dev server...", { frontendDir });
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		this.viteProcess = (Bun as any).spawn(["bun", "run", "dev"], {
-			cwd: frontendDir,
-			stdout: "pipe",
-			stderr: "pipe",
+		if (!viteModule) {
+			viteModule = await import("vite");
+		}
+
+		this.viteServer = await viteModule.createServer({
+			root: frontendDir,
+			server: {
+				port: 5173,
+				strictPort: false,
+				host: "127.0.0.1",
+			},
+			appType: "spa",
 		});
 
-		// Forward Vite output with prefix
-		const reader = this.viteProcess.stdout.getReader();
-		const decoder = new TextDecoder();
-		(async () => {
-			try {
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-					const text = decoder.decode(value, { stream: true });
-					for (const line of text.split("\n")) {
-						if (line.trim()) {
-							console.log(`[vite] ${line}`);
-						}
-					}
-				}
-			} catch {
-				// ignore
-			}
-		})();
-
-		const stderrReader = this.viteProcess.stderr.getReader();
-		(async () => {
-			try {
-				while (true) {
-					const { done, value } = await stderrReader.read();
-					if (done) break;
-					const text = decoder.decode(value, { stream: true });
-					for (const line of text.split("\n")) {
-						if (line.trim()) {
-							console.error(`[vite] ${line}`);
-						}
-					}
-				}
-			} catch {
-				// ignore
-			}
-		})();
-
-		// Wait for Vite to be ready
-		try {
-			await waitForServer(this.viteDevUrl);
-			logger.info("Vite dev server ready", { url: this.viteDevUrl });
-		} catch (err) {
-			this._killViteDevServer();
-			throw new Error(`Failed to start Vite dev server: ${err}`);
-		}
+		await this.viteServer.listen();
+		const urls = this.viteServer.resolvedUrls;
+		this.viteDevUrl = urls?.local?.[0] ?? "http://127.0.0.1:5173";
+		logger.info("Vite dev server ready", { url: this.viteDevUrl });
 	}
 
 	private _killViteDevServer(): void {
@@ -300,18 +280,19 @@ export class DashboardDaemon {
 	}
 
 	private async _proxyToVite(req: Request): Promise<Response> {
+		if (!this.viteServer) {
+			return new Response("Vite dev server not running", { status: 502 });
+		}
+
 		const url = new URL(req.url);
-		const targetUrl = `${this.viteDevUrl}${url.pathname}${url.search}`;
 
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const proxyReq = new Request(targetUrl, {
+			const viteReq = new Request(`${this.viteDevUrl}${url.pathname}${url.search}`, {
 				method: req.method,
 				headers: req.headers,
 				body: req.body,
-				duplex: "half",
-			} as any);
-			return await fetch(proxyReq);
+			});
+			return await fetch(viteReq);
 		} catch (err) {
 			logger.error("Vite proxy error", { path: url.pathname, error: String(err) });
 			return new Response(`Vite dev server error: ${err}`, { status: 502 });
@@ -345,19 +326,14 @@ export class DashboardDaemon {
 		}
 
 		logger.info("Building frontend...", { frontendDir });
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const proc = (Bun as any).spawn(["bun", "run", "build"], {
-			cwd: frontendDir,
-			stdout: "inherit",
-			stderr: "inherit",
-		});
 
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const exitCode = (await proc.exited) as number;
-		if (exitCode !== 0) {
-			logger.error("Frontend build failed", { exitCode, frontendDir });
-			throw new Error(`Frontend build failed with exit code ${exitCode}`);
+		if (!viteModule) {
+			viteModule = await import("vite");
 		}
+
+		await viteModule.build({
+			root: frontendDir,
+		});
 
 		logger.info("Frontend build complete");
 	}

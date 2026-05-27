@@ -140,6 +140,20 @@ export function serializeAgentSessionEvent(event: AgentSessionEvent, sessionId: 
 			return { ...base, type: "thinking_level_changed", level: event.level };
 		case "session_info_changed":
 			return { ...base, type: "session_info_changed", name: event.name };
+		case "model_select": {
+			const model = event.model as unknown as Record<string, unknown>;
+			return {
+				...base,
+				type: "model_select",
+				payload: {
+					provider: String(model.provider ?? ""),
+					id: String(model.id ?? ""),
+					name: String(model.name ?? ""),
+					api: String(model.api ?? ""),
+					reasoning: Boolean(model.reasoning ?? false),
+				},
+			};
+		}
 		// Retry
 		case "auto_retry_start":
 			return {

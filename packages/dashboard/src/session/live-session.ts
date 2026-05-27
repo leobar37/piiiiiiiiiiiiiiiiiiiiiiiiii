@@ -9,7 +9,7 @@
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AgentSession, AgentSessionEvent, CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
-import { createAgentSession, type SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, type ModelRegistry, type SessionManager } from "@earendil-works/pi-coding-agent";
 import { EventPublisher } from "@orpc/server";
 import type { EventStreamProvider } from "../events/provider.js";
 import { serializeAgentSessionEvent } from "../events/serialize.js";
@@ -27,12 +27,14 @@ export class LiveSession {
 	private _lastActivityAt: number;
 	private readonly _createdAt: number;
 	private _eventProvider: EventStreamProvider | null = null;
+	private readonly _modelRegistry: ModelRegistry | undefined;
 
-	constructor(sessionManager: SessionManager, eventProvider?: EventStreamProvider) {
+	constructor(sessionManager: SessionManager, eventProvider?: EventStreamProvider, modelRegistry?: ModelRegistry) {
 		this.sessionManager = sessionManager;
 		this.id = sessionManager.getSessionId();
 		this._lastActivityAt = Date.now();
 		this._eventProvider = eventProvider ?? null;
+		this._modelRegistry = modelRegistry;
 
 		const header = sessionManager.getHeader();
 		this._createdAt = header?.timestamp ? new Date(header.timestamp).getTime() : Date.now();
@@ -102,6 +104,7 @@ export class LiveSession {
 				cwd: this.cwd,
 				sessionManager: this.sessionManager,
 				...options,
+				modelRegistry: this._modelRegistry,
 			});
 
 			this._agentSession = result.session;
@@ -217,6 +220,25 @@ export class LiveSession {
 			return this.sessionManager.buildSessionContext().messages;
 		}
 		return this._agentSession.messages;
+	}
+
+	getModel(): { provider: string; id: string; name: string } | undefined {
+		if (!this._agentSession) return undefined;
+		const model = this._agentSession.model;
+		if (!model) return undefined;
+		return { provider: model.provider, id: model.id, name: model.name };
+	}
+
+	async setModel(modelRegistry: ModelRegistry, provider: string, modelId: string): Promise<void> {
+		this._requireRuntime();
+		const model = modelRegistry.find(provider, modelId);
+		if (!model) {
+			throw new Error(`Model ${provider}/${modelId} not found`);
+		}
+		if (!modelRegistry.hasConfiguredAuth(model)) {
+			throw new Error(`Model ${provider}/${modelId} has no configured authentication`);
+		}
+		await this._agentSession!.setModel(model);
 	}
 
 	getState(): {

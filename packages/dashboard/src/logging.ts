@@ -26,10 +26,16 @@ export class DashboardLogger {
 	private buffer: LogEntry[] = [];
 	private readonly maxSize: number;
 	private minLevel: LogLevel;
+	private consoleOutput: boolean;
 
-	constructor(options?: { maxSize?: number; minLevel?: LogLevel }) {
+	constructor(options?: { maxSize?: number; minLevel?: LogLevel; consoleOutput?: boolean }) {
 		this.maxSize = options?.maxSize ?? 1000;
 		this.minLevel = options?.minLevel ?? "debug";
+		this.consoleOutput = options?.consoleOutput ?? false;
+	}
+
+	setConsoleOutput(enabled: boolean): void {
+		this.consoleOutput = enabled;
 	}
 
 	setMinLevel(level: LogLevel): void {
@@ -44,6 +50,13 @@ export class DashboardLogger {
 		this.buffer.push(entry);
 		if (this.buffer.length > this.maxSize) {
 			this.buffer.shift();
+		}
+		if (this.consoleOutput) {
+			const ctx = entry.context ? ` ${JSON.stringify(entry.context)}` : "";
+			const msg = `[${entry.timestamp}] ${entry.level.toUpperCase()}: ${entry.message}${ctx}`;
+			// eslint-disable-next-line no-console
+			const fn = console[entry.level] ?? console.log;
+			fn(msg);
 		}
 	}
 

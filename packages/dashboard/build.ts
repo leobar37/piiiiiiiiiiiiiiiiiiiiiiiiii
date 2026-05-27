@@ -13,7 +13,7 @@ async function build() {
 		target: "bun",
 		format: "esm",
 		naming: "index.js",
-		external: ["@earendil-works/*", "@local/*", "@orpc/*"],
+		external: ["@earendil-works/*", "@local/*", "@orpc/*", "vite"],
 	});
 
 	if (!result.success) {
@@ -30,7 +30,7 @@ async function build() {
 		target: "bun",
 		format: "esm",
 		naming: "cli.js",
-		external: ["@earendil-works/*", "@local/*", "@orpc/*"],
+		external: ["@earendil-works/*", "@local/*", "@orpc/*", "vite"],
 	});
 
 	if (!cliResult.success) {
@@ -51,7 +51,7 @@ async function buildBinary() {
 		},
 		minify: true,
 		bytecode: true,
-		external: ["@earendil-works/*", "@local/*", "@orpc/*"],
+		external: ["@earendil-works/*", "@local/*", "@orpc/*", "vite"],
 	});
 
 	if (!result.success) {

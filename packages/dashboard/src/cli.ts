@@ -8,6 +8,8 @@
  *   pi-web --host 0.0.0.0  Listen on all interfaces
  */
 
+import { spawn } from "node:child_process";
+import { text } from "node:stream/consumers";
 import { DashboardDaemon } from "./server/daemon.js";
 
 // ============================================================================
@@ -64,6 +66,32 @@ Examples:
 }
 
 // ============================================================================
+// Port killer
+// ============================================================================
+
+async function killPort(port: number): Promise<void> {
+	try {
+		const proc = spawn("lsof", ["-ti", `:${port}`], {
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		const output = await text(proc.stdout);
+		const pids = output.trim().split("\n").filter(Boolean);
+		for (const pid of pids) {
+			try {
+				process.kill(Number(pid), "SIGKILL");
+				console.log(`Killed process ${pid} on port ${port}`);
+			} catch {
+				// ignore
+			}
+		}
+		// Wait for port to be released
+		await new Promise((r) => setTimeout(r, 500));
+	} catch {
+		// ignore
+	}
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -84,6 +112,9 @@ async function main() {
 	} else {
 		console.log(`Starting pi-web on http://${host}:${port}`);
 	}
+
+	// Kill any process using the target port
+	await killPort(port);
 
 	const daemon = new DashboardDaemon({ port, host, dev });
 	const url = await daemon.start();

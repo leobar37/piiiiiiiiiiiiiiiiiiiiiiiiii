@@ -18,6 +18,7 @@ import {
 	handleToolcallDelta,
 	handleToolcallEnd,
 } from "./block-streaming.js";
+import { handleModelSelect } from "./model-lifecycle.js";
 import { handleToolExecutionStart, handleToolExecutionUpdate, handleToolExecutionEnd } from "./tool-execution.js";
 import {
 	handleQueueUpdate,
@@ -54,6 +55,7 @@ export const HANDLERS: Record<string, EventHandler | undefined> = {
 	auto_retry_end: handleAutoRetryEnd,
 	session_info_changed: handleSessionInfoChanged,
 	session_created: handleSessionCreated,
+	model_select: handleModelSelect,
 };
 
 /**
@@ -71,7 +73,6 @@ export function applyEvent(runtime: SessionRuntime, event: ServerEvent): void {
 	const explicitNoOps = new Set<string>([
 		"ping",
 		"thinking_level_changed",
-		"model_select",
 		"turn_start",
 		"turn_end",
 	]);

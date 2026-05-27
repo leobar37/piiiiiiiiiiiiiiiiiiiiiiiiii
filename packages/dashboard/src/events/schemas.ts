@@ -185,7 +185,16 @@ export const ServerEventSchema: z.ZodType<unknown> = z.union([
 		toolCall: z.unknown(),
 	}),
 	// Other
-	ServerEventBaseSchema.extend({ type: z.literal("model_select") }),
+	ServerEventBaseSchema.extend({
+		type: z.literal("model_select"),
+		payload: z.object({
+			provider: z.string(),
+			id: z.string(),
+			name: z.string(),
+			api: z.string(),
+			reasoning: z.boolean(),
+		}),
+	}),
 	ServerEventBaseSchema.extend({ type: z.literal("turn_start") }),
 	ServerEventBaseSchema.extend({ type: z.literal("turn_end") }),
 	// Ping

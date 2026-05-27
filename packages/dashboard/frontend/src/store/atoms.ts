@@ -1,6 +1,7 @@
 import { atom } from "jotai";
 import type { Atom } from "jotai";
 import type { SessionRuntime, SessionEntry, ChatMessage, StreamingState } from "./runtime.js";
+import type { ModelInfo } from "../api-types.js";
 
 // ---------------------------------------------------------------------------
 // Atom caches — prevent memory leaks from recreating atoms on every render.
@@ -15,6 +16,10 @@ const sessionMsgsAtomCache = new WeakMap<SessionRuntime, Map<string, Atom<ChatMe
 const streamingAtomCache = new WeakMap<
 	SessionRuntime,
 	Map<string, Atom<StreamingState | undefined>>
+>();
+const sessionModelAtomCache = new WeakMap<
+	SessionRuntime,
+	Map<string, Atom<ModelInfo | undefined>>
 >();
 
 function getCachedAtom<K, V>(
@@ -125,6 +130,24 @@ export function streamingStateAtom(
 					pendingFollowUp: [],
 				}
 			);
+		}),
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Model atoms
+// ---------------------------------------------------------------------------
+
+/** Atom for the selected model of a session. */
+export function sessionModelAtom(
+	runtime: SessionRuntime,
+	sessionId: string | null,
+): Atom<ModelInfo | undefined> {
+	if (!sessionId) return atom(() => undefined);
+	return getCachedAtom(sessionModelAtomCache, runtime, sessionId, () =>
+		atom((get) => {
+			const entry = get(runtime.maps.sessions.atomFor(sessionId));
+			return entry?.model;
 		}),
 	);
 }

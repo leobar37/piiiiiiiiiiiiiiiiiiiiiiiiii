@@ -137,7 +137,13 @@ export type AgentSessionEvent =
 			errorMessage?: string;
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
-	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
+	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+	| {
+			type: "model_select";
+			model: Model<any>;
+			previousModel: Model<any> | undefined;
+			source: "set" | "cycle" | "restore";
+	  };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -1401,6 +1407,12 @@ export class AgentSession {
 	): Promise<void> {
 		if (modelsAreEqual(previousModel, nextModel)) return;
 		await this._extensionRunner.emit({
+			type: "model_select",
+			model: nextModel,
+			previousModel,
+			source,
+		});
+		this._emit({
 			type: "model_select",
 			model: nextModel,
 			previousModel,

@@ -15,11 +15,26 @@ export function useSessionRuntime(): SessionRuntime {
 export function SessionRuntimeProvider({ children }: { children: React.ReactNode }) {
 	const runtime = useMemo(() => createSessionRuntime(), []);
 
-	// Load sessions on mount
+	// Load sessions on mount, subscribe to global events, and poll for external changes
 	useEffect(() => {
 		const optimistic = createOptimisticManager(runtime);
 		const actions = createActions(runtime, optimistic);
+
+		// Initial load
 		actions.loadSessions().catch(() => {});
+
+		// Subscribe to global SSE for session lifecycle events
+		const unsubscribeGlobal = runtime.subscribeGlobal();
+
+		// Poll every 10s to catch sessions created externally (e.g. from pi CLI)
+		const pollInterval = setInterval(() => {
+			actions.loadSessions().catch(() => {});
+		}, 10000);
+
+		return () => {
+			unsubscribeGlobal();
+			clearInterval(pollInterval);
+		};
 	}, [runtime]);
 
 	return (

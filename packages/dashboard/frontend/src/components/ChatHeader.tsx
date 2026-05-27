@@ -4,6 +4,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession, useSessionStreaming } from "../store/index.js";
+import { ModelSelector } from "./ModelSelector.js";
 
 interface ChatHeaderProps {
 	sessionId: string;
@@ -138,8 +139,10 @@ export function ChatHeader({ sessionId }: ChatHeaderProps) {
 				)}
 			</div>
 
-			{/* Right: status-only area, no controls */}
-			<div className="flex items-center gap-2 shrink-0" />
+			{/* Right: model selector */}
+			<div className="flex items-center gap-2 shrink-0">
+				<ModelSelector sessionId={sessionId} />
+			</div>
 		</div>
 	);
 }

@@ -137,6 +137,33 @@ export interface GetMessagesOutput {
 }
 
 // ============================================================================
+// Model procedures
+// ============================================================================
+
+export interface ModelInfo {
+	provider: string;
+	id: string;
+	name: string;
+	api: string;
+	reasoning: boolean;
+}
+
+export interface ListModelsInput {
+	sessionId?: string;
+}
+
+export interface ListModelsOutput {
+	models: ModelInfo[];
+	current?: ModelInfo;
+}
+
+export interface SetModelInput {
+	sessionId: string;
+	provider: string;
+	modelId: string;
+}
+
+// ============================================================================
 // Client interface
 // ============================================================================
 
@@ -168,6 +195,10 @@ export interface DashboardClient {
 		};
 		messages: {
 			get(input: GetMessagesInput): Promise<GetMessagesOutput>;
+		};
+		models: {
+			list(input?: ListModelsInput): Promise<ListModelsOutput>;
+			set(input: SetModelInput): Promise<SuccessOutput>;
 		};
 	};
 }
