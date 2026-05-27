@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { startLionDashboard } from "./dashboard.js";
 import { createLionRunReporter } from "./events/index.js";
 import { loadLionPlan, resolvePlanPath } from "./plans/index.js";
 import type { LionRuntime } from "./runtime.js";
@@ -135,6 +136,25 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 			}
 
 			runtime.ui.showMessage(`Lion build mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`);
+		},
+	});
+
+	pi.registerCommand("lion-dashboard", {
+		description: "Open the Lion subagent dashboard in browser",
+		handler: async (_args, _ctx) => {
+			const dashboard = startLionDashboard(runtime);
+			try {
+				const url = await dashboard.start();
+				// Open browser using the system's default browser
+				const { exec } = await import("node:child_process");
+				const openCommand =
+					process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+				exec(`${openCommand} ${url.href}`);
+				runtime.ui.showMessage(`Lion dashboard opened at ${url.href}`);
+			} catch (err: unknown) {
+				const error = err instanceof Error ? err.message : String(err);
+				runtime.ui.showMessage(`Failed to open Lion dashboard: ${error}`);
+			}
 		},
 	});
 }
