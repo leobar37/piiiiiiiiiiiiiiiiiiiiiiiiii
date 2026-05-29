@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { SessionLogger } from "@local/pi-logger";
+import { SubAgentContextStore } from "../context-store.js";
 import type { SubAgentController } from "../controller.js";
 import type { DelegationResult, SubAgentEvent } from "../types.js";
 import { createLionCore, type LionCore, type LionSubagentRole, restoreLionCore } from "./core.js";
@@ -296,5 +297,58 @@ export class LionRuntime {
 	}
 	cleanupSubagentUi(now = Date.now(), retentionMs = 10000): void {
 		this.#jobTracker.cleanupSubagentUi(now, retentionMs);
+	}
+
+	async buildCompactionInstructions(ctx: ExtensionContext): Promise<string | null> {
+		if (!this.#state.active) return null;
+		const parts = [
+			"Lion orchestration is active. Preserve the Lion state, active plan, active task, run status, subagent summaries, blockers, and next orchestration step in the compaction summary.",
+			`Mode: ${this.#state.mode}`,
+			`Active plan: ${this.#state.activePlanSlug ?? "none"}`,
+			`Active plan path: ${this.#state.activePlanPath ?? "none"}`,
+			`Active task: ${this.#state.activeTaskId ?? "none"}`,
+		];
+
+		const activeRun = this.#core.activeRun;
+		if (activeRun) {
+			parts.push(
+				[
+					"Active run:",
+					`- runId: ${activeRun.runId}`,
+					`- taskId: ${activeRun.taskId}`,
+					`- taskTitle: ${activeRun.taskTitle}`,
+					`- status: ${activeRun.status}`,
+					`- attempts: ${activeRun.attempts}/${activeRun.maxAttempts}`,
+					`- verdict: ${activeRun.verdict ?? "none"}`,
+					`- error: ${activeRun.error ?? "none"}`,
+				].join("\n"),
+			);
+
+			const contextStore = new SubAgentContextStore(ctx.cwd ?? ctx.sessionManager.getCwd());
+			for (const subagent of activeRun.subagents.slice(-6)) {
+				const sessionId = this.findRetainedSessionId(subagent.taskId);
+				const contextPath = sessionId ? contextStore.getPath(sessionId, subagent.taskId) : "unknown";
+				const contextSummary = sessionId
+					? await contextStore.formatForPrompt(sessionId, subagent.taskId, 5)
+					: "No context path is available for this retained subagent.";
+				parts.push(
+					[
+						`Subagent ${subagent.role}:`,
+						`- taskId: ${subagent.taskId}`,
+						`- status: ${subagent.status}`,
+						`- contextPath: ${contextPath}`,
+						`- summary: ${subagent.summary}`,
+						`- durableContext:`,
+						contextSummary,
+					].join("\n"),
+				);
+			}
+		}
+
+		return parts.join("\n\n");
+	}
+
+	private findRetainedSessionId(taskId: string): string | undefined {
+		return this.#jobTracker.subagentJobs.get(taskId)?.result?.finalState.sessionId;
 	}
 }

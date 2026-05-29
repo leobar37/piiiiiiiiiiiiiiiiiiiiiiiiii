@@ -36,10 +36,12 @@ describe("Default instruction builders", () => {
 		expect(output).toContain("When done, provide a concise summary");
 	});
 
-	it("EXECUTOR_BUILDER includes test and summary instructions", () => {
+	it("EXECUTOR_BUILDER includes scoped validation and summary instructions", () => {
 		const output = EXECUTOR_BUILDER(makeCtx());
 		expect(output).toContain("Make minimal, safe changes");
-		expect(output).toContain("Run tests after each edit");
+		expect(output).toContain("Validate according to the scope");
+		expect(output).toContain("commands permitted by the task and repository");
+		expect(output).toContain("Do not claim verification without concrete evidence");
 		expect(output).toContain("summarize what you changed");
 		expect(output).toContain("Use any relevant loaded skill");
 	});
@@ -56,12 +58,15 @@ describe("Default instruction builders", () => {
 		const output = PLANNER_BUILDER(makeCtx());
 		expect(output).toContain("clear, actionable plan");
 		expect(output).toContain("ordered steps");
+		expect(output).toContain("boundaries, dependencies, risks, and validation");
 	});
 
-	it("REVIEWER_BUILDER includes bullet list and 'Review complete'", () => {
+	it("REVIEWER_BUILDER includes severity-first findings and 'Review complete'", () => {
 		const output = REVIEWER_BUILDER(makeCtx());
 		expect(output).toContain("Review the work");
-		expect(output).toContain("bullet list");
+		expect(output).toContain("Report findings first");
+		expect(output).toContain("ordered by severity");
+		expect(output).toContain("cite the evidence checked");
 		expect(output).toContain("Review complete");
 	});
 
@@ -78,7 +83,10 @@ describe("Default instruction builders", () => {
 			const output = builder(makeCtx());
 			expect(output).toContain("XML delegation brief:");
 			expect(output).toContain("source of truth");
+			expect(output).toContain("Read referenced sources before");
+			expect(output).toContain("subagent_record_context");
 			expect(output).toContain("Do not ask the user for clarification");
+			expect(output).toContain("unknowns");
 		}
 	});
 

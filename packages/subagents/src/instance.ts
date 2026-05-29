@@ -24,10 +24,12 @@ import type {
 	EffectiveSubAgentConfig,
 	QueryRequest,
 	QueryResponse,
+	SubAgentContextStore,
 	SubAgentDefinition,
 	SubAgentEvent,
 	SubAgentInstanceState,
 	SubAgentRpcState,
+	SubAgentRuntimeConfigManager,
 	SubAgentState,
 	SummarizerOptions,
 } from "./types.js";
@@ -70,6 +72,8 @@ export class SubAgentInstance {
 	private modelRegistry?: ModelRegistry;
 	private settingsManager?: SettingsManager;
 	private logger?: SessionLogger;
+	private configManager?: SubAgentRuntimeConfigManager;
+	private contextStore?: SubAgentContextStore;
 
 	constructor(options: CreateSubAgentInstanceOptions) {
 		this.instanceId = options.instanceId;
@@ -86,6 +90,8 @@ export class SubAgentInstance {
 		this.modelRegistry = options.modelRegistry;
 		this.settingsManager = options.settingsManager;
 		this.logger = options.logger;
+		this.configManager = options.configManager;
+		this.contextStore = options.contextStore;
 
 		const createdEvent: SubAgentEvent = {
 			type: "instance.created",
@@ -127,6 +133,10 @@ export class SubAgentInstance {
 			toolCount: this.toolCount,
 			currentToolStartedAt: this.currentToolStartedAt,
 			durationMs: this.startTime ? now - this.startTime : 0,
+			sessionId: this.session?.sessionId,
+			sessionFile: this.session?.sessionFile,
+			modelProvider: this.session?.model?.provider,
+			modelId: this.session?.model?.id,
 		};
 	}
 
@@ -240,6 +250,8 @@ export class SubAgentInstance {
 			authStorage: this.authStorage,
 			modelRegistry: this.modelRegistry,
 			settingsManager: this.settingsManager,
+			configManager: this.configManager,
+			contextStore: this.contextStore,
 		});
 
 		this.session = session;
@@ -300,6 +312,11 @@ export class SubAgentInstance {
 			case "agent_end": {
 				this.transition("completing");
 				this.handleCompletion();
+				break;
+			}
+
+			case "model_select": {
+				this.emitState();
 				break;
 			}
 

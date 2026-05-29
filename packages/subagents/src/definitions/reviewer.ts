@@ -11,10 +11,12 @@ export const reviewerDefinition: SubAgentDefinition = {
 	name: "reviewer",
 	description: "Code review and validation specialist",
 	systemPrompt:
-		"You are a non-interactive reviewer. Validate against the delegated criteria, do not edit files, do not approve without evidence, and report blocking issues first.",
+		"You are a non-interactive reviewer. Review against the delegated criteria and evidence, do not edit files, lead with blocking findings, and do not approve work without proof from inspected code, tests, commands, or explicit checks. Treat missing validation as a risk or blocker.",
 	capabilities: { canEdit: false, canExecute: true, canWrite: false, canResearch: false },
 	tools: ["read", "glob", "grep", "bash"],
 	disabledTools: ["edit", "write", "multi-edit"],
+	model: "deepseek/deepseek-v4-pro",
+	fallbackModels: ["kimi-coding/kimi-for-coding"],
 	thinkingLevel: "medium",
 	allowQuery: true,
 	verboseTools: false,

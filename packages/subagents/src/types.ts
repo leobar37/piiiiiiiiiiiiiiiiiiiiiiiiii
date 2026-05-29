@@ -45,6 +45,10 @@ export interface SubAgentInstanceState {
 	toolCount: number;
 	currentToolStartedAt: number | null;
 	durationMs: number;
+	sessionId?: string;
+	sessionFile?: string;
+	modelProvider?: string;
+	modelId?: string;
 }
 
 // =============================================================================
@@ -85,6 +89,7 @@ export interface SubAgentDefinition {
 	/** Extra skill files or directories to force-load for this definition. */
 	skillPaths?: string[];
 	model?: string;
+	fallbackModels?: string[];
 	thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
 	cwd?: string;
 	isolated?: boolean;
@@ -141,6 +146,8 @@ export interface DelegationTask {
 	skillPaths?: string[];
 	/** Override model */
 	model?: string;
+	/** Override fallback models tried when the primary model is unavailable */
+	fallbackModels?: string[];
 	/** Override thinking level */
 	thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
 	/** Override max turns */
@@ -388,6 +395,71 @@ export interface SubAgentControllerOptions {
 	onEvent?: (event: SubAgentEvent) => void;
 	onLifecycleChange?: (event: SubAgentEventMap["lifecycle.change"]) => void;
 	transports?: SubAgentTransport[];
+	configManager?: SubAgentRuntimeConfigManager;
+	contextStore?: SubAgentContextStore;
+}
+
+export interface SubAgentRoleConfig {
+	model?: string;
+	fallbackModels?: string[];
+	thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
+}
+
+export interface SubAgentCompactionConfig {
+	model?: string;
+}
+
+export interface SubAgentProjectConfig {
+	agents?: Record<string, SubAgentRoleConfig>;
+	compaction?: SubAgentCompactionConfig;
+}
+
+export interface SubAgentRuntimeConfigManager {
+	getAgentConfig(name: string): SubAgentRoleConfig | undefined;
+	getCompactionConfig(): SubAgentCompactionConfig | undefined;
+}
+
+export interface SubAgentContextEntry {
+	id: string;
+	kind: "context" | "decision" | "blocker" | "evidence" | "file" | "status";
+	summary: string;
+	details?: string;
+	files: string[];
+	decisions: string[];
+	blockers: string[];
+	createdAt: number;
+}
+
+export interface SubAgentContextDocument {
+	version: 1;
+	sessionId: string;
+	taskId: string;
+	definitionName: string;
+	cwd: string;
+	createdAt: number;
+	updatedAt: number;
+	entries: SubAgentContextEntry[];
+}
+
+export interface RecordSubAgentContextInput {
+	kind: SubAgentContextEntry["kind"];
+	summary: string;
+	details?: string;
+	files?: string[];
+	decisions?: string[];
+	blockers?: string[];
+}
+
+export interface SubAgentContextStore {
+	getPath(sessionId: string, taskId: string): string;
+	read(sessionId: string, taskId: string): Promise<SubAgentContextDocument | null>;
+	record(input: {
+		sessionId: string;
+		taskId: string;
+		definitionName: string;
+		entry: RecordSubAgentContextInput;
+	}): Promise<SubAgentContextDocument>;
+	formatForPrompt(sessionId: string, taskId: string, limit?: number): Promise<string>;
 }
 
 // =============================================================================
@@ -476,6 +548,8 @@ export interface CreateSubAgentSessionOptions {
 	authStorage?: AuthStorage;
 	modelRegistry?: ModelRegistry;
 	settingsManager?: SettingsManager;
+	configManager?: SubAgentRuntimeConfigManager;
+	contextStore?: SubAgentContextStore;
 }
 
 export interface CreateSubAgentSessionResult {
@@ -495,4 +569,6 @@ export interface CreateSubAgentInstanceOptions {
 	modelRegistry?: ModelRegistry;
 	settingsManager?: SettingsManager;
 	logger?: SessionLogger;
+	configManager?: SubAgentRuntimeConfigManager;
+	contextStore?: SubAgentContextStore;
 }

@@ -7,9 +7,10 @@ export function createLionSubAgentController(options: {
 	ctx: ExtensionCommandContext;
 	logger?: SessionLogger;
 }): SubAgentController {
+	const cwd = options.ctx.cwd ?? options.ctx.sessionManager.getCwd();
 	return new SubAgentController({
 		definitions: BUILTIN_DEFINITIONS,
-		cwd: options.ctx.cwd,
+		cwd,
 		modelRegistry: options.ctx.modelRegistry,
 		logger: options.logger,
 	});

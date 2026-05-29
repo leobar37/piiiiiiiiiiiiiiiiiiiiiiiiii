@@ -24,6 +24,8 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		durationMs: 90000,
 		isLive: true,
 		sessionId: "mock-session",
+		modelProvider: "openai-codex",
+		modelId: "gpt-5.5",
 	},
 	{
 		instanceId: "subagent-task-1-abc123",
@@ -44,6 +46,8 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		toolCount: 5,
 		currentToolStartedAt: now - 3000,
 		durationMs: 45000,
+		modelProvider: "kimi-coding",
+		modelId: "kimi-for-coding",
 	},
 	{
 		instanceId: "subagent-task-2-def456",
@@ -64,6 +68,8 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		toolCount: 3,
 		currentToolStartedAt: null,
 		durationMs: 105000,
+		modelProvider: "deepseek",
+		modelId: "deepseek-v4-flash",
 	},
 	{
 		instanceId: "subagent-task-3-ghi789",
@@ -84,6 +90,8 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		toolCount: 1,
 		currentToolStartedAt: null,
 		durationMs: 50000,
+		modelProvider: "deepseek",
+		modelId: "deepseek-v4-pro",
 	},
 	{
 		instanceId: "subagent-task-4-jkl012",
@@ -104,6 +112,8 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		toolCount: 0,
 		currentToolStartedAt: null,
 		durationMs: 0,
+		modelProvider: "kimi-coding",
+		modelId: "kimi-for-coding",
 	},
 ];
 

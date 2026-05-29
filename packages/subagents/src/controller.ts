@@ -10,7 +10,9 @@ import type {
 	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { SessionLogger } from "@local/pi-logger";
+import { SubAgentConfigManager } from "./config-manager.js";
 import { resolveEffectiveConfig } from "./config-resolver.js";
+import { SubAgentContextStore as FileSubAgentContextStore } from "./context-store.js";
 import { SubAgentEventBus } from "./event-bus.js";
 import { SubAgentInstance } from "./instance.js";
 import { TaskExecutor } from "./task-executor.js";
@@ -25,10 +27,12 @@ import type {
 	QueryRequest,
 	QueryResponse,
 	SubAgentArtifactStore,
+	SubAgentContextStore,
 	SubAgentControllerOptions,
 	SubAgentDefinition,
 	SubAgentInstanceState,
 	SubAgentRpcState,
+	SubAgentRuntimeConfigManager,
 	SummarizerOptions,
 } from "./types.js";
 
@@ -43,6 +47,8 @@ export class SubAgentController {
 	private settingsManager?: SettingsManager;
 	private transportManager?: TransportManager;
 	private logger?: SessionLogger;
+	private configManager: SubAgentRuntimeConfigManager;
+	private contextStore: SubAgentContextStore;
 
 	constructor(options: SubAgentControllerOptions) {
 		this.cwd = options.cwd;
@@ -51,6 +57,8 @@ export class SubAgentController {
 		this.modelRegistry = options.modelRegistry;
 		this.settingsManager = options.settingsManager;
 		this.logger = options.logger;
+		this.configManager = options.configManager ?? SubAgentConfigManager.load(options.cwd);
+		this.contextStore = options.contextStore ?? new FileSubAgentContextStore(options.cwd);
 		this.eventBus = new SubAgentEventBus();
 		this.definitions = new Map();
 
@@ -125,7 +133,9 @@ export class SubAgentController {
 		}
 
 		// Merge definition + task overrides into effective config
-		const config = resolveEffectiveConfig(definition, task);
+		const config = resolveEffectiveConfig(definition, task, {
+			agentConfig: this.configManager.getAgentConfig(definition.name),
+		});
 
 		const instanceId = `subagent-${task.id}-${Math.random().toString(36).slice(2, 8)}`;
 		const instance = new SubAgentInstance({
@@ -140,6 +150,8 @@ export class SubAgentController {
 			modelRegistry: this.modelRegistry,
 			settingsManager: this.settingsManager,
 			logger: this.logger,
+			configManager: this.configManager,
+			contextStore: this.contextStore,
 		});
 
 		this.instances.set(task.id, instance);

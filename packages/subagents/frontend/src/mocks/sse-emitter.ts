@@ -45,6 +45,8 @@ export interface LiveAgent {
 	turnCount: number;
 	toolCount: number;
 	currentTool: string | null;
+	modelProvider?: string;
+	modelId?: string;
 }
 
 export const LIVE_AGENTS: LiveAgent[] = [
@@ -60,6 +62,8 @@ export const LIVE_AGENTS: LiveAgent[] = [
 		turnCount: 3,
 		toolCount: 4,
 		currentTool: null,
+		modelProvider: "kimi-coding",
+		modelId: "kimi-for-coding",
 	},
 ];
 
@@ -242,6 +246,8 @@ export function generateNextEvent(agent: LiveAgent): SubAgentEvent {
 			toolCount: agent.toolCount,
 			currentToolStartedAt: agent.currentTool ? now : null,
 			durationMs: 45000 + Math.floor(Math.random() * 10000),
+			modelProvider: agent.modelProvider,
+			modelId: agent.modelId,
 		},
 		timestamp: now,
 	} as unknown as SubAgentEvent;

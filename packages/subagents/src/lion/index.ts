@@ -1,5 +1,6 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { compact, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SessionLogger } from "@local/pi-logger";
+import { resolveConfiguredModel, SubAgentConfigManager } from "../config-manager.js";
 import { registerLionCommands } from "./commands.js";
 import { buildPlanningSystemPrompt } from "./prompts/index.js";
 import { LionRuntime } from "./runtime.js";
@@ -68,6 +69,29 @@ export function lionExtension(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", async (event) => {
 		if (!runtime.state.active) return;
 		return { systemPrompt: `${event.systemPrompt}\n\n${buildPlanningSystemPrompt(runtime.state)}` };
+	});
+
+	pi.on("session_before_compact", async (event, ctx) => {
+		const instructions = await runtime.buildCompactionInstructions(ctx);
+		if (!instructions || !ctx.model) return;
+
+		const cwd = ctx.cwd ?? ctx.sessionManager.getCwd();
+		const configManager = SubAgentConfigManager.load(cwd);
+		const compactionConfig = configManager.getCompactionConfig();
+		const modelResolution = resolveConfiguredModel(compactionConfig?.model, undefined, ctx.modelRegistry);
+		const model = modelResolution.model ?? ctx.model;
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+		if (!auth.ok) return;
+
+		const compaction = await compact(
+			event.preparation,
+			model,
+			auth.apiKey ?? "",
+			auth.headers,
+			[event.customInstructions, instructions].filter(Boolean).join("\n\n"),
+			event.signal,
+		);
+		return { compaction };
 	});
 
 	registerLionTools(runtime);

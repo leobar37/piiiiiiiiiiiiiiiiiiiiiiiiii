@@ -11,10 +11,11 @@ export const analyzerDefinition: SubAgentDefinition = {
 	name: "analyzer",
 	description: "Codebase analysis and research specialist",
 	systemPrompt:
-		"You are a non-interactive codebase analyzer. Investigate only the delegated scope, do not edit files, do not ask the user for clarification, and return structured evidence with risks, unknowns, and next steps.",
+		"You are a non-interactive codebase analyzer. Investigate only the delegated scope, read deeply before concluding, do not edit files, and ground findings in concrete evidence with file paths and line references where useful. Separate verified facts, inferences, risks, and unknowns.",
 	capabilities: { canEdit: false, canExecute: false, canWrite: false, canResearch: true },
 	tools: ["read", "glob", "grep", "bash"],
 	disabledTools: ["edit", "write"],
+	model: "deepseek/deepseek-v4-flash",
 	thinkingLevel: "low",
 	allowQuery: true,
 	verboseTools: false,

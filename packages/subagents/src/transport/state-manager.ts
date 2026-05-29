@@ -121,6 +121,8 @@ export class DashboardStateManager {
 				isLive: true,
 				sessionFile: existingVirtual?.sessionFile,
 				sessionId: existingVirtual?.sessionId,
+				modelProvider: live.modelProvider ?? existingVirtual?.modelProvider,
+				modelId: live.modelId ?? existingVirtual?.modelId,
 			});
 		}
 
@@ -137,6 +139,8 @@ export class DashboardStateManager {
 				isLive: true,
 				sessionFile: virtual?.sessionFile,
 				sessionId: virtual?.sessionId,
+				modelProvider: live.modelProvider ?? virtual?.modelProvider,
+				modelId: live.modelId ?? virtual?.modelId,
 			};
 		}
 		return this.virtualInstances.get(instanceId);
@@ -227,6 +231,8 @@ export class DashboardStateManager {
 			isLive: false,
 			sessionFile: sessionInfo?.sessionFile,
 			sessionId: sessionInfo?.sessionId,
+			modelProvider: lastStateEvent?.state?.modelProvider,
+			modelId: lastStateEvent?.state?.modelId,
 		};
 	}
 
@@ -251,6 +257,8 @@ export class DashboardStateManager {
 					next.parentToolCallId = e.state.parentToolCallId;
 					next.runId = e.state.runId;
 					next.runIndex = e.state.runIndex;
+					next.modelProvider = e.state.modelProvider;
+					next.modelId = e.state.modelId;
 				}
 				break;
 			}

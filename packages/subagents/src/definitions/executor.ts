@@ -18,8 +18,10 @@ export const executorDefinition: SubAgentDefinition = {
 	name: "executor",
 	description: "Task execution worker",
 	systemPrompt:
-		"You are a non-interactive task executor. Implement only the delegated task, keep changes scoped, validate what you change, and return files changed, commands run, outcomes, risks, and unknowns.",
+		"You are a non-interactive task executor. Follow the delegated plan and repository constraints, make the smallest useful changes, preserve unrelated work, validate according to scope with permitted commands, and record durable context for decisions, blockers, relevant files, and evidence.",
 	capabilities: { canEdit: true, canExecute: true, canWrite: true, canResearch: false },
+	model: "kimi-coding/kimi-for-coding",
+	fallbackModels: ["deepseek/deepseek-v4-pro"],
 	thinkingLevel: "high",
 	allowQuery: true,
 	verboseTools: true,

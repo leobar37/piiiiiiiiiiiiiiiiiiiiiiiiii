@@ -1,10 +1,22 @@
-import type { DelegationTask, EffectiveSubAgentConfig, SubAgentCapabilities, SubAgentDefinition } from "./types.js";
+import type {
+	DelegationTask,
+	EffectiveSubAgentConfig,
+	SubAgentCapabilities,
+	SubAgentDefinition,
+	SubAgentRoleConfig,
+} from "./types.js";
 
 /**
  * Merge a base SubAgentDefinition with a DelegationTask's dynamic overrides
  * to produce the effective configuration used at runtime.
  */
-export function resolveEffectiveConfig(definition: SubAgentDefinition, task: DelegationTask): EffectiveSubAgentConfig {
+export function resolveEffectiveConfig(
+	definition: SubAgentDefinition,
+	task: DelegationTask,
+	options?: { agentConfig?: SubAgentRoleConfig },
+): EffectiveSubAgentConfig {
+	const agentConfig = options?.agentConfig;
+
 	// Merge system prompts
 	const systemPrompt = mergeSystemPrompt(
 		definition.systemPrompt,
@@ -30,8 +42,9 @@ export function resolveEffectiveConfig(definition: SubAgentDefinition, task: Del
 		tools: task.tools ?? definition.tools,
 		disabledTools: disabledTools.length > 0 ? disabledTools : undefined,
 		skillPaths: skillPaths.length > 0 ? Array.from(new Set(skillPaths)) : undefined,
-		model: task.model ?? definition.model,
-		thinkingLevel: task.thinkingLevel ?? definition.thinkingLevel,
+		model: task.model ?? agentConfig?.model ?? definition.model,
+		fallbackModels: task.fallbackModels ?? agentConfig?.fallbackModels ?? definition.fallbackModels,
+		thinkingLevel: task.thinkingLevel ?? agentConfig?.thinkingLevel ?? definition.thinkingLevel,
 		cwd: definition.cwd,
 		isolated: definition.isolated,
 		extensionFactory: definition.extensionFactory,

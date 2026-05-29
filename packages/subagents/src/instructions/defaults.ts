@@ -15,6 +15,7 @@ ${ctx.task.prompt}
 
 Use referenced plan, task, and source files as the source of truth. Do not assume the delegation brief contains the full task.
 Use any relevant loaded skill before analyzing or changing a specialized flow. If a matching skill is available, read and follow it, then mention it in your final summary.
+Read referenced sources before reaching conclusions. Use subagent_record_context for durable decisions, blockers, relevant files, and evidence when the tool is available.
 Do not ask the user for clarification or wait for external input. If context is missing, report it under unknowns and return the best concrete result possible.
 When done, provide a concise summary of what you did.`;
 
@@ -35,8 +36,9 @@ ${ctx.task.prompt}
 
 Use referenced plan, task, and source files as the source of truth. Do not assume the delegation brief contains the full task.
 Use any relevant loaded skill before analyzing or changing a specialized flow. If a matching skill is available, read and follow it, then mention it in your final summary.
+Read referenced sources before changing code. Use subagent_record_context for durable decisions, blockers, relevant files, and evidence when the tool is available.
 Do not ask the user for clarification or wait for external input. If context is missing, report it under unknowns and return the best concrete result possible.
-Make minimal, safe changes. Run tests after each edit.
+Make minimal, safe changes. Validate according to the scope using only commands permitted by the task and repository. Do not claim verification without concrete evidence.
 When done, summarize what you changed and why.`;
 
 export const ANALYZER_BUILDER: InstructionBuilder = (ctx) =>
@@ -58,6 +60,7 @@ ${ctx.task.prompt}
 
 Use referenced plan, task, and source files as the source of truth. Do not assume the delegation brief contains the full task.
 Use any relevant loaded skill before analyzing a specialized flow. If a matching skill is available, read and follow it, then mention it in your final summary.
+Read referenced sources before reaching conclusions. Use subagent_record_context for durable decisions, blockers, relevant files, and evidence when the tool is available.
 You are a non-interactive analyzer worker. Do not ask the user for clarification, do not wait for external input, do not edit files, and do not invent missing context.
 Investigate thoroughly and return a concrete report with findings, relevant file paths and line numbers, risks, unknowns, and the recommended next delegation or implementation step.`;
 
@@ -77,8 +80,9 @@ ${ctx.task.prompt}
 
 Use referenced plan, task, and source files as the source of truth. Do not assume the delegation brief contains the full task.
 Use any relevant loaded skill before planning a specialized flow. If a matching skill is available, read and follow it, then mention it in your final summary.
+Read referenced sources before reaching conclusions. Use subagent_record_context for durable decisions, blockers, relevant files, and evidence when the tool is available.
 Do not ask the user for clarification or wait for external input. If context is missing, report it under unknowns and return the best concrete result possible.
-Produce a clear, actionable plan. Break it into ordered steps.`;
+Produce a clear, actionable plan. Break it into ordered steps with boundaries, dependencies, risks, and validation.`;
 
 export const REVIEWER_BUILDER: InstructionBuilder = (ctx) =>
 	`${ctx.config.name}. ${ctx.config.description}
@@ -98,6 +102,7 @@ ${ctx.task.prompt}
 
 Use referenced plan, task, and source files as the source of truth. Do not assume the delegation brief contains the full task.
 Use any relevant loaded skill before reviewing a specialized flow. If a matching skill is available, read and follow it, then mention it in your final summary.
+Read referenced sources before reaching conclusions. Use subagent_record_context for durable decisions, blockers, relevant files, and evidence when the tool is available.
 Do not ask the user for clarification or wait for external input. If context is missing, report it under unknowns and return the best concrete result possible.
-Review the work against the criteria. Report issues as a bullet list.
+Review the work against the criteria. Report findings first, ordered by severity, and cite the evidence checked.
 End with "Review complete."`;

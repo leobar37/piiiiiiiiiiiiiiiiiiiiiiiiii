@@ -52,6 +52,8 @@ export class MainSessionBridge implements DashboardSessionSource {
 			isLive: true,
 			sessionFile: ctx.sessionManager.getSessionFile(),
 			sessionId,
+			modelProvider: ctx.model?.provider,
+			modelId: ctx.model?.id,
 		};
 		if (isNewThread) {
 			this.emit({

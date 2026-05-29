@@ -1,5 +1,12 @@
 // Config resolver
+
+export {
+	resolveConfiguredModel,
+	SUBAGENT_CONFIG_PATH,
+	SubAgentConfigManager,
+} from "./config-manager.js";
 export { resolveEffectiveConfig } from "./config-resolver.js";
+export { SubAgentContextStore } from "./context-store.js";
 // Controller
 export { SubAgentController } from "./controller.js";
 // Built-in definitions
@@ -112,13 +119,20 @@ export type {
 	QueryResponse,
 	SubAgentArtifactStore,
 	SubAgentCapabilities,
+	SubAgentCompactionConfig,
+	SubAgentContextDocument,
+	SubAgentContextEntry,
+	SubAgentContextStore as SubAgentContextStoreContract,
 	SubAgentControllerOptions,
 	SubAgentDefinition,
 	SubAgentEvent,
 	SubAgentEventMap,
 	SubAgentEventType,
 	SubAgentInstanceState,
+	SubAgentProjectConfig,
+	SubAgentRoleConfig,
 	SubAgentRpcState,
+	SubAgentRuntimeConfigManager,
 	SubAgentState,
 	SummarizerOptions,
 } from "./types.js";

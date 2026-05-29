@@ -35,6 +35,8 @@ export interface SubAgentInstanceState {
 	isLive?: boolean;
 	sessionFile?: string;
 	sessionId?: string;
+	modelProvider?: string;
+	modelId?: string;
 }
 
 export interface SubAgentEvent {

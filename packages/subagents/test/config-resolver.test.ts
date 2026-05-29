@@ -182,6 +182,49 @@ describe("resolveEffectiveConfig", () => {
 		expect(config.timeout).toBe(60000); // from definition
 	});
 
+	it("uses project agent config between task and definition", () => {
+		const task: DelegationTask = {
+			id: "task-1",
+			definition: "test-agent",
+			prompt: "Do something",
+		};
+
+		const config = resolveEffectiveConfig(baseDefinition, task, {
+			agentConfig: {
+				model: "deepseek/deepseek-v4-flash",
+				fallbackModels: ["kimi-coding/kimi-for-coding"],
+				thinkingLevel: "high",
+			},
+		});
+
+		expect(config.model).toBe("deepseek/deepseek-v4-flash");
+		expect(config.fallbackModels).toEqual(["kimi-coding/kimi-for-coding"]);
+		expect(config.thinkingLevel).toBe("high");
+	});
+
+	it("keeps task model overrides above project agent config", () => {
+		const task: DelegationTask = {
+			id: "task-1",
+			definition: "test-agent",
+			prompt: "Do something",
+			model: "kimi-coding/kimi-for-coding",
+			fallbackModels: ["deepseek/deepseek-v4-pro"],
+			thinkingLevel: "minimal",
+		};
+
+		const config = resolveEffectiveConfig(baseDefinition, task, {
+			agentConfig: {
+				model: "deepseek/deepseek-v4-flash",
+				fallbackModels: ["deepseek/deepseek-v4-pro"],
+				thinkingLevel: "high",
+			},
+		});
+
+		expect(config.model).toBe("kimi-coding/kimi-for-coding");
+		expect(config.fallbackModels).toEqual(["deepseek/deepseek-v4-pro"]);
+		expect(config.thinkingLevel).toBe("minimal");
+	});
+
 	it("passes through instructionBuilder from definition", () => {
 		const builder = () => "custom";
 		const def = { ...baseDefinition, instructionBuilder: builder };
