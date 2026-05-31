@@ -133,12 +133,7 @@ export interface LionPipelineConfig {
 	maxAttempts: number;
 }
 
-export type LionDelegationAgent = "executor" | "reviewer" | "validator";
-export type LionPlanValidationResult = {
-	status: DelegationStatus;
-	summary: string;
-	taskId: string;
-};
+export type LionDelegationAgent = "analyzer" | "planner" | "executor" | "reviewer" | "validator";
 
 export type LionEventType = keyof LionEventMap;
 export type LionEvent = LionEventMap[LionEventType];
@@ -186,8 +181,6 @@ export interface LionEventMap {
 		verdict: LionReviewVerdict;
 		summary: string;
 	};
-	"lion.validation.start": LionEventBase & { type: "lion.validation.start"; focus?: string };
-	"lion.validation.end": LionEventBase & { type: "lion.validation.end"; status: string; summary: string };
 	"lion.correction.requested": LionEventBase & { type: "lion.correction.requested"; feedback: string };
 	"lion.task.approved": LionEventBase & { type: "lion.task.approved" };
 	"lion.task.rejected": LionEventBase & { type: "lion.task.rejected"; reason: string };

@@ -105,27 +105,6 @@ export const LionEvents = {
 		return { type: "lion.delegation.end", timestamp: Date.now(), id: randomUUID(), ...payload };
 	},
 
-	validationStart(payload: {
-		runId: string;
-		planSlug: string;
-		planPath: string;
-		taskId?: string;
-		focus?: string;
-	}): LionEventMap["lion.validation.start"] {
-		return { type: "lion.validation.start", timestamp: Date.now(), id: randomUUID(), ...payload };
-	},
-
-	validationEnd(payload: {
-		runId: string;
-		planSlug: string;
-		planPath: string;
-		taskId?: string;
-		status: string;
-		summary: string;
-	}): LionEventMap["lion.validation.end"] {
-		return { type: "lion.validation.end", timestamp: Date.now(), id: randomUUID(), ...payload };
-	},
-
 	reviewVerdict(payload: {
 		runId: string;
 		planSlug: string;

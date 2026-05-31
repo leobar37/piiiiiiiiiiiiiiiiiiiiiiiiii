@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadLionPlan, resolvePlanPath } from "./plans/index.js";
+import { buildPlanReviewPrompt } from "./prompts/index.js";
 import type { LionRuntime } from "./runtime.js";
 import { createRunId, formatPlanSummary } from "./utils.js";
-import { Validator } from "./validate.js";
 
 export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): void {
 	pi.registerCommand("lion-activate", {
@@ -28,6 +28,33 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 					strategy: runtime.state.strategy,
 					phase: runtime.state.phase,
 				});
+				const content = runtime.state.activePlanSlug
+					? [
+							"Lion planning mode active.",
+							`Plan: ${runtime.state.activePlanSlug}`,
+							"Use lion_tasks with analyzer or planner delegations for non-trivial work.",
+							"Do not implement application code directly.",
+						].join("\n")
+					: [
+							"Lion planning mode active.",
+							"No plan selected. I can help create or refine a structured plan, but I will not implement application code directly.",
+							"Use lion_tasks with analyzer or planner delegations for non-trivial work.",
+						].join("\n");
+				const message = {
+					customType: "lion-orchestrator-feedback" as const,
+					content,
+					display: false,
+					details: {
+						planSlug: runtime.state.activePlanSlug,
+						phase: runtime.state.phase,
+						nextTools: ["lion_tasks"],
+					},
+				};
+				if (ctx.isIdle()) {
+					pi.sendMessage(message, { triggerTurn: true });
+				} else {
+					pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
+				}
 				runtime.ui.showMessage(
 					runtime.state.activePlanSlug
 						? `Lion planning mode active\n\n${runtime.state.activePlanSlug}`
@@ -44,6 +71,27 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 				// Ensure a persistent subagent controller exists from activation
 				runtime.ensureController(ctx);
 				runtime.attachMainSession(ctx);
+				const content = [
+					"Lion planning mode active.",
+					`Plan not found: ${input}`,
+					"I can help create it if you authorize plan-file edits.",
+					"Use lion_tasks with analyzer or planner delegations for non-trivial work.",
+					"Do not implement application code directly.",
+				].join("\n");
+				const message = {
+					customType: "lion-orchestrator-feedback" as const,
+					content,
+					display: false,
+					details: {
+						phase: runtime.state.phase,
+						nextTools: ["lion_tasks"],
+					},
+				};
+				if (ctx.isIdle()) {
+					pi.sendMessage(message, { triggerTurn: true });
+				} else {
+					pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
+				}
 				runtime.ui.showMessage(
 					`Lion planning mode active\n\nPlan not found: ${input}\n\nI can help create it if you authorize plan-file edits.`,
 				);
@@ -73,6 +121,28 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 				strategy: runtime.state.strategy,
 				phase: runtime.state.phase,
 			});
+			const activateContent = [
+				"Lion activated.",
+				`Plan: ${plan.slug}`,
+				"Use lion_tasks with analyzer or planner delegations for non-trivial work.",
+				"Do not implement application code directly until /lion-build.",
+			].join("\n");
+			const activateMessage = {
+				customType: "lion-orchestrator-feedback" as const,
+				content: activateContent,
+				display: false,
+				details: {
+					planSlug: plan.slug,
+					planPath: plan.rootPath,
+					phase: runtime.state.phase,
+					nextTools: ["lion_tasks"],
+				},
+			};
+			if (ctx.isIdle()) {
+				pi.sendMessage(activateMessage, { triggerTurn: true });
+			} else {
+				pi.sendMessage(activateMessage, { triggerTurn: true, deliverAs: "followUp" });
+			}
 			runtime.ui.showMessage(`Lion activated\n\n${formatPlanSummary(plan)}`);
 		},
 	});
@@ -96,6 +166,34 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 				strategy: runtime.state.strategy,
 				phase: runtime.state.phase,
 			});
+			const content = input
+				? [
+						"Lion simple mode active.",
+						input,
+						"Use lion_tasks for non-trivial repository work.",
+						"Do not implement application code directly unless it is trivial.",
+					].join("\n")
+				: [
+						"Lion simple mode active.",
+						"No durable plan will be created or required.",
+						"Use lion_tasks for non-trivial repository work.",
+						"Do not implement application code directly unless it is trivial.",
+					].join("\n");
+			const message = {
+				customType: "lion-orchestrator-feedback" as const,
+				content,
+				display: false,
+				details: {
+					strategy: runtime.state.strategy,
+					phase: runtime.state.phase,
+					nextTools: ["lion_tasks"],
+				},
+			};
+			if (ctx.isIdle()) {
+				pi.sendMessage(message, { triggerTurn: true });
+			} else {
+				pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
+			}
 			runtime.ui.showMessage(
 				input
 					? `Lion simple mode active\n\n${input}`
@@ -105,7 +203,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 	});
 
 	pi.registerCommand("lion-validate", {
-		description: "Review the active Lion plan as a second opinion, find issues, and fix them automatically",
+		description: "Ask the orchestrator to validate the active Lion plan through lion_tasks",
 		handler: async (args, ctx) => {
 			const activePlanPath = runtime.state.activePlanPath;
 			if (!activePlanPath) {
@@ -119,27 +217,44 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 
 			const focus = args.trim() || undefined;
 			const plan = loadLionPlan(activePlanPath);
-			runtime.ui.showMessage(`Reviewing plan ${plan.slug} as a second opinion...`);
-
 			runtime.logState("command_lion_validate", { focus });
-			try {
-				const validator = new Validator(runtime);
-				const response = await validator.validate(ctx, focus);
-				const validation = response.validation;
-				if (validation) {
-					runtime.ui.showMessage(
-						validation.summary
-							? `Lion review\n\n${validation.summary}`
-							: "Lion review complete: no issues found.",
-					);
-				} else {
-					runtime.ui.showMessage("Review returned no result.");
-				}
-			} catch (err: unknown) {
-				const error = err instanceof Error ? err.message : String(err);
-				runtime.logError("lion-validate", err);
-				runtime.ui.showMessage(`Lion validation failed: ${error}`);
+
+			const content = [
+				"Lion plan validation requested.",
+				`Plan: ${plan.slug}`,
+				`Path: ${plan.rootPath}`,
+				focus ? `Focus: ${focus}` : "",
+				"",
+				"Use lion_tasks with one explicit validator delegation to validate this plan.",
+				"Do not implement application code. Do not switch to build mode.",
+				"Return the validator findings to the user after the tool call.",
+				"",
+				"Suggested delegation prompt:",
+				buildPlanReviewPrompt(plan, focus),
+			]
+				.filter((line) => line !== "")
+				.join("\n");
+
+			const message = {
+				customType: "lion-orchestrator-feedback",
+				content,
+				display: false,
+				details: {
+					planSlug: plan.slug,
+					planPath: plan.rootPath,
+					phase: runtime.state.phase,
+					nextTools: ["lion_tasks"],
+					role: "validator",
+				},
+			};
+
+			if (ctx.isIdle()) {
+				pi.sendMessage(message, { triggerTurn: true });
+			} else {
+				pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
 			}
+
+			runtime.ui.showMessage(`Lion validation requested for ${plan.slug}. Delegating through lion_tasks.`);
 		},
 	});
 
@@ -171,7 +286,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 						"Lion build mode activated.",
 						`Plan: ${runtime.state.activePlanSlug || activePlanPath}`,
 						"The orchestrator is now in control of task execution.",
-						"Immediately use lion_next_task, delegate with lion_tasks, then persist task outcome with lion_record_task_result.",
+						'Immediately use lion_tasks with source: "active_plan_next_task" to select, execute, and record the next task.',
 						"Do not implement application code directly in the main thread.",
 					].join("\n")
 				: [
@@ -181,9 +296,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 						"Do not implement application code directly unless it is trivial.",
 					].join("\n");
 
-			const nextTools = isPlanMode
-				? ["lion_next_task", "lion_tasks", "lion_record_task_result", "lion_reconcile_plan"]
-				: ["lion_tasks"];
+			const nextTools = ["lion_tasks"];
 
 			const message = {
 				customType: "lion-orchestrator-feedback",
@@ -224,13 +337,15 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 				runtime.ensureController(ctx);
 				runtime.attachMainSession(ctx);
 				const url = await runtime.startDashboard();
+				runtime.ui.showDashboardUrl(ctx, url);
 				// Open browser using the system's default browser
 				const openCommand =
 					process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
 				execFile(openCommand, [url.href], (err) => {
-					if (err) runtime.logError("lion-dashboard-open", err);
+					if (!err) return;
+					runtime.logError("lion-dashboard-open", err);
+					runtime.ui.showMessage(`Failed to open browser automatically.\n\nURL: ${url.href}`);
 				});
-				runtime.ui.showMessage(`Lion dashboard opened at ${url.href}`);
 			} catch (err: unknown) {
 				const error = err instanceof Error ? err.message : String(err);
 				runtime.logError("lion-dashboard", err);

@@ -100,6 +100,35 @@ describe("HttpServerTransport", () => {
 		expect(Array.isArray(body)).toBe(true);
 	});
 
+	it("serves /api/lion/state endpoint", async () => {
+		transport = new HttpServerTransport({
+			controller: controller as any,
+			port: 0,
+			host: "127.0.0.1",
+			lionState: () => ({
+				active: true,
+				strategy: "simple",
+				phase: "building",
+				activePlanPath: null,
+				activePlanSlug: null,
+				planKind: null,
+				activeTaskId: null,
+				lastRunId: "run-1",
+			}),
+		});
+		await transport.start();
+		await waitForServer();
+
+		const res = await fetch(`http://127.0.0.1:${transport.port}/api/lion/state`);
+		expect(res.status).toBe(200);
+		expect(await res.json()).toMatchObject({
+			active: true,
+			strategy: "simple",
+			phase: "building",
+			lastRunId: "run-1",
+		});
+	});
+
 	it("serves /api/threads/:id endpoint with 404 for unknown", async () => {
 		transport = new HttpServerTransport({
 			controller: controller as any,

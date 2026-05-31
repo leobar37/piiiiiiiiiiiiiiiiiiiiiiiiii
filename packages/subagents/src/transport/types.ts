@@ -3,12 +3,28 @@ import type { SubAgentEvent, SubAgentInstanceState } from "../types.js";
 
 export type DashboardThreadKind = "main" | "subagent";
 
+export interface DashboardLionState {
+	active: boolean;
+	strategy: "plan" | "simple";
+	phase: "planning" | "building";
+	activePlanPath: string | null;
+	activePlanSlug: string | null;
+	planKind: "structured" | "overview" | null;
+	activeTaskId: string | null;
+	lastRunId: string | null;
+}
+
 export interface DashboardThreadState extends SubAgentInstanceState {
 	kind: DashboardThreadKind;
 	parentThreadId?: string;
 	parentToolCallId?: string;
 	runId?: string;
 	runIndex?: number;
+	orchestration?: {
+		strategy: "plan" | "simple";
+		planSlug?: string;
+		planPath?: string;
+	};
 	isLive?: boolean;
 	sessionFile?: string;
 	sessionId?: string;

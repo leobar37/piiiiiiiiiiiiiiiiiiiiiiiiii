@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import hljs from "highlight.js/lib/core";
 import javascript from "highlight.js/lib/languages/javascript";
 import typescript from "highlight.js/lib/languages/typescript";
@@ -24,9 +24,10 @@ interface CodeBlockProps {
 
 export function CodeBlock({ code, language }: CodeBlockProps) {
 	const [copied, setCopied] = useState(false);
+	const normalizedLanguage = language?.toLowerCase();
 
-	const highlighted = language
-		? hljs.highlight(code, { language: language.toLowerCase(), ignoreIllegals: true }).value
+	const highlighted = normalizedLanguage && hljs.getLanguage(normalizedLanguage)
+		? hljs.highlight(code, { language: normalizedLanguage, ignoreIllegals: true }).value
 		: hljs.highlightAuto(code).value;
 
 	const handleCopy = useCallback(() => {

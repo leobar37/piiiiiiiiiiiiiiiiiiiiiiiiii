@@ -4,6 +4,7 @@ import { useAgent } from "../hooks/use-agent.ts";
 import { useAgentEvents } from "../hooks/use-agent-events.ts";
 import { useAgentMessages } from "../hooks/use-agent-messages.ts";
 import { useAgentRun } from "../hooks/use-agent-run.ts";
+import { useLionState } from "../hooks/use-lion-state.ts";
 import { ChatView } from "./ChatView.tsx";
 import { StatusBadge } from "./StatusBadge.tsx";
 import { useSubAgentStore } from "../store/use-subagent-store.ts";
@@ -11,6 +12,7 @@ import { useSessionMessagesStore } from "../store/session-messages.ts";
 import { navigateToThread } from "../navigation.ts";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 import { AgentRunSidebar } from "./AgentRunSidebar.tsx";
+import { LionModeBadge } from "./LionModeBadge.tsx";
 
 interface AgentDetailProps {
   instanceId: string;
@@ -22,6 +24,7 @@ export function AgentDetail({ instanceId, onBack }: AgentDetailProps) {
   const { data: fetchedEvents } = useAgentEvents(instanceId);
   const { data: fetchedMessages } = useAgentMessages(instanceId);
   const { data: fetchedRun, isLoading: isRunLoading } = useAgentRun(instanceId);
+  const { data: lionState } = useLionState();
 
   const setMessages = useSessionMessagesStore((s) => s.setMessages);
   const mergeEvents = useSubAgentStore((s) => s.mergeEvents);
@@ -54,7 +57,7 @@ export function AgentDetail({ instanceId, onBack }: AgentDetailProps) {
       : null;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-w-0 flex-1 flex-col">
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle bg-bg-elevated">
         {displayAgent?.parentThreadId ? (
           <button
@@ -85,6 +88,7 @@ export function AgentDetail({ instanceId, onBack }: AgentDetailProps) {
                 {modelLabel}
               </span>
             ) : null}
+            <LionModeBadge state={lionState} />
           </div>
         ) : (
           <span className="text-sm text-text-muted">Loading...</span>

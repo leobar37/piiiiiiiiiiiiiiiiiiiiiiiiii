@@ -1,4 +1,10 @@
-import type { ChatMessage, SubAgentEvent, SubAgentInstanceState, SubAgentRunRecord } from "./types.ts";
+import type {
+	ChatMessage,
+	LionDashboardState,
+	SubAgentEvent,
+	SubAgentInstanceState,
+	SubAgentRunRecord,
+} from "./types.ts";
 import { convertAgentMessages } from "./utils/message-converter.ts";
 
 const BASE = "";
@@ -11,6 +17,10 @@ async function fetchJson<T>(path: string): Promise<T> {
 
 export async function fetchAgents(): Promise<SubAgentInstanceState[]> {
 	return fetchJson<SubAgentInstanceState[]>("/api/threads");
+}
+
+export async function fetchLionState(): Promise<LionDashboardState> {
+	return fetchJson<LionDashboardState>("/api/lion/state");
 }
 
 export async function fetchAgent(instanceId: string): Promise<SubAgentInstanceState> {

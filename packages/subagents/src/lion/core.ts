@@ -14,7 +14,7 @@ export type LionRunStatus =
 	| "rejected"
 	| "failed";
 
-export type LionSubagentRole = "executor" | "reviewer" | "validator";
+export type LionSubagentRole = "analyzer" | "planner" | "executor" | "reviewer" | "validator";
 
 export interface LionRunSubagent {
 	role: LionSubagentRole;
@@ -108,6 +108,10 @@ export function recordSubagentResult(core: LionCore, role: LionSubagentRole, res
 		run.executorTaskId = result.taskId;
 		run.executorSummary = result.summary;
 		run.attempts += 1;
+		run.status = result.status === "completed" ? "awaiting_orchestrator" : "failed";
+	}
+
+	if (role === "analyzer" || role === "planner") {
 		run.status = result.status === "completed" ? "awaiting_orchestrator" : "failed";
 	}
 

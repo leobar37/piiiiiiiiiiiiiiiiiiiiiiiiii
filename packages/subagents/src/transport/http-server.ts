@@ -5,6 +5,7 @@ import type { SubAgentController } from "../controller.js";
 import { SubAgentRunStore } from "../run-store.js";
 import { DashboardStateManager } from "./state-manager.js";
 import type {
+	DashboardLionState,
 	DashboardSessionSource,
 	DashboardThreadState,
 	SubAgentTransport,
@@ -21,6 +22,7 @@ export interface HttpServerTransportOptions {
 	 */
 	staticDir?: string;
 	mainSession?: DashboardSessionSource;
+	lionState?: () => DashboardLionState;
 }
 
 function isDashboardMode(): boolean {
@@ -53,6 +55,17 @@ const CORS_HEADERS = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, OPTIONS",
 	"Access-Control-Allow-Headers": "Content-Type",
+};
+
+const DEFAULT_LION_STATE: DashboardLionState = {
+	active: false,
+	strategy: "plan",
+	phase: "planning",
+	activePlanPath: null,
+	activePlanSlug: null,
+	planKind: null,
+	activeTaskId: null,
+	lastRunId: null,
 };
 
 export class HttpServerTransport implements SubAgentTransport {
@@ -176,6 +189,10 @@ export class HttpServerTransport implements SubAgentTransport {
 			return this.serveAsset(pathname);
 		}
 
+		if (req.method === "GET" && pathname === "/api/lion/state") {
+			return this.withCors(this.serveLionState());
+		}
+
 		if (req.method === "GET" && pathname === "/api/instances") {
 			return this.withCors(this.serveInstances());
 		}
@@ -286,6 +303,10 @@ export class HttpServerTransport implements SubAgentTransport {
 
 	private serveInstances(): Response {
 		return Response.json(this.getSubagentThreads());
+	}
+
+	private serveLionState(): Response {
+		return Response.json(this.options.lionState?.() ?? DEFAULT_LION_STATE);
 	}
 
 	private serveThreads(): Response {

@@ -37,7 +37,7 @@ class LionDashboardServer implements LionDashboard {
 
 		const controller = this.runtime.activeController;
 		if (!controller) {
-			throw new Error("Lion is not active. Use /lion-activate or lion_activate_plan to start Lion first.");
+			throw new Error("Lion is not active. Use /lion-activate to start Lion first.");
 		}
 
 		this.transport = new HttpServerTransport({
@@ -45,6 +45,7 @@ class LionDashboardServer implements LionDashboard {
 			host: "127.0.0.1",
 			controller,
 			mainSession: this.runtime.mainSession,
+			lionState: () => this.runtime.state,
 		});
 
 		// Wire the transport into the controller's event bus so events flow to the dashboard

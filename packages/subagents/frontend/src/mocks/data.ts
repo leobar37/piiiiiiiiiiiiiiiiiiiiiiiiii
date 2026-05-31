@@ -1,9 +1,20 @@
-import type { SubAgentEvent, SubAgentInstanceState } from "../types.ts";
+import type { LionDashboardState, SubAgentEvent, SubAgentInstanceState, SubAgentRunRecord } from "../types.ts";
 
 const now = Date.now();
 const mainThreadId = "main:mock-session";
 const lionTasksToolCallId = "main-tool-lion-tasks";
 const lionRunId = "mock-run-1";
+
+export const MOCK_LION_STATE: LionDashboardState = {
+	active: true,
+	strategy: "plan",
+	phase: "planning",
+	activePlanPath: ".plans/lion-dashboard-runtime",
+	activePlanSlug: "lion-dashboard-runtime",
+	planKind: "structured",
+	activeTaskId: null,
+	lastRunId: lionRunId,
+};
 
 export const MOCK_AGENTS: SubAgentInstanceState[] = [
 	{
@@ -36,6 +47,11 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		parentToolCallId: lionTasksToolCallId,
 		runId: lionRunId,
 		runIndex: 0,
+		orchestration: {
+			strategy: "plan",
+			planSlug: "lion-dashboard-runtime",
+			planPath: ".plans/lion-dashboard-runtime",
+		},
 		state: "running",
 		startTime: now - 45000,
 		endTime: null,
@@ -58,6 +74,11 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		parentToolCallId: lionTasksToolCallId,
 		runId: lionRunId,
 		runIndex: 1,
+		orchestration: {
+			strategy: "plan",
+			planSlug: "lion-dashboard-runtime",
+			planPath: ".plans/lion-dashboard-runtime",
+		},
 		state: "completed",
 		startTime: now - 120000,
 		endTime: now - 15000,
@@ -80,6 +101,11 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		parentToolCallId: lionTasksToolCallId,
 		runId: lionRunId,
 		runIndex: 2,
+		orchestration: {
+			strategy: "plan",
+			planSlug: "lion-dashboard-runtime",
+			planPath: ".plans/lion-dashboard-runtime",
+		},
 		state: "failed",
 		startTime: now - 60000,
 		endTime: now - 10000,
@@ -102,6 +128,11 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		parentToolCallId: lionTasksToolCallId,
 		runId: lionRunId,
 		runIndex: 3,
+		orchestration: {
+			strategy: "plan",
+			planSlug: "lion-dashboard-runtime",
+			planPath: ".plans/lion-dashboard-runtime",
+		},
 		state: "queued",
 		startTime: null,
 		endTime: null,
@@ -431,6 +462,79 @@ export const MOCK_EVENTS: SubAgentEvent[] = [
 	},
 ];
 
+export const MOCK_RUNS: SubAgentRunRecord[] = [
+	{
+		version: 1,
+		sessionId: "subagent-session-1",
+		taskId: "task-1",
+		instanceId: "subagent-task-1-abc123",
+		definitionName: "executor",
+		cwd: "/mock/project",
+		parentThreadId: mainThreadId,
+		parentToolCallId: lionTasksToolCallId,
+		runId: lionRunId,
+		runIndex: 0,
+		description: "Implement user authentication module",
+		prompt: "Implement user authentication module with JWT tokens and password hashing using bcrypt.",
+		systemPrompt: "Executor. Implement the delegated task and report validation evidence.",
+		modelProvider: "kimi-coding",
+		modelId: "kimi-for-coding",
+		status: "running",
+		startedAt: now - 45000,
+		updatedAt: now,
+		turnCount: 3,
+		toolCount: 5,
+	},
+	{
+		version: 1,
+		sessionId: "subagent-session-2",
+		taskId: "task-2",
+		instanceId: "subagent-task-2-def456",
+		definitionName: "analyzer",
+		cwd: "/mock/project",
+		parentThreadId: mainThreadId,
+		parentToolCallId: lionTasksToolCallId,
+		runId: lionRunId,
+		runIndex: 1,
+		description: "Analyze codebase structure",
+		prompt: "Analyze codebase structure and identify dependency risks.",
+		systemPrompt: "Analyzer. Investigate only the delegated scope.",
+		modelProvider: "deepseek",
+		modelId: "deepseek-v4-flash",
+		status: "completed",
+		summary: "Analysis complete. Found 42 files, 3 circular dependencies.",
+		startedAt: now - 120000,
+		updatedAt: now - 15000,
+		completedAt: now - 15000,
+		turnCount: 2,
+		toolCount: 3,
+	},
+	{
+		version: 1,
+		sessionId: "subagent-session-3",
+		taskId: "task-3",
+		instanceId: "subagent-task-3-ghi789",
+		definitionName: "reviewer",
+		cwd: "/mock/project",
+		parentThreadId: mainThreadId,
+		parentToolCallId: lionTasksToolCallId,
+		runId: lionRunId,
+		runIndex: 2,
+		description: "Review auth implementation",
+		prompt: "Review the auth implementation and report blockers.",
+		systemPrompt: "Reviewer. Return concrete risks and evidence.",
+		modelProvider: "deepseek",
+		modelId: "deepseek-v4-pro",
+		status: "failed",
+		error: "Tool execution timed out",
+		startedAt: now - 60000,
+		updatedAt: now - 10000,
+		completedAt: now - 10000,
+		turnCount: 1,
+		toolCount: 1,
+	},
+];
+
 export const MOCK_SESSION_MESSAGES: Array<Record<string, unknown>> = [
 	{
 		role: "user",
@@ -563,6 +667,44 @@ export const MOCK_SESSION_MESSAGES: Array<Record<string, unknown>> = [
 		],
 		timestamp: now - 43000,
 	},
+	{
+		id: "reviewer-msg-1",
+		instanceId: "subagent-task-3-ghi789",
+		role: "user",
+		blocks: [{ type: "text", text: "Review the auth implementation and report blockers." }],
+		timestamp: now - 60000,
+	},
+	{
+		id: "reviewer-msg-2",
+		instanceId: "subagent-task-3-ghi789",
+		role: "assistant",
+		blocks: [
+			{ type: "text", text: "I will inspect the implementation and run a focused validation command." },
+			{ type: "toolCall", id: "review-bash-1", name: "bash", arguments: { command: "bun run check" } },
+		],
+		timestamp: now - 56000,
+	},
+	{
+		id: "reviewer-msg-3",
+		instanceId: "subagent-task-3-ghi789",
+		role: "tool",
+		blocks: [
+			{
+				type: "toolResult",
+				toolCallId: "review-bash-1",
+				content: "Tool execution timed out",
+				isError: true,
+			},
+		],
+		timestamp: now - 10000,
+	},
+	{
+		id: "reviewer-msg-4",
+		instanceId: "subagent-task-3-ghi789",
+		role: "assistant",
+		blocks: [{ type: "text", text: "Review failed before I could complete validation: Tool execution timed out." }],
+		timestamp: now - 9500,
+	},
 ];
 
 export function getEventsForInstance(instanceId: string): SubAgentEvent[] {
@@ -575,4 +717,8 @@ export function getMessagesForInstance(instanceId: string): Array<Record<string,
 
 export function getAgentById(instanceId: string): SubAgentInstanceState | undefined {
 	return MOCK_AGENTS.find((a) => a.instanceId === instanceId);
+}
+
+export function getRunForInstance(instanceId: string): SubAgentRunRecord | undefined {
+	return MOCK_RUNS.find((run) => run.instanceId === instanceId);
 }

@@ -26,6 +26,7 @@ export class MainSessionBridge implements DashboardSessionSource {
 	private toolCount = 0;
 	private startTime: number | null = null;
 	private endTime: number | null = null;
+	private currentToolStartedAt: number | null = null;
 
 	attach(ctx: ExtensionContext): void {
 		const now = Date.now();
@@ -46,7 +47,7 @@ export class MainSessionBridge implements DashboardSessionSource {
 			currentTool: this.currentTool,
 			error: null,
 			toolCount: this.toolCount,
-			currentToolStartedAt: null,
+			currentToolStartedAt: this.currentToolStartedAt,
 			durationMs: this.startTime ? now - this.startTime : 0,
 			kind: "main",
 			isLive: true,
@@ -83,15 +84,25 @@ export class MainSessionBridge implements DashboardSessionSource {
 
 		switch (event.type) {
 			case "agent_start":
-				this.startTime = this.startTime ?? now;
+				this.startTime = now;
 				this.endTime = null;
+				this.currentTool = null;
+				this.currentToolStartedAt = null;
 				this.patchState({ state: "running", startTime: this.startTime, endTime: null, lastActivityAt: now });
 				this.emitLifecycle(threadId, previousState, "running", now);
 				break;
 			case "agent_end":
 				this.messages = event.messages;
 				this.endTime = now;
-				this.patchState({ state: "completed", endTime: now, currentTool: null, lastActivityAt: now });
+				this.currentTool = null;
+				this.currentToolStartedAt = null;
+				this.patchState({
+					state: "completed",
+					endTime: now,
+					currentTool: null,
+					currentToolStartedAt: null,
+					lastActivityAt: now,
+				});
 				this.emitLifecycle(threadId, previousState, "completed", now);
 				break;
 			case "turn_start":
@@ -125,8 +136,14 @@ export class MainSessionBridge implements DashboardSessionSource {
 				break;
 			case "tool_execution_start":
 				this.currentTool = event.toolName;
+				this.currentToolStartedAt = now;
 				this.toolCount++;
-				this.patchState({ currentTool: event.toolName, toolCount: this.toolCount, lastActivityAt: now });
+				this.patchState({
+					currentTool: event.toolName,
+					currentToolStartedAt: now,
+					toolCount: this.toolCount,
+					lastActivityAt: now,
+				});
 				this.emit({
 					type: "tool.start",
 					instanceId: threadId,
@@ -138,7 +155,8 @@ export class MainSessionBridge implements DashboardSessionSource {
 				break;
 			case "tool_execution_end":
 				this.currentTool = null;
-				this.patchState({ currentTool: null, lastActivityAt: now });
+				this.currentToolStartedAt = null;
+				this.patchState({ currentTool: null, currentToolStartedAt: null, lastActivityAt: now });
 				this.emit({
 					type: "tool.end",
 					instanceId: threadId,
@@ -166,11 +184,14 @@ export class MainSessionBridge implements DashboardSessionSource {
 		if (!this.thread) return;
 		const now = Date.now();
 		this.endTime = now;
+		this.currentTool = null;
+		this.currentToolStartedAt = null;
 		const previousState = this.thread.state;
 		this.patchState({
 			state: "completed",
 			endTime: now,
 			currentTool: null,
+			currentToolStartedAt: null,
 			lastActivityAt: now,
 		});
 		this.emitLifecycle(this.thread.instanceId, previousState, "completed", now);

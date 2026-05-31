@@ -1,7 +1,6 @@
-import type { RunTasksParams } from "../task-runner.js";
 import type { LionState } from "../types.js";
 import { escapeXml, hasPlanReference, inferPlanTaskId, joinPlanPath } from "./shared.js";
-import type { LionCompactionContext, LionStrategy, LionTaskPromptContext } from "./types.js";
+import type { LionCompactionContext, LionStrategy, LionTaskConfigInput, LionTaskPromptContext } from "./types.js";
 
 export class PlanLionStrategy implements LionStrategy {
 	readonly name = "plan" as const;
@@ -67,14 +66,18 @@ Use analyzer subagents for exploration. Launch analyzers in parallel when the re
 
 ## Task Delegation with lion_tasks
 
-Use lion_tasks to delegate tasks to subagents. You must explicitly provide the tasks array.
+Use lion_tasks to delegate tasks to subagents. This is the only model-facing Lion delegation tool.
+
+In planning phase, lion_tasks is read-only orchestration: use analyzer, planner, reviewer, or validator definitions for analysis, plan review, and validation. Do not request executor, write, edit, or shell execution capabilities before /lion-build.
+
+In build phase, lion_tasks may execute the active plan's next task with source: "active_plan_next_task", or run explicit executor/reviewer/analyzer follow-up delegations.
 
 Do not paste full plan files, long command lists, or large code excerpts into a subagent prompt. That wastes context and makes the handoff brittle. Give the subagent a compact XML delegation brief with pointers to the source of truth.
 
 Every delegation brief should include:
 - Plan path or slug
 - Task id and task file path when executing a plan task
-- Role: analyzer, executor, or reviewer
+- Role: analyzer, planner, reviewer, validator, or executor
 - Scope: exact directory or file bundle
 - Objective: what decision, change, or review is expected
 - Constraints: read-only, no unrelated refactors, preserve behavior, or validation limits
@@ -88,7 +91,7 @@ Execution strategies:
 - chain: Run sequentially, passing output from one to the next
 
 Each task specifies:
-- definition: The subagent type (analyzer, executor, reviewer)
+- definition: The subagent type (analyzer, planner, reviewer, validator, executor)
 - title: Short identifier
 - prompt: Compact XML delegation brief. Prefer file paths and task ids over copied plan content.
 - skillPaths: Optional explicit skill files/directories to force-load for that subagent
@@ -113,23 +116,22 @@ Never treat a subagent self-report as proof. Do not say "all tests pass", "build
 When executing a structured plan, follow this loop:
 
 1. Read the plan files (checklist.json, task-index.md, tasks/*.md)
-2. Prefer lion_next_task to identify the next pending task with satisfied dependencies
-3. Build a compact XML delegation brief for that task
-4. Delegate via lion_tasks
-5. Read the summary from the result
-6. Update the checklist through lion_record_task_result or lion_update_task_status
-7. Repeat until all tasks are complete
+2. Use lion_tasks with source: "active_plan_next_task" to select, execute, and record the next pending task with satisfied dependencies
+3. Read the summary from the result
+4. Repeat until all tasks are complete
 
-Do not manually edit checklist.json for routine status changes. Use Lion plan tools so you do not need to read and rewrite the whole task list.
+Do not manually edit checklist.json for routine status changes. lion_tasks records active-plan task outcomes during build mode.
 
 ## Plan Management Tools
 
-- lion_list_plans: List all available plans
-- lion_activate_plan: Activate a plan by reference
-- lion_next_task: Select the next executable pending or retryable task
-- lion_update_task_status: Persistently mark a task pending, in_progress, complete, blocked, or retryable
-- lion_record_task_result: Persist task status plus a short summary/evidence after delegation
-- lion_reconcile_plan: Reset a failed or blocked task for retry
+Plan activation is not build authorization. Activating a plan only selects the active plan and keeps Lion in planning mode. Never treat an activated plan as permission to execute implementation work.
+
+- lion_activate_plan: Resolve and activate a plan reference when the user asks to select or switch plans. This does not permit executor/build work.
+
+Use slash commands for user-controlled mode changes:
+- /lion-activate: enter durable plan mode or activate a plan
+- /lion-build: allow build/execution roles and active-plan task execution
+- /lion-simple: enter lightweight orchestration without a durable plan
 
 If no plan exists, help create one using the structured format:
 - context.md
@@ -141,10 +143,7 @@ If no plan exists, help create one using the structured format:
 Ask concise clarifying questions before writing or changing plan files.`;
 	}
 
-	decorateTaskPrompt(
-		taskConfig: RunTasksParams["tasks"][number],
-		context: LionTaskPromptContext,
-	): RunTasksParams["tasks"][number] {
+	decorateTaskPrompt(taskConfig: LionTaskConfigInput, context: LionTaskPromptContext): LionTaskConfigInput {
 		const plan = context.plan;
 		if (!plan || hasPlanReference(taskConfig.prompt)) return taskConfig;
 

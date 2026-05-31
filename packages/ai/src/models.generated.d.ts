@@ -3042,6 +3042,23 @@ export declare const MODELS: {
 			contextWindow: number;
 			maxTokens: number;
 		};
+		readonly "claude-opus-4-8": {
+			id: string;
+			name: string;
+			api: "anthropic-messages";
+			provider: string;
+			baseUrl: string;
+			reasoning: true;
+			input: ("image" | "text")[];
+			cost: {
+				input: number;
+				output: number;
+				cacheRead: number;
+				cacheWrite: number;
+			};
+			contextWindow: number;
+			maxTokens: number;
+		};
 		readonly "claude-sonnet-4": {
 			id: string;
 			name: string;
@@ -8049,6 +8066,34 @@ export declare const MODELS: {
 			contextWindow: number;
 			maxTokens: number;
 		};
+		readonly "deepseek-v4-flash": {
+			id: string;
+			name: string;
+			api: "openai-completions";
+			provider: string;
+			baseUrl: string;
+			compat: {
+				requiresReasoningContentOnAssistantMessages: true;
+				thinkingFormat: "deepseek";
+			};
+			reasoning: true;
+			thinkingLevelMap: {
+				minimal: null;
+				low: null;
+				medium: null;
+				high: string;
+				xhigh: string;
+			};
+			input: "text"[];
+			cost: {
+				input: number;
+				output: number;
+				cacheRead: number;
+				cacheWrite: number;
+			};
+			contextWindow: number;
+			maxTokens: number;
+		};
 		readonly "deepseek-v4-flash-free": {
 			id: string;
 			name: string;
@@ -8851,26 +8896,6 @@ export declare const MODELS: {
 			contextWindow: number;
 			maxTokens: number;
 		};
-		readonly "qwen3.5-plus": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			compat: {
-				thinkingFormat: "qwen";
-			};
-			reasoning: true;
-			input: ("image" | "text")[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
 		readonly "qwen3.6-plus": {
 			id: string;
 			name: string;
@@ -9347,23 +9372,6 @@ export declare const MODELS: {
 			contextWindow: number;
 			maxTokens: number;
 		};
-		readonly "baidu/ernie-4.5-21b-a3b": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			reasoning: false;
-			input: "text"[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
 		readonly "baidu/ernie-4.5-vl-28b-a3b": {
 			id: string;
 			name: string;
@@ -9620,34 +9628,6 @@ export declare const MODELS: {
 			maxTokens: number;
 		};
 		readonly "deepseek/deepseek-v4-flash": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			compat: {
-				requiresReasoningContentOnAssistantMessages: true;
-				thinkingFormat: "deepseek";
-			};
-			reasoning: true;
-			thinkingLevelMap: {
-				minimal: null;
-				low: null;
-				medium: null;
-				high: string;
-				xhigh: string;
-			};
-			input: "text"[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
-		readonly "deepseek/deepseek-v4-flash:free": {
 			id: string;
 			name: string;
 			api: "openai-completions";
@@ -10230,6 +10210,23 @@ export declare const MODELS: {
 			contextWindow: number;
 			maxTokens: number;
 		};
+		readonly "meta-llama/llama-4-maverick": {
+			id: string;
+			name: string;
+			api: "openai-completions";
+			provider: string;
+			baseUrl: string;
+			reasoning: false;
+			input: ("image" | "text")[];
+			cost: {
+				input: number;
+				output: number;
+				cacheRead: number;
+				cacheWrite: number;
+			};
+			contextWindow: number;
+			maxTokens: number;
+		};
 		readonly "meta-llama/llama-4-scout": {
 			id: string;
 			name: string;
@@ -10315,23 +10312,6 @@ export declare const MODELS: {
 			contextWindow: number;
 			maxTokens: number;
 		};
-		readonly "minimax/minimax-m2.5:free": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			reasoning: true;
-			input: "text"[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
 		readonly "minimax/minimax-m2.7": {
 			id: string;
 			name: string;
@@ -10367,40 +10347,6 @@ export declare const MODELS: {
 			maxTokens: number;
 		};
 		readonly "mistralai/devstral-2512": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			reasoning: false;
-			input: "text"[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
-		readonly "mistralai/devstral-medium": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			reasoning: false;
-			input: "text"[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
-		readonly "mistralai/devstral-small": {
 			id: string;
 			name: string;
 			api: "openai-completions";
@@ -10486,23 +10432,6 @@ export declare const MODELS: {
 			maxTokens: number;
 		};
 		readonly "mistralai/mistral-large-2407": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			reasoning: false;
-			input: "text"[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
-		readonly "mistralai/mistral-large-2411": {
 			id: string;
 			name: string;
 			api: "openai-completions";
@@ -10663,23 +10592,6 @@ export declare const MODELS: {
 			baseUrl: string;
 			reasoning: false;
 			input: "text"[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
-		readonly "mistralai/pixtral-large-2411": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			reasoning: false;
-			input: ("image" | "text")[];
 			cost: {
 				input: number;
 				output: number;
@@ -11224,23 +11136,6 @@ export declare const MODELS: {
 			baseUrl: string;
 			reasoning: false;
 			input: ("image" | "text")[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
-		readonly "openai/gpt-4o-audio-preview": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			reasoning: false;
-			input: "text"[];
 			cost: {
 				input: number;
 				output: number;
@@ -12086,23 +11981,6 @@ export declare const MODELS: {
 			maxTokens: number;
 		};
 		readonly "qwen/qwen-2.5-72b-instruct": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			reasoning: false;
-			input: "text"[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
-		readonly "qwen/qwen-2.5-7b-instruct": {
 			id: string;
 			name: string;
 			api: "openai-completions";
@@ -13089,40 +12967,6 @@ export declare const MODELS: {
 			maxTokens: number;
 		};
 		readonly "xiaomi/mimo-v2-flash": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			reasoning: true;
-			input: "text"[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
-		readonly "xiaomi/mimo-v2-omni": {
-			id: string;
-			name: string;
-			api: "openai-completions";
-			provider: string;
-			baseUrl: string;
-			reasoning: true;
-			input: ("image" | "text")[];
-			cost: {
-				input: number;
-				output: number;
-				cacheRead: number;
-				cacheWrite: number;
-			};
-			contextWindow: number;
-			maxTokens: number;
-		};
-		readonly "xiaomi/mimo-v2-pro": {
 			id: string;
 			name: string;
 			api: "openai-completions";
@@ -16351,6 +16195,23 @@ export declare const MODELS: {
 			provider: string;
 			baseUrl: string;
 			reasoning: false;
+			input: ("image" | "text")[];
+			cost: {
+				input: number;
+				output: number;
+				cacheRead: number;
+				cacheWrite: number;
+			};
+			contextWindow: number;
+			maxTokens: number;
+		};
+		readonly "stepfun/step-3.7-flash": {
+			id: string;
+			name: string;
+			api: "anthropic-messages";
+			provider: string;
+			baseUrl: string;
+			reasoning: true;
 			input: ("image" | "text")[];
 			cost: {
 				input: number;

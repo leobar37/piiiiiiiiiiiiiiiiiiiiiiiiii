@@ -1,6 +1,6 @@
 import type { AgentSessionEventListener } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import type { DelegationTask, SubAgentDefinition, SubAgentRunStore } from "../src/types.js";
+import type { DelegationTask, RecordSubAgentResultInput, SubAgentDefinition, SubAgentRunStore } from "../src/types.js";
 
 // =====================================================================
 // Mocks — all functions must be defined inline since vi.mock is hoisted
@@ -20,8 +20,10 @@ vi.mock("../src/session-factory.js", () => {
 	// Build a controllable fake session completely inline
 
 	const listeners = new Set<AgentSessionEventListener>();
+	let activeOptions: { recordResult?: (input: RecordSubAgentResultInput) => void } | undefined;
 
 	const control = {
+		recordedResult: undefined as RecordSubAgentResultInput | undefined,
 		emit(event: any) {
 			for (const listener of listeners) {
 				listener(event);
@@ -42,6 +44,10 @@ vi.mock("../src/session-factory.js", () => {
 				type: "message_end",
 				message: { role: "assistant", content: "Done" },
 			});
+			if (control.recordedResult) {
+				activeOptions?.recordResult?.(control.recordedResult);
+				control.recordedResult = undefined;
+			}
 			control.emit({ type: "agent_end" });
 		}),
 		steer: vi.fn().mockResolvedValue(undefined),
@@ -86,9 +92,21 @@ vi.mock("../src/session-factory.js", () => {
 		compact: vi.fn().mockResolvedValue({}),
 	};
 
+	const createSubAgentSession = vi.fn().mockImplementation(async (options) => {
+		activeOptions = options;
+		return { session };
+	});
+	(
+		createSubAgentSession as typeof createSubAgentSession & {
+			recordNextResult(result: RecordSubAgentResultInput): void;
+		}
+	).recordNextResult = (result: RecordSubAgentResultInput) => {
+		control.recordedResult = result;
+	};
+
 	return {
 		buildSubAgentInstructions: vi.fn().mockReturnValue("Built instructions"),
-		createSubAgentSession: vi.fn().mockResolvedValue({ session }),
+		createSubAgentSession,
 	};
 });
 
@@ -98,6 +116,10 @@ vi.mock("../src/session-factory.js", () => {
 
 import { SubAgentInstance } from "../src/instance.js";
 import { createSubAgentSession } from "../src/session-factory.js";
+
+const sessionFactoryMock = createSubAgentSession as typeof createSubAgentSession & {
+	recordNextResult(result: RecordSubAgentResultInput): void;
+};
 
 const sampleDefinition: SubAgentDefinition = {
 	name: "test-agent",
@@ -270,6 +292,78 @@ describe("SubAgentInstance", () => {
 				);
 			});
 		});
+
+		it("passes a result recorder to the subagent session", async () => {
+			const instance = createInstance();
+
+			await instance.start();
+
+			expect(createSubAgentSession).toHaveBeenCalledWith(
+				expect.objectContaining({
+					recordResult: expect.any(Function),
+				}),
+			);
+		});
+
+		it("uses recorded result as the final DelegationResult summary", async () => {
+			sessionFactoryMock.recordNextResult({
+				status: "completed",
+				summary: "Recorded canonical output",
+				details: "Detailed findings",
+				files: ["packages/subagents/src/instance.ts"],
+				evidence: ["Inspected lifecycle completion"],
+				risks: ["No extra risk"],
+				nextStep: "Return to orchestrator",
+			});
+			const instance = createInstance();
+
+			const result = await instance.start();
+
+			expect(result.status).toBe("completed");
+			expect(result.summary).toContain("Recorded canonical output");
+			expect(result.summary).toContain("Detailed findings");
+			expect(result.summary).toContain("packages/subagents/src/instance.ts");
+			expect(result.summary).toContain("Return to orchestrator");
+		});
+
+		it("uses recorded blocked status as the final DelegationResult status", async () => {
+			sessionFactoryMock.recordNextResult({
+				status: "blocked",
+				summary: "Blocked by missing plan file",
+			});
+			const instance = createInstance();
+
+			const result = await instance.start();
+
+			expect(result.status).toBe("blocked");
+			expect(result.summary).toBe("Blocked by missing plan file");
+			expect(result.finalState.state).toBe("completed");
+		});
+
+		it("persists recorded result summary to the run store", async () => {
+			sessionFactoryMock.recordNextResult({
+				status: "completed",
+				summary: "Persist this canonical result",
+			});
+			const runStore: SubAgentRunStore = {
+				getPath: vi.fn().mockReturnValue("/tmp/run.json"),
+				read: vi.fn().mockResolvedValue(null),
+				start: vi.fn().mockResolvedValue({} as any),
+				complete: vi.fn().mockResolvedValue({} as any),
+			};
+			const instance = createInstance(undefined, runStore);
+
+			await instance.start();
+
+			await vi.waitFor(() => {
+				expect(runStore.complete).toHaveBeenCalledWith(
+					expect.objectContaining({
+						status: "completed",
+						summary: "Persist this canonical result",
+					}),
+				);
+			});
+		});
 	});
 
 	describe("cancel()", () => {
@@ -297,6 +391,26 @@ describe("SubAgentInstance", () => {
 			expect(state).toHaveProperty("toolCount");
 			expect(state).toHaveProperty("currentToolStartedAt");
 			expect(state).toHaveProperty("durationMs");
+		});
+
+		it("does not let duration grow after completion", async () => {
+			vi.useFakeTimers();
+			try {
+				vi.setSystemTime(1000);
+				const instance = createInstance();
+				const startPromise = instance.start();
+				vi.setSystemTime(1750);
+				await startPromise;
+
+				const completed = instance.getState();
+				expect(completed.endTime).toBe(1750);
+				expect(completed.durationMs).toBe(750);
+
+				vi.setSystemTime(5000);
+				expect(instance.getState().durationMs).toBe(750);
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 	});
 

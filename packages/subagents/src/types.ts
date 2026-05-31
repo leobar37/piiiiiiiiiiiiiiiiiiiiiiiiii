@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import type {
 	AgentSession,
@@ -360,6 +360,15 @@ export interface SubAgentEventMap {
 		sessionEvent: Record<string, unknown>;
 		timestamp: number;
 	};
+
+	"session.message.complete": {
+		type: "session.message.complete";
+		instanceId: string;
+		taskId: string;
+		/** Full message at message_end, for persistence without deltas */
+		message: AgentMessage;
+		timestamp: number;
+	};
 }
 
 export type SubAgentEventType =
@@ -377,7 +386,8 @@ export type SubAgentEventType =
 	| "instance.created"
 	| "instance.state"
 	| "instance.session"
-	| "session.event";
+	| "session.event"
+	| "session.message.complete";
 export type SubAgentEvent = SubAgentEventMap[SubAgentEventType];
 
 // =============================================================================
@@ -459,6 +469,16 @@ export interface RecordSubAgentContextInput {
 	files?: string[];
 	decisions?: string[];
 	blockers?: string[];
+}
+
+export interface RecordSubAgentResultInput {
+	status: Extract<DelegationStatus, "completed" | "blocked">;
+	summary: string;
+	details?: string;
+	files?: string[];
+	evidence?: string[];
+	risks?: string[];
+	nextStep?: string;
 }
 
 export interface SubAgentContextStore {
@@ -622,6 +642,7 @@ export interface CreateSubAgentSessionOptions {
 	configManager?: SubAgentRuntimeConfigManager;
 	contextStore?: SubAgentContextStore;
 	runStore?: SubAgentRunStore;
+	recordResult?: (input: RecordSubAgentResultInput) => void;
 }
 
 export interface CreateSubAgentSessionResult {

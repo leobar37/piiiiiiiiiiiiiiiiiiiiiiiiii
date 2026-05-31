@@ -12,13 +12,21 @@ export class LionUI {
 		if (!ctx.hasUI) return;
 		if (!state.active) {
 			ctx.ui.setStatus("lion", undefined);
+			ctx.ui.setStatus("lion-dashboard", undefined);
 			return;
 		}
 		const plan = state.activePlanSlug ? `: ${state.activePlanSlug}` : "";
 		ctx.ui.setStatus("lion", ctx.ui.theme.fg("accent", `Lion ${state.strategy}/${state.phase}${plan}`));
 	}
 
+	showDashboardUrl(ctx: ExtensionContext, url: URL): void {
+		if (!ctx.hasUI) return;
+		ctx.ui.setStatus("lion-dashboard", ctx.ui.theme.fg("muted", `Dashboard ${url.href}`));
+	}
+
 	clearStatus(ctx: ExtensionContext): void {
-		if (ctx.hasUI) ctx.ui.setStatus("lion", undefined);
+		if (!ctx.hasUI) return;
+		ctx.ui.setStatus("lion", undefined);
+		ctx.ui.setStatus("lion-dashboard", undefined);
 	}
 }

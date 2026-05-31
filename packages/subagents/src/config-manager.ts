@@ -1,10 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { SubAgentCompactionConfig, SubAgentProjectConfig, SubAgentRoleConfig } from "./types.js";
-
-export const SUBAGENT_CONFIG_PATH = join(".pi", "subagents.json");
 
 const DEFAULT_AGENT_CONFIGS: Record<string, SubAgentRoleConfig> = {
 	planner: {
@@ -40,14 +36,8 @@ export interface ModelResolutionResult {
 export class SubAgentConfigManager {
 	private constructor(private readonly config: SubAgentProjectConfig) {}
 
-	static load(cwd: string): SubAgentConfigManager {
-		const path = join(cwd, SUBAGENT_CONFIG_PATH);
-		if (!existsSync(path)) {
-			return new SubAgentConfigManager({});
-		}
-
-		const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
-		return new SubAgentConfigManager(parseProjectConfig(parsed, path));
+	static fromConfig(config: SubAgentProjectConfig): SubAgentConfigManager {
+		return new SubAgentConfigManager(config);
 	}
 
 	static defaultsOnly(): SubAgentConfigManager {
@@ -114,70 +104,4 @@ function resolveModelReference(reference: string, availableModels: Model<Api>[])
 
 	const exactMatches = availableModels.filter((model) => model.id.toLowerCase() === trimmed.toLowerCase());
 	return exactMatches.length === 1 ? exactMatches[0] : undefined;
-}
-
-function parseProjectConfig(value: unknown, path: string): SubAgentProjectConfig {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error(`Invalid subagents config at ${path}: expected object`);
-	}
-
-	const raw = value as { agents?: unknown; compaction?: unknown };
-	return {
-		agents: raw.agents === undefined ? undefined : parseAgents(raw.agents, path),
-		compaction: raw.compaction === undefined ? undefined : parseCompaction(raw.compaction, path),
-	};
-}
-
-function parseAgents(value: unknown, path: string): Record<string, SubAgentRoleConfig> {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error(`Invalid subagents config at ${path}: agents must be an object`);
-	}
-
-	const agents: Record<string, SubAgentRoleConfig> = {};
-	for (const [name, rawConfig] of Object.entries(value)) {
-		if (!rawConfig || typeof rawConfig !== "object" || Array.isArray(rawConfig)) {
-			throw new Error(`Invalid subagents config at ${path}: agents.${name} must be an object`);
-		}
-		agents[name] = parseRoleConfig(rawConfig as Record<string, unknown>, `${path}: agents.${name}`);
-	}
-	return agents;
-}
-
-function parseRoleConfig(value: Record<string, unknown>, label: string): SubAgentRoleConfig {
-	const model = optionalString(value.model, `${label}.model`);
-	const fallbackModels = optionalStringArray(value.fallbackModels, `${label}.fallbackModels`);
-	const thinkingLevel = optionalThinkingLevel(value.thinkingLevel, `${label}.thinkingLevel`);
-	return { model, fallbackModels, thinkingLevel };
-}
-
-function parseCompaction(value: unknown, path: string): SubAgentCompactionConfig {
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		throw new Error(`Invalid subagents config at ${path}: compaction must be an object`);
-	}
-	const raw = value as { model?: unknown };
-	return { model: optionalString(raw.model, `${path}: compaction.model`) };
-}
-
-function optionalString(value: unknown, label: string): string | undefined {
-	if (value === undefined) return undefined;
-	if (typeof value !== "string" || !value.trim()) {
-		throw new Error(`Invalid subagents config: ${label} must be a non-empty string`);
-	}
-	return value;
-}
-
-function optionalStringArray(value: unknown, label: string): string[] | undefined {
-	if (value === undefined) return undefined;
-	if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
-		throw new Error(`Invalid subagents config: ${label} must be an array of non-empty strings`);
-	}
-	return value;
-}
-
-function optionalThinkingLevel(value: unknown, label: string): SubAgentRoleConfig["thinkingLevel"] | undefined {
-	if (value === undefined) return undefined;
-	if (value !== "off" && value !== "minimal" && value !== "low" && value !== "medium" && value !== "high") {
-		throw new Error(`Invalid subagents config: ${label} must be off, minimal, low, medium, or high`);
-	}
-	return value;
 }

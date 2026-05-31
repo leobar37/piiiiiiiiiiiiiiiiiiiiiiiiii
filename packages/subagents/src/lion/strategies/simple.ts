@@ -1,7 +1,6 @@
-import type { RunTasksParams } from "../task-runner.js";
 import type { LionState } from "../types.js";
 import { escapeXml } from "./shared.js";
-import type { LionCompactionContext, LionStrategy, LionTaskPromptContext } from "./types.js";
+import type { LionCompactionContext, LionStrategy, LionTaskConfigInput, LionTaskPromptContext } from "./types.js";
 
 export class SimpleLionStrategy implements LionStrategy {
 	readonly name = "simple" as const;
@@ -19,7 +18,7 @@ Use subagents for useful parallel analysis, implementation, review, or validatio
 - Use lion_tasks for non-trivial repository work when subagents would reduce main-thread context pressure.
 - Keep delegation briefs compact and XML-shaped.
 - Scope each delegation with exact files, directories, objective, constraints, and expected output.
-- Do not use lion_next_task, lion_record_task_result, lion_update_task_status, lion_reconcile_plan, or plan validation tools unless an active durable plan exists.
+- Do not assume active-plan task execution unless an active durable plan exists and /lion-build has been used.
 - Do not claim verification without concrete evidence from commands or explicit checks.
 - If the task becomes long-running, risky, or needs durable tracking, recommend switching to plan mode and wait for user approval.
 
@@ -58,10 +57,7 @@ For implementation:
   </delegation>`;
 	}
 
-	decorateTaskPrompt(
-		taskConfig: RunTasksParams["tasks"][number],
-		_context: LionTaskPromptContext,
-	): RunTasksParams["tasks"][number] {
+	decorateTaskPrompt(taskConfig: LionTaskConfigInput, _context: LionTaskPromptContext): LionTaskConfigInput {
 		if (taskConfig.prompt.includes("</lion_context>")) return taskConfig;
 		const lionContext = [
 			'<lion_context mode="simple">',

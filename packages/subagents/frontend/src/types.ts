@@ -37,6 +37,24 @@ export interface SubAgentInstanceState {
 	sessionId?: string;
 	modelProvider?: string;
 	modelId?: string;
+	orchestration?: SubAgentOrchestrationContext;
+}
+
+export interface SubAgentOrchestrationContext {
+	strategy: "plan" | "simple";
+	planSlug?: string;
+	planPath?: string;
+}
+
+export interface LionDashboardState {
+	active: boolean;
+	strategy: "plan" | "simple";
+	phase: "planning" | "building";
+	activePlanPath: string | null;
+	activePlanSlug: string | null;
+	planKind: "structured" | "overview" | null;
+	activeTaskId: string | null;
+	lastRunId: string | null;
 }
 
 export interface SubAgentEvent {

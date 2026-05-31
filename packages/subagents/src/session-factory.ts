@@ -16,6 +16,8 @@ import type {
 	InstructionContext,
 } from "./types.js";
 
+const INTERNAL_SUBAGENT_TOOLS = ["subagent_record_context", "subagent_read_context", "subagent_record_result"];
+
 function resolveBuilder(config: EffectiveSubAgentConfig): InstructionBuilder {
 	return config.instructionBuilder ?? DEFAULT_BUILDER;
 }
@@ -31,6 +33,12 @@ export function buildSubAgentInstructions(options: {
 		orchestration: options.task.orchestration,
 	};
 	return builder(ctx);
+}
+
+export function preserveInternalSubagentTools(requestedTools: string[], availableTools: string[]): string[] {
+	const available = new Set(availableTools);
+	const internal = INTERNAL_SUBAGENT_TOOLS.filter((tool) => available.has(tool));
+	return Array.from(new Set([...requestedTools, ...internal]));
 }
 
 export async function createSubAgentSession(
@@ -57,7 +65,12 @@ export async function createSubAgentSession(
 				// Tool restrictions
 				pi.on("session_start", async () => {
 					if (options.config.tools?.length) {
-						pi.setActiveTools(options.config.tools);
+						pi.setActiveTools(
+							preserveInternalSubagentTools(
+								options.config.tools,
+								pi.getAllTools().map((t) => t.name),
+							),
+						);
 					} else if (options.config.disabledTools?.length) {
 						const all = pi.getAllTools().map((t) => t.name);
 						pi.setActiveTools(all.filter((t) => !options.config.disabledTools!.includes(t)));
@@ -138,6 +151,32 @@ export async function createSubAgentSession(
 							return {
 								content: [{ type: "text" as const, text }],
 								details: { path: contextStore.getPath(ctx.sessionManager.getSessionId(), options.task.id) },
+							};
+						},
+					});
+
+					pi.registerTool({
+						name: "subagent_record_result",
+						label: "Subagent Record Result",
+						description: "Record the final result for this subagent task.",
+						promptSnippet: "Record the final subagent result before finishing the task",
+						parameters: Type.Object({
+							status: Type.Union([Type.Literal("completed"), Type.Literal("blocked")]),
+							summary: Type.String({ minLength: 1 }),
+							details: Type.Optional(Type.String()),
+							files: Type.Optional(Type.Array(Type.String())),
+							evidence: Type.Optional(Type.Array(Type.String())),
+							risks: Type.Optional(Type.Array(Type.String())),
+							nextStep: Type.Optional(Type.String()),
+						}),
+						async execute(_toolCallId, params) {
+							options.recordResult?.(params);
+							return {
+								content: [{ type: "text" as const, text: "Recorded final subagent result." }],
+								details: {
+									status: params.status,
+									taskId: options.task.id,
+								},
 							};
 						},
 					});

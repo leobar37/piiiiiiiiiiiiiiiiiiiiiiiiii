@@ -28,6 +28,7 @@ import { buildPlanReviewPrompt } from "../../src/lion/prompts/plan-reviewer.js";
 import { buildPlanningSystemPrompt } from "../../src/lion/prompts/planning.js";
 import { LionRuntime } from "../../src/lion/runtime.js";
 import { TaskRunner } from "../../src/lion/task-runner.js";
+import { registerLionTools } from "../../src/lion/tools.js";
 import type { LionPlan, LionTask } from "../../src/lion/types.js";
 import { buildLionSubagentWidgetLines } from "../../src/lion/ui/subagents-widget.js";
 import { parseReviewVerdict } from "../../src/lion/utils.js";
@@ -174,6 +175,7 @@ function testBuildPlanReviewPrompt(): void {
 	const prompt = buildPlanReviewPrompt(plan);
 	assert.ok(prompt.includes("test-plan"));
 	assert.ok(prompt.includes("T-001"));
+	assert.ok(prompt.includes("Do not edit files."));
 }
 
 function testBuildPlanningSystemPrompt(): void {
@@ -199,8 +201,9 @@ function testBuildPlanningSystemPrompt(): void {
 	assert.ok(prompt.includes('task_id="T-001"'));
 	assert.ok(prompt.includes("verificationStatus"));
 	assert.ok(prompt.includes("Never treat a subagent self-report as proof"));
-	assert.ok(prompt.includes("lion_next_task"));
-	assert.ok(prompt.includes("lion_record_task_result"));
+	assert.ok(prompt.includes('source: "active_plan_next_task"'));
+	assert.ok(!prompt.includes("lion_next_task"));
+	assert.ok(!prompt.includes("lion_record_task_result"));
 	assert.ok(prompt.includes("Do not manually edit checklist.json"));
 	assert.ok(prompt.includes("Interpret User Intent First"));
 	assert.ok(prompt.includes("This interpretation belongs to the main Lion orchestration thread"));
@@ -239,6 +242,7 @@ async function testTaskRunnerAddsPlanContextToDelegations(): Promise<void> {
 		const runtime = new LionRuntime(fakePi() as any);
 		const loaded = loadLionPlan(dir);
 		runtime.activatePlan(loaded);
+		runtime.setPhase("building");
 		runtime.activeController = {
 			createInstance(task: DelegationTask) {
 				capturedPrompts.push(task.prompt);
@@ -263,6 +267,8 @@ async function testTaskRunnerAddsPlanContextToDelegations(): Promise<void> {
 					start: async () => delegationResult(task, "completed", "bun x test passed"),
 				};
 			},
+			getInstances: () => [],
+			removeInstance: () => {},
 			getEventBus: () => ({ subscribe: () => () => {} }),
 		} as any;
 
@@ -301,6 +307,7 @@ async function testTaskRunnerAddsPlanContextWhenBriefHasGenericLionContext(): Pr
 		const runtime = new LionRuntime(fakePi() as any);
 		const loaded = loadLionPlan(dir);
 		runtime.activatePlan(loaded);
+		runtime.setPhase("building");
 		runtime.activeController = {
 			createInstance(task: DelegationTask) {
 				capturedPrompts.push(task.prompt);
@@ -324,6 +331,8 @@ async function testTaskRunnerAddsPlanContextWhenBriefHasGenericLionContext(): Pr
 					start: async () => delegationResult(task, "completed", "done"),
 				};
 			},
+			getInstances: () => [],
+			removeInstance: () => {},
 			getEventBus: () => ({ subscribe: () => () => {} }),
 		} as any;
 
@@ -381,6 +390,8 @@ async function testTaskRunnerAddsSimpleContextToDelegations(): Promise<void> {
 				start: async () => delegationResult(task, "completed", "done"),
 			};
 		},
+		getInstances: () => [],
+		removeInstance: () => {},
 		getEventBus: () => ({ subscribe: () => () => {} }),
 	} as any;
 
@@ -401,6 +412,342 @@ async function testTaskRunnerAddsSimpleContextToDelegations(): Promise<void> {
 	assert.deepEqual(capturedOrchestration[0], {
 		strategy: "simple",
 	});
+}
+
+async function testTaskRunnerRejectsExecutorInPlanningPhase(): Promise<void> {
+	const dir = createStructuredPlanDirWithChecklist();
+	try {
+		const runtime = new LionRuntime(fakePi() as any);
+		runtime.activatePlan(loadLionPlan(dir));
+		const runner = new TaskRunner(runtime);
+
+		await assert.rejects(
+			() =>
+				runner.run(
+					fakeCtx({}) as any,
+					{
+						strategy: "sequential",
+						tasks: [{ definition: "executor", title: "T-001: Task 1", prompt: "Implement the task." }],
+					},
+					{ threadId: "main:test-session", toolCallId: "tool-1" },
+				),
+			/lion-build/,
+		);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+async function testTaskRunnerForcesAnalyzerReadOnlyInPlanningPhase(): Promise<void> {
+	const dir = createStructuredPlanDirWithChecklist();
+	const capturedTasks: DelegationTask[] = [];
+	try {
+		const runtime = new LionRuntime(fakePi() as any);
+		runtime.activatePlan(loadLionPlan(dir));
+		runtime.activeController = {
+			createInstance(task: DelegationTask) {
+				capturedTasks.push(task);
+				return {
+					instanceId: `inst-${task.id}`,
+					getState: () => ({
+						instanceId: `inst-${task.id}`,
+						taskId: task.id,
+						definitionName: task.definition,
+						state: "completed",
+						startTime: 1,
+						endTime: 2,
+						turnCount: 1,
+						lastActivityAt: 2,
+						currentTool: null,
+						error: null,
+						toolCount: 0,
+						currentToolStartedAt: null,
+						durationMs: 1,
+					}),
+					start: async () => delegationResult(task, "completed", "analysis complete"),
+				};
+			},
+			getInstances: () => [],
+			removeInstance: () => {},
+			getEventBus: () => ({ subscribe: () => () => {} }),
+		} as any;
+
+		const runner = new TaskRunner(runtime);
+		await runner.run(
+			fakeCtx({}) as any,
+			{
+				strategy: "sequential",
+				tasks: [
+					{
+						definition: "analyzer",
+						title: "Analyze task",
+						prompt: "Inspect the task.",
+						capabilities: { canEdit: true, canWrite: true, canExecute: true },
+					},
+				],
+			},
+			{ threadId: "main:test-session", toolCallId: "tool-1" },
+		);
+
+		assert.equal(capturedTasks.length, 1);
+		assert.deepEqual(capturedTasks[0].capabilities, {
+			canEdit: false,
+			canWrite: false,
+			canExecute: false,
+		});
+		assert.deepEqual(capturedTasks[0].tools, ["read", "glob", "grep"]);
+		assert.ok(capturedTasks[0].disabledTools?.includes("bash"));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+async function testTaskRunnerAllowsValidatorInPlanningPhase(): Promise<void> {
+	const dir = createStructuredPlanDirWithChecklist();
+	try {
+		const runtime = new LionRuntime(fakePi() as any);
+		runtime.activatePlan(loadLionPlan(dir));
+		let capturedTask: DelegationTask | undefined;
+		runtime.activeController = {
+			createInstance(task: DelegationTask) {
+				capturedTask = task;
+				return {
+					instanceId: `instance-${task.id}`,
+					start: () => Promise.resolve(delegationResult(task, "completed", "validated plan")),
+					getState: () => delegationResult(task, "completed", "validated plan").finalState,
+					dispose: () => Promise.resolve(),
+					cancel: () => Promise.resolve(),
+				};
+			},
+			getInstances: () => [],
+			removeInstance: () => {},
+			getEventBus: () => ({ subscribe: () => () => {} }),
+		} as any;
+
+		const runner = new TaskRunner(runtime);
+		await runner.run(
+			fakeCtx({}) as any,
+			{
+				tasks: [
+					{
+						definition: "validator",
+						title: "Validate active plan",
+						prompt: "Validate the plan.",
+						capabilities: { canEdit: true, canWrite: true, canExecute: true },
+					},
+				],
+			},
+			{ threadId: "main:test-session", toolCallId: "tool-1" },
+		);
+
+		assert.equal(capturedTask?.definition, "validator");
+		assert.equal(capturedTask?.capabilities?.canEdit, false);
+		assert.equal(capturedTask?.capabilities?.canWrite, false);
+		assert.equal(capturedTask?.capabilities?.canExecute, false);
+		assert.deepEqual(capturedTask?.tools, ["read", "glob", "grep"]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+async function testTaskRunnerAllowsReviewerInPlanningPhase(): Promise<void> {
+	const dir = createStructuredPlanDirWithChecklist();
+	try {
+		const runtime = new LionRuntime(fakePi() as any);
+		runtime.activatePlan(loadLionPlan(dir));
+		let capturedTask: DelegationTask | undefined;
+		runtime.activeController = {
+			createInstance(task: DelegationTask) {
+				capturedTask = task;
+				return {
+					instanceId: `instance-${task.id}`,
+					start: () => Promise.resolve(delegationResult(task, "completed", "reviewed plan")),
+					getState: () => delegationResult(task, "completed", "reviewed plan").finalState,
+					dispose: () => Promise.resolve(),
+					cancel: () => Promise.resolve(),
+				};
+			},
+			getInstances: () => [],
+			removeInstance: () => {},
+			getEventBus: () => ({ subscribe: () => () => {} }),
+		} as any;
+
+		const runner = new TaskRunner(runtime);
+		await runner.run(
+			fakeCtx({}) as any,
+			{
+				tasks: [
+					{
+						definition: "reviewer",
+						title: "Review active plan",
+						prompt: "Review the plan.",
+						capabilities: { canEdit: true, canWrite: true, canExecute: true },
+					},
+				],
+			},
+			{ threadId: "main:test-session", toolCallId: "tool-1" },
+		);
+
+		assert.equal(capturedTask?.definition, "reviewer");
+		assert.equal(capturedTask?.capabilities?.canEdit, false);
+		assert.equal(capturedTask?.capabilities?.canWrite, false);
+		assert.equal(capturedTask?.capabilities?.canExecute, false);
+		assert.deepEqual(capturedTask?.tools, ["read", "glob", "grep"]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+async function testTaskRunnerRunsActivePlanNextTaskInBuildPhase(): Promise<void> {
+	const dir = createStructuredPlanDirWithChecklist();
+	try {
+		const runtime = new LionRuntime(fakePi() as any);
+		runtime.activatePlan(loadLionPlan(dir));
+		runtime.setPhase("building");
+		runtime.activeController = {
+			createInstance(task: DelegationTask) {
+				return {
+					instanceId: `inst-${task.id}`,
+					getState: () => ({
+						instanceId: `inst-${task.id}`,
+						taskId: task.id,
+						definitionName: task.definition,
+						state: "completed",
+						startTime: 1,
+						endTime: 2,
+						turnCount: 1,
+						lastActivityAt: 2,
+						currentTool: null,
+						error: null,
+						toolCount: 0,
+						currentToolStartedAt: null,
+						durationMs: 1,
+					}),
+					start: async () => delegationResult(task, "completed", "bun run check passed"),
+				};
+			},
+			getInstances: () => [],
+			removeInstance: () => {},
+			getEventBus: () => ({ subscribe: () => () => {} }),
+		} as any;
+
+		const runner = new TaskRunner(runtime);
+		const response = await runner.run(
+			fakeCtx({}) as any,
+			{ source: "active_plan_next_task", role: "executor", strategy: "sequential" },
+			{ threadId: "main:test-session", toolCallId: "tool-1" },
+		);
+
+		assert.equal(response.nextTask?.id, "T-001");
+		assert.equal(loadLionPlan(dir).tasks[0].status, "complete");
+		assert.equal(runtime.state.activeTaskId, null);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+async function testTaskRunnerRejectsNonExecutorActivePlanSource(): Promise<void> {
+	const dir = createStructuredPlanDirWithChecklist();
+	try {
+		const runtime = new LionRuntime(fakePi() as any);
+		runtime.activatePlan(loadLionPlan(dir));
+		runtime.setPhase("building");
+		const runner = new TaskRunner(runtime);
+
+		await assert.rejects(
+			() =>
+				runner.run(
+					fakeCtx({}) as any,
+					{ source: "active_plan_next_task", role: "analyzer", strategy: "sequential" },
+					{ threadId: "main:test-session", toolCallId: "tool-1" },
+				),
+			/only run executor/,
+		);
+		assert.equal(loadLionPlan(dir).tasks[0].status, "pending");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+async function testTaskRunnerEscapesActivePlanTaskPrompt(): Promise<void> {
+	const dir = createStructuredPlanDirWithChecklist({ title: 'Fix <runtime> & "quotes"' });
+	const capturedPrompts: string[] = [];
+	try {
+		const runtime = new LionRuntime(fakePi() as any);
+		runtime.activatePlan(loadLionPlan(dir));
+		runtime.setPhase("building");
+		runtime.activeController = {
+			createInstance(task: DelegationTask) {
+				capturedPrompts.push(task.prompt);
+				return {
+					instanceId: `inst-${task.id}`,
+					getState: () => ({
+						instanceId: `inst-${task.id}`,
+						taskId: task.id,
+						definitionName: task.definition,
+						state: "completed",
+						startTime: 1,
+						endTime: 2,
+						turnCount: 1,
+						lastActivityAt: 2,
+						currentTool: null,
+						error: null,
+						toolCount: 0,
+						currentToolStartedAt: null,
+						durationMs: 1,
+					}),
+					start: async () => delegationResult(task, "completed", "done"),
+				};
+			},
+			getInstances: () => [],
+			removeInstance: () => {},
+			getEventBus: () => ({ subscribe: () => () => {} }),
+		} as any;
+
+		const runner = new TaskRunner(runtime);
+		await runner.run(
+			fakeCtx({}) as any,
+			{ source: "active_plan_next_task", role: "executor", strategy: "sequential" },
+			{ threadId: "main:test-session", toolCallId: "tool-1" },
+		);
+
+		assert.equal(capturedPrompts.length, 1);
+		assert.ok(capturedPrompts[0].includes("Fix &lt;runtime&gt; &amp; &quot;quotes&quot;"));
+		assert.ok(!capturedPrompts[0].includes('Fix <runtime> & "quotes"'));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+async function testTaskRunnerReturnsUpdatedPlanOnActivePlanFailure(): Promise<void> {
+	const dir = createStructuredPlanDirWithChecklist();
+	try {
+		const runtime = new LionRuntime(fakePi() as any);
+		runtime.activatePlan(loadLionPlan(dir));
+		runtime.setPhase("building");
+		runtime.activeController = {
+			createInstance() {
+				throw new Error("controller failed");
+			},
+			getInstances: () => [],
+			removeInstance: () => {},
+			getEventBus: () => ({ subscribe: () => () => {} }),
+		} as any;
+
+		const runner = new TaskRunner(runtime);
+		const response = await runner.run(
+			fakeCtx({}) as any,
+			{ source: "active_plan_next_task", role: "executor", strategy: "sequential" },
+			{ threadId: "main:test-session", toolCallId: "tool-1" },
+		);
+
+		assert.equal(response.nextTask?.id, "T-001");
+		assert.equal(response.plan?.tasks[0].status, "blocked");
+		assert.equal(loadLionPlan(dir).tasks[0].status, "blocked");
+		assert.equal(runtime.state.activeTaskId, null);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 }
 
 function testStructuredPlanNextTaskRespectsDependencies(): void {
@@ -455,6 +802,69 @@ function testLionTaskEvidenceDetectsHiddenErrors(): void {
 
 	assert.equal(classified.verificationStatus, "failed");
 	assert.ok(classified.evidence.checks.length > 0);
+}
+
+async function testLionActivatePlanToolKeepsPlanningPhase(): Promise<void> {
+	const dir = createStructuredPlanDirWithChecklist();
+	const pi = fakePiWithTools();
+	try {
+		const runtime = new LionRuntime(pi as any);
+		registerLionTools(runtime);
+		const tool = pi.tools.get("lion_activate_plan");
+		assert.ok(tool);
+
+		const result = await tool.execute("tool-1", { reference: dir }, undefined, undefined, fakeCtx({}) as any);
+
+		assert.equal(runtime.state.activePlanPath, dir);
+		assert.equal(runtime.state.phase, "planning");
+		assert.equal(result.details.plan.rootPath, dir);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+async function testLionValidateCommandInjectsLionTasksPrompt(): Promise<void> {
+	const dir = createStructuredPlanDirWithChecklist();
+	const pi = fakePiWithCommands();
+	try {
+		const runtime = new LionRuntime(pi as any);
+		runtime.activatePlan(loadLionPlan(dir));
+		pi.messages.length = 0;
+		registerLionCommands(pi as any, runtime);
+
+		await pi.commands.get("lion-validate")!.handler("acceptance criteria", fakeCtx({}) as any);
+
+		const injected = pi.messages.find((message) => message.content?.customType === "lion-orchestrator-feedback");
+		assert.ok(injected);
+		assert.deepEqual(injected.options, { triggerTurn: true });
+		assert.deepEqual(injected.content.details.nextTools, ["lion_tasks"]);
+		assert.equal(injected.content.details.role, "validator");
+		assert.ok(injected.content.content.includes("Use lion_tasks with one explicit validator delegation"));
+		assert.ok(injected.content.content.includes("Do not implement application code."));
+		assert.ok(injected.content.content.includes("Focus: acceptance criteria"));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+function testLionToolsRegisterPlanActivationAndDelegationOnly(): void {
+	const pi = fakePiWithTools();
+	const runtime = new LionRuntime(pi as any);
+	registerLionTools(runtime);
+
+	assert.deepEqual([...pi.tools.keys()].sort(), ["lion_activate_plan", "lion_tasks"]);
+}
+
+function testLionDashboardUrlUsesStatusOnly(): void {
+	const pi = fakePi();
+	const runtime = new LionRuntime(pi as any);
+	const statusUpdates: Array<{ key: string; value: string | undefined }> = [];
+	const ctx = fakeCtx({ hasUI: true, statusUpdates });
+
+	runtime.ui.showDashboardUrl(ctx as any, new URL("http://127.0.0.1:4321/"));
+
+	assert.equal(pi.messages.length, 0);
+	assert.deepEqual(statusUpdates, [{ key: "lion-dashboard", value: "Dashboard http://127.0.0.1:4321/" }]);
 }
 
 async function testLionExtensionDoesNotGuardWhenInactive(): Promise<void> {
@@ -1561,7 +1971,23 @@ function fakePiWithCommands() {
 	};
 }
 
-function fakeCtx(opts: { entries?: any[]; isIdle?: boolean; hasPending?: boolean; hasUI?: boolean }) {
+function fakePiWithTools() {
+	return {
+		...fakePi(),
+		tools: new Map<string, any>(),
+		registerTool(tool: any) {
+			this.tools.set(tool.name, tool);
+		},
+	};
+}
+
+function fakeCtx(opts: {
+	entries?: any[];
+	isIdle?: boolean;
+	hasPending?: boolean;
+	hasUI?: boolean;
+	statusUpdates?: Array<{ key: string; value: string | undefined }>;
+}) {
 	return {
 		sessionManager: {
 			getBranch: () => opts.entries || [],
@@ -1576,8 +2002,13 @@ function fakeCtx(opts: { entries?: any[]; isIdle?: boolean; hasPending?: boolean
 		hasPendingMessages: () => opts.hasPending ?? false,
 		hasUI: opts.hasUI ?? false,
 		ui: {
-			setStatus: () => {},
+			setStatus: (key: string, value: string | undefined) => {
+				opts.statusUpdates?.push({ key, value });
+			},
 			showMessage: () => {},
+			theme: {
+				fg: (_name: string, text: string) => text,
+			},
 		},
 		modelRegistry: {
 			getApiKeyAndHeaders: () => Promise.resolve({ ok: true, apiKey: "test", headers: {} }),
@@ -1642,13 +2073,14 @@ Requirements:
 	return dir;
 }
 
-function createStructuredPlanDirWithChecklist(): string {
+function createStructuredPlanDirWithChecklist(options?: { title?: string }): string {
 	const dir = mkdtempSync(join(tmpdir(), "lion-structured-"));
+	const title = options?.title ?? "Task 1";
 	writeFileSync(
 		join(dir, "task-index.md"),
 		`# Test Plan
 
-## T-001: Task 1
+## T-001: ${title}
 
 Status: pending
 `,
@@ -1660,7 +2092,7 @@ Status: pending
 		JSON.stringify({
 			completed: 0,
 			total_tasks: 1,
-			tasks: [{ id: "T-001", title: "Task 1", status: "pending", dependencies: [], requirements: [] }],
+			tasks: [{ id: "T-001", title, status: "pending", dependencies: [], requirements: [] }],
 		}),
 	);
 	return dir;
@@ -1715,10 +2147,46 @@ const tests = [
 		fn: testTaskRunnerAddsPlanContextWhenBriefHasGenericLionContext,
 	},
 	{ name: "testTaskRunnerAddsSimpleContextToDelegations", fn: testTaskRunnerAddsSimpleContextToDelegations },
+	{ name: "testTaskRunnerRejectsExecutorInPlanningPhase", fn: testTaskRunnerRejectsExecutorInPlanningPhase },
+	{
+		name: "testTaskRunnerForcesAnalyzerReadOnlyInPlanningPhase",
+		fn: testTaskRunnerForcesAnalyzerReadOnlyInPlanningPhase,
+	},
+	{
+		name: "testTaskRunnerAllowsValidatorInPlanningPhase",
+		fn: testTaskRunnerAllowsValidatorInPlanningPhase,
+	},
+	{
+		name: "testTaskRunnerAllowsReviewerInPlanningPhase",
+		fn: testTaskRunnerAllowsReviewerInPlanningPhase,
+	},
+	{
+		name: "testTaskRunnerRunsActivePlanNextTaskInBuildPhase",
+		fn: testTaskRunnerRunsActivePlanNextTaskInBuildPhase,
+	},
+	{
+		name: "testTaskRunnerRejectsNonExecutorActivePlanSource",
+		fn: testTaskRunnerRejectsNonExecutorActivePlanSource,
+	},
+	{
+		name: "testTaskRunnerEscapesActivePlanTaskPrompt",
+		fn: testTaskRunnerEscapesActivePlanTaskPrompt,
+	},
+	{
+		name: "testTaskRunnerReturnsUpdatedPlanOnActivePlanFailure",
+		fn: testTaskRunnerReturnsUpdatedPlanOnActivePlanFailure,
+	},
 	{ name: "testStructuredPlanNextTaskRespectsDependencies", fn: testStructuredPlanNextTaskRespectsDependencies },
 	{ name: "testStructuredPlanRecordTaskResultPersistsSummary", fn: testStructuredPlanRecordTaskResultPersistsSummary },
 	{ name: "testLionTaskEvidenceRequiresValidation", fn: testLionTaskEvidenceRequiresValidation },
 	{ name: "testLionTaskEvidenceDetectsHiddenErrors", fn: testLionTaskEvidenceDetectsHiddenErrors },
+	{ name: "testLionActivatePlanToolKeepsPlanningPhase", fn: testLionActivatePlanToolKeepsPlanningPhase },
+	{ name: "testLionValidateCommandInjectsLionTasksPrompt", fn: testLionValidateCommandInjectsLionTasksPrompt },
+	{
+		name: "testLionToolsRegisterPlanActivationAndDelegationOnly",
+		fn: testLionToolsRegisterPlanActivationAndDelegationOnly,
+	},
+	{ name: "testLionDashboardUrlUsesStatusOnly", fn: testLionDashboardUrlUsesStatusOnly },
 	{ name: "testLionExtensionDoesNotGuardWhenInactive", fn: testLionExtensionDoesNotGuardWhenInactive },
 	{ name: "testDelegationGuardTurnCompatibilityMethods", fn: testDelegationGuardTurnCompatibilityMethods },
 	{ name: "testDelegationGuardAllowsStructureProbes", fn: testDelegationGuardAllowsStructureProbes },

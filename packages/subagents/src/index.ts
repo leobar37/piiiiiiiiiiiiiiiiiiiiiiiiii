@@ -4,11 +4,16 @@
  *   Set automatically by the web dashboard so Lion does not conflict on ports.
  */
 
-// Config resolver
+// Config
 
 export {
+	findConfigPath,
+	loadConfig,
+	loadConfigManager,
+	PI_CONFIG_FILE,
+} from "./config-loader.js";
+export {
 	resolveConfiguredModel,
-	SUBAGENT_CONFIG_PATH,
 	SubAgentConfigManager,
 } from "./config-manager.js";
 export { resolveEffectiveConfig } from "./config-resolver.js";
@@ -78,7 +83,6 @@ export type {
 	LionPhase,
 	LionPlan,
 	LionPlanKind,
-	LionPlanValidationResult,
 	LionReviewVerdict,
 	LionState,
 	LionStrategyName,

@@ -1,8 +1,9 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { SessionLogger } from "@local/pi-logger";
+import { SubAgentConfigManager } from "../config-manager.js";
 import { SubAgentContextStore } from "../context-store.js";
 import type { SubAgentController } from "../controller.js";
-import type { DelegationResult, SubAgentEvent } from "../types.js";
+import type { DelegationResult, SubAgentEvent, SubAgentRuntimeConfigManager } from "../types.js";
 import { createLionCore, type LionCore, type LionSubagentRole, restoreLionCore } from "./core.js";
 import type { LionDashboard } from "./dashboard.js";
 import { getOrStartLionDashboard } from "./dashboard.js";
@@ -49,6 +50,7 @@ export class LionRuntime {
 	#activeRunId: string | null;
 	#lastUiContext: ExtensionContext | null;
 	#widgetTimer: ReturnType<typeof setInterval> | null;
+	#configManager: SubAgentRuntimeConfigManager | null;
 	dashboard: LionDashboard | null;
 
 	constructor(pi: ExtensionAPI) {
@@ -71,6 +73,7 @@ export class LionRuntime {
 		this.dashboard = null;
 		this.#runLogger = null;
 		this.#unsubscribeRunLogger = null;
+		this.#configManager = null;
 	}
 
 	get pi(): ExtensionAPI {
@@ -173,6 +176,18 @@ export class LionRuntime {
 		this.#widgetTimer = value;
 	}
 
+	get configManager(): SubAgentRuntimeConfigManager | null {
+		return this.#configManager;
+	}
+	set configManager(value: SubAgentRuntimeConfigManager | null) {
+		this.#configManager = value;
+		// Invalidate cached controller so the next ensureController call
+		// creates a fresh one with the new config. Also clear the runId
+		// mapping so old controllers are not reused.
+		this.#activeController = null;
+		this.#controllers.clear();
+	}
+
 	ensureController(ctx: ExtensionContext): SubAgentController {
 		if (this.#activeController) {
 			// Cleanup old instances if controller has too many
@@ -185,6 +200,7 @@ export class LionRuntime {
 		const controller = createLionSubAgentController({
 			ctx: ctx as ExtensionCommandContext,
 			logger: this.#sessionLogger ?? undefined,
+			configManager: this.#configManager ?? SubAgentConfigManager.defaultsOnly(),
 		});
 		this.#activeController = controller;
 		return controller;

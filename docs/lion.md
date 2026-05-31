@@ -1,88 +1,81 @@
 # Lion Extension
 
-Extension de orquestacion para pi coding agent. Proporciona planificacion estructurada y delegacion de tareas a subagentes. El orquestador (agente principal) mantiene el control total del flujo.
+Lion is an orchestration extension for the pi coding agent. It provides structured planning, plan activation, and phase-aware subagent delegation.
 
-## Principio de Diseno
+## Design Principle
 
-Lion no toma decisiones por el orquestador. Es un mecanismo de delegacion: el orquestador decide que hacer, construye los prompts, y usa Lion para lanzar subagentes. Lion solo ejecuta lo que el orquestador le pide.
+Lion keeps build authorization in slash commands and routes all model-facing subagent delegation through `lion_tasks`.
 
-## Flujo de Uso
+- `lion_activate_plan` may select or switch the active plan, but it does not authorize implementation.
+- In planning mode, `lion_tasks` may run analyzer, planner, reviewer, or validator subagents as read-only delegations.
+- `/lion-validate` injects validation instructions back into the orchestrator; the orchestrator must use `lion_tasks` for the validator delegation.
+- In build mode, `lion_tasks` may execute the next active-plan task or explicit executor/reviewer/analyzer delegations.
+
+## Usage Flow
 
 ```mermaid
 sequenceDiagram
-    participant Orquestador
+    participant Orchestrator
     participant Lion
-    participant Subagentes
+    participant Subagents
 
-    Orquestador->>Lion: lion_activate_plan("mi-plan")
-    Lion-->>Orquestador: Plan activado
+    Orchestrator->>Lion: /lion-activate my-plan
+    Lion-->>Orchestrator: Plan mode active
 
-    Orquestador->>Orquestador: Leer checklist, decidir tarea
-    Orquestador->>Lion: lion_tasks({ tasks: [{ definition: "executor", ... }] })
-    Lion->>Subagentes: Delegar tarea
-    Subagentes-->>Lion: Resultado
-    Lion-->>Orquestador: Resultados + subagents retenidos
+    Orchestrator->>Lion: lion_tasks({ tasks: [{ definition: "analyzer", ... }] })
+    Lion->>Subagents: Planning analysis
+    Subagents-->>Lion: Findings
+    Lion-->>Orchestrator: Analyzer results
 
-    Orquestador->>Orquestador: Analizar resultado, decidir siguiente paso
-    Orquestador->>Lion: lion_prompt_subagent({ task_id, message })
-    Lion->>Subagentes: Follow-up
-    Subagentes-->>Lion: Respuesta
-    Lion-->>Orquestador: Feedback
+    Orchestrator->>Lion: /lion-build
+    Lion-->>Orchestrator: Build mode active
 
-    Orquestador->>Orquestador: Marcar checklist como complete/retryable
+    Orchestrator->>Lion: lion_tasks({ source: "active_plan_next_task" })
+    Lion->>Subagents: Execute next task
+    Subagents-->>Lion: Result
+    Lion-->>Orchestrator: Result + recorded task status
 ```
 
 ## Tools
 
-### Plan Management
-
-| Tool | Proposito |
-|------|-----------|
-| `lion_activate_plan` | Activar un plan por referencia (slug, path, o nombre) |
-| `lion_retry_task` | Resetear tarea blocked/failed a retryable |
-
 ### Commands
 
-| Command | Proposito |
+| Command | Purpose |
 |---------|-----------|
-| `/lion-validate` | Revisar el plan como segunda opinion y corregir errores automaticamente |
+| `/lion-activate` | Activate durable plan mode, optionally with a plan reference |
+| `/lion-build` | Allow build/execution roles and active-plan task execution |
+| `/lion-simple` | Activate lightweight orchestration without a durable plan |
+| `/lion-validate` | Ask the orchestrator to validate the active plan through `lion_tasks` |
+| `/lion-dashboard` | Open the Lion subagent dashboard and expose its URL in status |
 
-### Task Execution
+### Model-Facing Tool
 
-| Tool | Proposito |
+| Tool | Purpose |
 |------|-----------|
-| `lion_tasks` | Delegar tareas explicitas a subagents. Requiere array `tasks` |
-| `lion_prompt_subagent` | Enviar follow-up a subagent retenido |
+| `lion_activate_plan` | Resolve and activate a plan reference; keeps Lion in planning mode |
+| `lion_tasks` | Phase-aware subagent delegation for planning analysis and build execution |
 
-### Observability
-
-| Tool | Proposito |
-|------|-----------|
-| `lion_subagent_status` | Status de subagents (con/sin task_id) |
-| `lion_cancel_subagent` | Cancelar subagent atascado |
-
-## Ejemplo de Uso
+## Usage Example
 
 ```typescript
-// 1. Activar plan
-lion_activate_plan({ reference: "mi-plan" })
-
-// 2. Delegar tarea explicita
+// Planning phase: analysis only
 lion_tasks({
-  strategy: "sequential",
+  strategy: "parallel",
   tasks: [
     {
-      definition: "executor",
-      title: "Implementar feature X",
-      prompt: "Implementa la feature X segun el brief en tasks/T-001.md..."
+      definition: "analyzer",
+      title: "Map package runtime",
+      prompt: "<delegation>...</delegation>"
     }
   ]
 })
 
-// 3. El orquestador recibe resultados y decide:
-//    - Si esta bien: marcar checklist como complete
-//    - Si necesita ajustes: lion_prompt_subagent para follow-up
-//    - Si fallo: lion_retry_task y reintentar
+// Build phase: execute the next active-plan task and record its result
+lion_tasks({
+  source: "active_plan_next_task",
+  role: "executor",
+  strategy: "sequential"
+})
 ```
 
 ## Modelo de Datos

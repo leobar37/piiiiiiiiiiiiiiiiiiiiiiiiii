@@ -4,6 +4,7 @@ import { useAgents } from "./hooks/use-agents.ts";
 import { useSseEvents } from "./hooks/use-sse.ts";
 import { navigateToThread, getHashThreadId } from "./navigation.ts";
 import { useSubAgentStore } from "./store/use-subagent-store.ts";
+import { SubagentListPanel } from "./components/SubagentListPanel.tsx";
 
 function useHashThreadId(): string | null {
 	const [id, setId] = useState(() => getHashThreadId());
@@ -43,14 +44,15 @@ export default function App() {
 
 	return (
 		<div className="h-screen bg-bg-base text-text-primary overflow-hidden">
-			<main className="h-full flex flex-col min-w-0">
+			<main className="flex h-full min-w-0">
+				<SubagentListPanel activeThreadId={activeThreadId} />
 				{activeThreadId ? (
 					<AgentDetail
 						instanceId={activeThreadId}
 						onBack={() => navigateToThread(mainThread?.instanceId ?? null)}
 					/>
 				) : (
-					<div className="flex items-center justify-center h-full">
+					<div className="flex h-full min-w-0 flex-1 items-center justify-center">
 						<div className="text-center">
 							<p className="text-lg font-medium text-text-primary">
 								Lion Dashboard

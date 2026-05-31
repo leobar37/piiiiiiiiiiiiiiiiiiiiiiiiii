@@ -97,6 +97,7 @@ describe("Default instruction builders", () => {
 			expect(output).toContain("source of truth");
 			expect(output).toContain("Read referenced sources before");
 			expect(output).toContain("subagent_record_context");
+			expect(output).toContain("subagent_record_result");
 			expect(output).toContain("Do not ask the user for clarification");
 			expect(output).toContain("unknowns");
 		}

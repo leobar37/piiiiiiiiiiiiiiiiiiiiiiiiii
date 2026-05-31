@@ -23,6 +23,7 @@ ${ctx.task.prompt}
 ${sourceTruthInstruction(ctx)}
 Use any relevant loaded skill before analyzing or changing a specialized flow. If a matching skill is available, read and follow it, then mention it in your final summary.
 Read referenced sources before reaching conclusions. Use subagent_record_context for durable decisions, blockers, relevant files, and evidence when the tool is available.
+Use subagent_record_result for your final task result when the tool is available. If it is not available, return the final result in your last message.
 Do not ask the user for clarification or wait for external input. If context is missing, report it under unknowns and return the best concrete result possible.
 When done, provide a concise summary of what you did.`;
 
@@ -44,6 +45,7 @@ ${ctx.task.prompt}
 ${sourceTruthInstruction(ctx)}
 Use any relevant loaded skill before analyzing or changing a specialized flow. If a matching skill is available, read and follow it, then mention it in your final summary.
 Read referenced sources before changing code. Use subagent_record_context for durable decisions, blockers, relevant files, and evidence when the tool is available.
+Use subagent_record_result for your final task result when the tool is available. If it is not available, return the final result in your last message.
 Do not ask the user for clarification or wait for external input. If context is missing, report it under unknowns and return the best concrete result possible.
 Make minimal, safe changes. Validate according to the scope using only commands permitted by the task and repository. Do not claim verification without concrete evidence.
 When done, summarize what you changed and why.`;
@@ -68,6 +70,7 @@ ${ctx.task.prompt}
 ${sourceTruthInstruction(ctx)}
 Use any relevant loaded skill before analyzing a specialized flow. If a matching skill is available, read and follow it, then mention it in your final summary.
 Read referenced sources before reaching conclusions. Use subagent_record_context for durable decisions, blockers, relevant files, and evidence when the tool is available.
+Use subagent_record_result for your final task result when the tool is available. If it is not available, return the final result in your last message.
 You are a non-interactive analyzer worker. Do not ask the user for clarification, do not wait for external input, do not edit files, and do not invent missing context.
 Investigate thoroughly and return a concrete report with findings, relevant file paths and line numbers, risks, unknowns, and the recommended next delegation or implementation step.`;
 
@@ -88,6 +91,7 @@ ${ctx.task.prompt}
 ${sourceTruthInstruction(ctx)}
 Use any relevant loaded skill before planning a specialized flow. If a matching skill is available, read and follow it, then mention it in your final summary.
 Read referenced sources before reaching conclusions. Use subagent_record_context for durable decisions, blockers, relevant files, and evidence when the tool is available.
+Use subagent_record_result for your final task result when the tool is available. If it is not available, return the final result in your last message.
 Do not ask the user for clarification or wait for external input. If context is missing, report it under unknowns and return the best concrete result possible.
 Produce a clear, actionable plan. Break it into ordered steps with boundaries, dependencies, risks, and validation.`;
 
@@ -110,6 +114,7 @@ ${ctx.task.prompt}
 ${sourceTruthInstruction(ctx)}
 Use any relevant loaded skill before reviewing a specialized flow. If a matching skill is available, read and follow it, then mention it in your final summary.
 Read referenced sources before reaching conclusions. Use subagent_record_context for durable decisions, blockers, relevant files, and evidence when the tool is available.
+Use subagent_record_result for your final task result when the tool is available. If it is not available, return the final result in your last message.
 Do not ask the user for clarification or wait for external input. If context is missing, report it under unknowns and return the best concrete result possible.
 Review the work against the criteria. Report findings first, ordered by severity, and cite the evidence checked.
 End with "Review complete."`;

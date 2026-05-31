@@ -1,6 +1,7 @@
 import { compact, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SessionLogger } from "@local/pi-logger";
-import { resolveConfiguredModel, SubAgentConfigManager } from "../config-manager.js";
+import { loadConfigManager } from "../config-loader.js";
+import { resolveConfiguredModel } from "../config-manager.js";
 import { registerLionCommands } from "./commands.js";
 import { LionRuntime } from "./runtime.js";
 import { getLionStrategy } from "./strategies/index.js";
@@ -40,6 +41,17 @@ export function lionExtension(pi: ExtensionAPI): void {
 				planSlug: runtime.state.activePlanSlug,
 				planPath: runtime.state.activePlanPath,
 			});
+		}
+		// Load project config from config.pi.ts if available
+		if (!runtime.configManager) {
+			try {
+				const configManager = await loadConfigManager(cwd);
+				runtime.configManager = configManager;
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				runtime.logError("config-load", err);
+				console.error(`[lion] failed to load config.pi.ts: ${message}`);
+			}
 		}
 		restore(ctx);
 		if (runtime.state.active) {
@@ -92,8 +104,9 @@ export function lionExtension(pi: ExtensionAPI): void {
 		const instructions = await runtime.buildCompactionInstructions(ctx);
 		if (!instructions || !ctx.model) return;
 
-		const cwd = ctx.cwd ?? ctx.sessionManager.getCwd();
-		const configManager = SubAgentConfigManager.load(cwd);
+		const configManager = runtime.configManager;
+		if (!configManager) return;
+
 		const compactionConfig = configManager.getCompactionConfig();
 		const modelResolution = resolveConfiguredModel(compactionConfig?.model, undefined, ctx.modelRegistry);
 		const model = modelResolution.model ?? ctx.model;

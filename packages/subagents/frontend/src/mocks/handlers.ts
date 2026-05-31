@@ -1,8 +1,33 @@
 import { http, HttpResponse } from "msw";
-import { getAgentById, getEventsForInstance, getMessagesForInstance, MOCK_AGENTS } from "./data.ts";
+import {
+	getAgentById,
+	getEventsForInstance,
+	getMessagesForInstance,
+	getRunForInstance,
+	MOCK_AGENTS,
+	MOCK_LION_STATE,
+} from "./data.ts";
 import { createMockSseStream } from "./sse-emitter.ts";
 
 export const handlers = [
+	// GET /api/lion/state
+	http.get("/api/lion/state", ({ request }) => {
+		const url = new URL(request.url);
+		const mode = url.searchParams.get("mode");
+		if (mode === "simple") {
+			return HttpResponse.json({
+				...MOCK_LION_STATE,
+				strategy: "simple",
+				phase: "building",
+				activePlanPath: null,
+				activePlanSlug: null,
+				planKind: null,
+				activeTaskId: null,
+			});
+		}
+		return HttpResponse.json(MOCK_LION_STATE);
+	}),
+
 	// GET /api/threads
 	http.get("/api/threads", () => {
 		return HttpResponse.json(MOCK_AGENTS);
@@ -29,6 +54,15 @@ export const handlers = [
 		return HttpResponse.json(messages);
 	}),
 
+	// GET /api/threads/:id/run
+	http.get("/api/threads/:id/run", ({ params }) => {
+		const run = getRunForInstance(params.id as string);
+		if (!run) {
+			return new HttpResponse("Run record not found", { status: 404 });
+		}
+		return HttpResponse.json(run);
+	}),
+
 	// GET /api/instances
 	http.get("/api/instances", () => {
 		return HttpResponse.json(MOCK_AGENTS);
@@ -53,6 +87,15 @@ export const handlers = [
 	http.get("/api/instances/:id/messages", ({ params }) => {
 		const messages = getMessagesForInstance(params.id as string);
 		return HttpResponse.json(messages);
+	}),
+
+	// GET /api/instances/:id/run
+	http.get("/api/instances/:id/run", ({ params }) => {
+		const run = getRunForInstance(params.id as string);
+		if (!run) {
+			return new HttpResponse("Run record not found", { status: 404 });
+		}
+		return HttpResponse.json(run);
 	}),
 
 	// GET /events (SSE)

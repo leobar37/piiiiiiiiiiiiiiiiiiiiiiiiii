@@ -60,7 +60,7 @@ export class SubAgentController {
 		this.modelRegistry = options.modelRegistry;
 		this.settingsManager = options.settingsManager;
 		this.logger = options.logger;
-		this.configManager = options.configManager ?? SubAgentConfigManager.load(options.cwd);
+		this.configManager = options.configManager ?? SubAgentConfigManager.defaultsOnly();
 		this.contextStore = options.contextStore ?? new FileSubAgentContextStore(options.cwd);
 		this.runStore = options.runStore ?? new FileSubAgentRunStore(options.cwd);
 		this.eventBus = new SubAgentEventBus();

@@ -24,6 +24,16 @@ export class SubAgentEventStore {
 	}
 
 	async append(instanceId: string, event: SubAgentEvent): Promise<void> {
+		// Skip streaming deltas and raw message_end — only persist complete messages
+		// and state events. Real-time streaming consumers receive deltas via SSE.
+		// message_end is covered by session.message.complete which has the full message.
+		if (event.type === "session.event") {
+			const sessionEvent = (event as { sessionEvent?: { type?: string } }).sessionEvent;
+			if (sessionEvent?.type === "message_update" || sessionEvent?.type === "message_end") {
+				return;
+			}
+		}
+
 		const file = this.resolveFile(instanceId);
 		await mkdir(this.dir, { recursive: true });
 		const record: PersistedEventRecord = {

@@ -2,13 +2,12 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { RunTasksParams } from "../task-runner.js";
 import type { LionState } from "../types.js";
 
+export type LionTaskConfigInput = NonNullable<RunTasksParams["tasks"]>[number];
+
 export interface LionStrategy {
 	name: LionState["strategy"];
 	buildMainPrompt(state: LionState): string;
-	decorateTaskPrompt(
-		taskConfig: RunTasksParams["tasks"][number],
-		context: LionTaskPromptContext,
-	): RunTasksParams["tasks"][number];
+	decorateTaskPrompt(taskConfig: LionTaskConfigInput, context: LionTaskPromptContext): LionTaskConfigInput;
 	buildCompactionInstructions(state: LionState, context: LionCompactionContext): Promise<string | null>;
 }
 

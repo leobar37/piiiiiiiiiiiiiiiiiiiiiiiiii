@@ -24,6 +24,7 @@ import type {
 	EffectiveSubAgentConfig,
 	QueryRequest,
 	QueryResponse,
+	RecordSubAgentResultInput,
 	SubAgentContextStore,
 	SubAgentDefinition,
 	SubAgentEvent,
@@ -76,6 +77,7 @@ export class SubAgentInstance {
 	private configManager?: SubAgentRuntimeConfigManager;
 	private contextStore?: SubAgentContextStore;
 	private runStore?: SubAgentRunStore;
+	private recordedResult: RecordSubAgentResultInput | null = null;
 
 	constructor(options: CreateSubAgentInstanceOptions) {
 		this.instanceId = options.instanceId;
@@ -135,7 +137,7 @@ export class SubAgentInstance {
 			error: this.error,
 			toolCount: this.toolCount,
 			currentToolStartedAt: this.currentToolStartedAt,
-			durationMs: this.startTime ? now - this.startTime : 0,
+			durationMs: this.startTime ? (this.endTime ?? now) - this.startTime : 0,
 			sessionId: this.session?.sessionId,
 			sessionFile: this.session?.sessionFile,
 			modelProvider: this.session?.model?.provider,
@@ -256,6 +258,9 @@ export class SubAgentInstance {
 			settingsManager: this.settingsManager,
 			configManager: this.configManager,
 			contextStore: this.contextStore,
+			recordResult: (result) => {
+				this.recordedResult = result;
+			},
 		});
 
 		this.session = session;
@@ -405,6 +410,16 @@ export class SubAgentInstance {
 
 			case "message_end": {
 				if (event.message.role === "assistant") {
+					const completeEvent: SubAgentEvent = {
+						type: "session.message.complete",
+						instanceId: this.instanceId,
+						taskId: this.taskId,
+						message: event.message,
+						timestamp: now,
+					};
+					this.logEvent(completeEvent);
+					this.eventBus.emit(completeEvent);
+
 					const text = this.extractAssistantText(event.message);
 					const preview = text?.slice(0, 200) ?? "";
 					const progressEvent: SubAgentEvent = {
@@ -437,9 +452,10 @@ export class SubAgentInstance {
 
 	private handleCompletion(): void {
 		this.endTime = Date.now();
-		const summary = this.getLastAssistantText() ?? "Completed";
-		const result = this.buildResult("completed", summary);
+		const summary = this.buildCompletionSummary();
+		const status = this.recordedResult?.status ?? "completed";
 		this.transition("completed");
+		const result = this.buildResult(status, summary);
 		this.recordRunCompletion(result).catch(() => {});
 		const endEvent: SubAgentEvent = {
 			type: "task.end",
@@ -468,6 +484,11 @@ export class SubAgentInstance {
 			turnCount: this.turnCount,
 			finalState: this.getState(),
 		};
+	}
+
+	private buildCompletionSummary(): string {
+		if (!this.recordedResult) return this.getLastAssistantText() ?? "Completed";
+		return formatRecordedResult(this.recordedResult);
 	}
 
 	private async recordRunStart(): Promise<void> {
@@ -891,4 +912,16 @@ export class SubAgentInstance {
 	setActiveTools(toolNames: string[]): void {
 		this.assertSessionReady().setActiveToolsByName(toolNames);
 	}
+}
+
+function formatRecordedResult(result: RecordSubAgentResultInput): string {
+	const sections = [result.summary.trim()];
+	if (result.details?.trim()) sections.push(`Details:\n${result.details.trim()}`);
+	if (result.files?.length) sections.push(`Files:\n${result.files.map((file) => `- ${file}`).join("\n")}`);
+	if (result.evidence?.length) {
+		sections.push(`Evidence:\n${result.evidence.map((item) => `- ${item}`).join("\n")}`);
+	}
+	if (result.risks?.length) sections.push(`Risks:\n${result.risks.map((risk) => `- ${risk}`).join("\n")}`);
+	if (result.nextStep?.trim()) sections.push(`Next step:\n${result.nextStep.trim()}`);
+	return sections.join("\n\n");
 }

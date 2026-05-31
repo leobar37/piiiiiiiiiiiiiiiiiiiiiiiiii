@@ -4,20 +4,30 @@ import { TaskExecutor } from "../task-executor.js";
 import type { ExecutionPlan, SubAgentCapabilities } from "../types.js";
 import { LionEvents } from "./events/defs.js";
 import { classifyLionTaskResult } from "./evidence.js";
-import { loadLionPlan } from "./plans/index.js";
+import {
+	getNextExecutableTask,
+	loadLionPlan,
+	recordStructuredTaskResult,
+	updateStructuredTaskStatus,
+} from "./plans/index.js";
 import type { LionRuntime } from "./runtime.js";
 import { getLionStrategy } from "./strategies/index.js";
+import { escapeXml } from "./strategies/shared.js";
 import type { LionToolResponse } from "./tools.js";
 import type { LionTask, LionTaskResult, LionTaskStrategy, LionTasksResult } from "./types.js";
 import { renderLionSubagentWidget } from "./ui/subagents-widget.js";
 import { createRunId } from "./utils.js";
 
 export interface RunTasksParams {
-	tasks: Array<{
+	source?: "active_plan_next_task";
+	role?: "analyzer" | "planner" | "executor" | "reviewer" | "validator";
+	tasks?: Array<{
 		definition: string;
 		title: string;
 		prompt: string;
 		capabilities?: Partial<SubAgentCapabilities>;
+		tools?: string[];
+		disabledTools?: string[];
 		skillPaths?: string[];
 	}>;
 	strategy?: LionTaskStrategy;
@@ -35,26 +45,26 @@ export interface RunTasksParent {
 	toolCallId?: string;
 }
 
+type PreparedTaskConfig = NonNullable<RunTasksParams["tasks"]>[number];
+
 export class TaskRunner {
 	constructor(private runtime: LionRuntime) {}
 
 	async run(ctx: ExtensionContext, params: RunTasksParams, parent: RunTasksParent): Promise<LionToolResponse> {
-		if (!params.tasks || params.tasks.length === 0) {
-			throw new Error(
-				"lion_tasks requires at least one task. Provide tasks array with definitions, titles, and prompts.",
-			);
-		}
-
 		const { runtime } = this;
 		const activePlanPath = runtime.state.activePlanPath;
 		const plan = activePlanPath ? loadLionPlan(activePlanPath) : null;
 		runtime.rememberUiContext(ctx);
 
+		this.validateActivePlanSourceRole(params);
+		const selectedPlanTask = params.source === "active_plan_next_task" ? this.selectActivePlanTask(plan) : null;
+		const rawTaskConfigs = this.resolveRequestedTasks(params, selectedPlanTask);
+
 		const runId = createRunId();
 		const bus = runtime.events;
-		const taskConfigs = params.tasks.map((task) =>
-			getLionStrategy(runtime.state.strategy).decorateTaskPrompt(task, { plan }),
-		);
+		const taskConfigs = rawTaskConfigs
+			.map((task) => this.applyPhasePolicy(task))
+			.map((task) => getLionStrategy(runtime.state.strategy).decorateTaskPrompt(task, { plan }));
 		const strategy = params.strategy ?? "sequential";
 
 		// Initialize structured run logger for this batch
@@ -79,8 +89,9 @@ export class TaskRunner {
 
 		for (let i = 0; i < taskConfigs.length; i++) {
 			const taskId = `${runId}-task-${i}`;
-			runtime.startJob({ runId, taskId, role: "executor", title: taskConfigs[i].title });
-			runtime.startSubagentUi({ runId, taskId, role: "executor", title: taskConfigs[i].title });
+			const role = this.inferRoleFromDefinition(taskConfigs[i].definition);
+			runtime.startJob({ runId, taskId, role, title: taskConfigs[i].title });
+			runtime.startSubagentUi({ runId, taskId, role, title: taskConfigs[i].title });
 		}
 		renderLionSubagentWidget(runtime, ctx);
 
@@ -121,6 +132,8 @@ export class TaskRunner {
 				description: t.title,
 				prompt: t.prompt,
 				capabilities: t.capabilities,
+				tools: t.tools,
+				disabledTools: t.disabledTools,
 				skillPaths: t.skillPaths,
 				orchestration: {
 					strategy: runtime.state.strategy,
@@ -178,11 +191,23 @@ export class TaskRunner {
 			};
 			const run =
 				runtime.core.activeRun ?? this.buildSyntheticRun(runId, strategy, batchTask, failedResult, taskConfigs);
-			return { run, tasks: this.buildTaskResults(failedResult, taskConfigs) };
+			if (selectedPlanTask && plan) {
+				recordStructuredTaskResult(plan, selectedPlanTask.id, "blocked", error);
+				this.runtime.setActiveTask(null);
+			}
+			return {
+				run,
+				tasks: this.buildTaskResults(failedResult, taskConfigs),
+				nextTask: selectedPlanTask,
+				plan: selectedPlanTask && activePlanPath ? loadLionPlan(activePlanPath) : (plan ?? undefined),
+			};
 		} finally {
 			runtime.delegationGuard.releaseDepth("main");
 		}
 
+		if (selectedPlanTask) {
+			this.recordSelectedPlanTaskResult(plan, selectedPlanTask.id, result);
+		}
 		this.publishEndEvents(runtime, plan, runId, strategy, taskConfigs, result);
 		renderLionSubagentWidget(runtime, ctx);
 
@@ -208,7 +233,116 @@ export class TaskRunner {
 		return {
 			run,
 			tasks: this.buildTaskResults(result, taskConfigs),
+			nextTask: selectedPlanTask,
+			plan: selectedPlanTask && activePlanPath ? loadLionPlan(activePlanPath) : (plan ?? undefined),
 		};
+	}
+
+	private resolveRequestedTasks(params: RunTasksParams, selectedPlanTask: LionTask | null): PreparedTaskConfig[] {
+		if (params.source && params.tasks?.length) {
+			throw new Error("lion_tasks accepts either source or tasks, not both.");
+		}
+		if (params.source === "active_plan_next_task") {
+			if (!selectedPlanTask) {
+				throw new Error("No executable task is available in the active Lion plan.");
+			}
+			const role = params.role ?? "executor";
+			return [
+				{
+					definition: role,
+					title: `${selectedPlanTask.id}: ${selectedPlanTask.title}`,
+					prompt: this.buildActivePlanTaskPrompt(selectedPlanTask, role),
+				},
+			];
+		}
+		if (!params.tasks || params.tasks.length === 0) {
+			throw new Error("lion_tasks requires tasks or source: active_plan_next_task.");
+		}
+		return params.tasks;
+	}
+
+	private validateActivePlanSourceRole(params: RunTasksParams): void {
+		if (params.source !== "active_plan_next_task") return;
+		const role = params.role ?? "executor";
+		if (role !== "executor") {
+			throw new Error(
+				"active_plan_next_task can only run executor tasks. Use explicit tasks for analysis or review.",
+			);
+		}
+	}
+
+	private selectActivePlanTask(plan: ReturnType<typeof loadLionPlan> | null): LionTask | null {
+		if (this.runtime.state.strategy !== "plan") {
+			throw new Error("active_plan_next_task requires Lion plan mode.");
+		}
+		if (this.runtime.state.phase !== "building") {
+			throw new Error("active_plan_next_task requires /lion-build in plan mode.");
+		}
+		if (!plan) {
+			throw new Error("active_plan_next_task requires an active plan. Run /lion-activate <plan> first.");
+		}
+		const task = getNextExecutableTask(plan);
+		if (task) {
+			updateStructuredTaskStatus(plan, task.id, "in_progress");
+			this.runtime.setActiveTask(task.id);
+		}
+		return task;
+	}
+
+	private buildActivePlanTaskPrompt(task: LionTask, role: string): string {
+		const planPath = this.runtime.state.activePlanPath ?? "";
+		const taskFile = task.file ? `${planPath}/${task.file}` : "";
+		return [
+			"<delegation>",
+			`  <role>${escapeXml(role)}</role>`,
+			`  <plan path="${escapeXml(planPath)}" task_id="${escapeXml(task.id)}" task_file="${escapeXml(taskFile)}" />`,
+			`  <objective>${escapeXml(task.title)}</objective>`,
+			"  <constraints>",
+			"    <must>Use the active plan and task file as the source of truth.</must>",
+			"    <must_not>Ask the user for clarification.</must_not>",
+			"    <must_not>Wait for external input.</must_not>",
+			"  </constraints>",
+			"  <output>",
+			"    <must_return>Summary, files changed or inspected, validation evidence, risks, and unknowns.</must_return>",
+			"  </output>",
+			"</delegation>",
+		].join("\n");
+	}
+
+	private applyPhasePolicy(task: PreparedTaskConfig): PreparedTaskConfig {
+		const state = this.runtime.state;
+		if (state.strategy !== "plan") return task;
+
+		if (state.phase === "planning") {
+			if (!isPlanningRole(task.definition)) {
+				throw new Error(`${task.definition} tasks require /lion-build in plan mode.`);
+			}
+			return {
+				...task,
+				capabilities: {
+					...task.capabilities,
+					canEdit: false,
+					canWrite: false,
+					canExecute: false,
+				},
+				tools: ["read", "glob", "grep"],
+				disabledTools: ["edit", "write", "multi-edit", "bash"],
+			};
+		}
+
+		return task;
+	}
+
+	private recordSelectedPlanTaskResult(
+		plan: ReturnType<typeof loadLionPlan> | null,
+		taskId: string,
+		result: TaskExecutionResult,
+	): void {
+		if (!plan) return;
+		const summary = result.results.map((item) => item.summary).join("\n\n");
+		const status = result.results.every((item) => item.status === "completed") ? "complete" : "blocked";
+		recordStructuredTaskResult(plan, taskId, status, summary);
+		this.runtime.setActiveTask(null);
 	}
 
 	private publishStartEvents(
@@ -216,7 +350,7 @@ export class TaskRunner {
 		plan: NonNullable<ReturnType<typeof loadLionPlan>> | null,
 		runId: string,
 		strategy: LionTaskStrategy,
-		taskConfigs: RunTasksParams["tasks"],
+		taskConfigs: PreparedTaskConfig[],
 		concurrency?: number,
 	): void {
 		bus.emit(
@@ -245,7 +379,7 @@ export class TaskRunner {
 
 	private handleExecutionError(
 		runId: string,
-		taskConfigs: RunTasksParams["tasks"],
+		taskConfigs: PreparedTaskConfig[],
 		plan: NonNullable<ReturnType<typeof loadLionPlan>> | null,
 		error: string,
 	): void {
@@ -275,7 +409,7 @@ export class TaskRunner {
 		plan: NonNullable<ReturnType<typeof loadLionPlan>> | null,
 		runId: string,
 		strategy: LionTaskStrategy,
-		taskConfigs: RunTasksParams["tasks"],
+		taskConfigs: PreparedTaskConfig[],
 		result: TaskExecutionResult,
 	): void {
 		for (let i = 0; i < result.results.length; i++) {
@@ -305,7 +439,7 @@ export class TaskRunner {
 		);
 	}
 
-	private buildTaskResults(result: TaskExecutionResult, taskConfigs: RunTasksParams["tasks"]): LionTaskResult[] {
+	private buildTaskResults(result: TaskExecutionResult, taskConfigs: PreparedTaskConfig[]): LionTaskResult[] {
 		return result.results.map((r, i) => {
 			const classification = classifyLionTaskResult(r);
 			return {
@@ -327,7 +461,7 @@ export class TaskRunner {
 		runId: string,
 		strategy: LionTaskStrategy,
 		result: TaskExecutionResult,
-		taskConfigs: RunTasksParams["tasks"],
+		taskConfigs: PreparedTaskConfig[],
 	): LionTasksResult {
 		return {
 			runId,
@@ -344,7 +478,7 @@ export class TaskRunner {
 		_strategy: LionTaskStrategy,
 		batchTask: LionTask,
 		result: TaskExecutionResult,
-		taskConfigs?: RunTasksParams["tasks"],
+		taskConfigs?: PreparedTaskConfig[],
 	): import("./core.js").LionRun {
 		const allCompleted = result.results.every((r) => r.status === "completed");
 		const anyFailed = result.results.some((r) => r.status === "failed");
@@ -383,6 +517,10 @@ export class TaskRunner {
 
 	private inferRoleFromDefinition(definition: string): import("./core.js").LionSubagentRole {
 		switch (definition) {
+			case "analyzer":
+				return "analyzer";
+			case "planner":
+				return "planner";
 			case "reviewer":
 				return "reviewer";
 			case "validator":
@@ -391,4 +529,10 @@ export class TaskRunner {
 				return "executor";
 		}
 	}
+}
+
+function isPlanningRole(definition: string): boolean {
+	return (
+		definition === "analyzer" || definition === "planner" || definition === "reviewer" || definition === "validator"
+	);
 }

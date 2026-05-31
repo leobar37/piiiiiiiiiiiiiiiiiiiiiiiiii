@@ -26,14 +26,12 @@ ${tasks || "(no tasks)"}
 Inspect all plan files (context, requirements, task index, checklist, and task briefs).
 
 Check for:
-- missing files or empty/missing briefs — create them with reasonable content
-- unclear or missing acceptance criteria — add them
-- tasks that are too large or too small — split or merge as needed
-- unreasonable dependencies — adjust them
-- risks not called out — add them to task briefs
-- broken checklist state — correct it (e.g., reset stuck tasks to pending)
+- missing files or empty/missing briefs
+- unclear or missing acceptance criteria
+- tasks that are too large or too small
+- unreasonable dependencies
+- risks not called out
+- broken checklist state, including stuck in-progress tasks
 
-Fix all issues you find directly in the plan files.
-
-When done, provide a summary of what you found and what you fixed. If you found no issues, say so. If you found issues that require human judgment and cannot be fixed automatically, mention them explicitly.`;
+Do not edit files. Provide a concise validation report with findings, severity, affected files/tasks, and recommended plan changes. If you found no issues, say so.`;
 }

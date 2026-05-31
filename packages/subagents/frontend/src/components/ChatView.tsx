@@ -46,7 +46,7 @@ export function ChatView({ instanceId }: ChatViewProps) {
 				<div ref={scrollRef} className="h-full space-y-4 overflow-y-auto p-4">
 					{messages.length === 0 ? (
 						<div className="flex h-full items-center justify-center">
-							<span className="text-sm text-text-muted">Waiting for messages...</span>
+							<EmptyMessageState thread={thread} />
 						</div>
 					) : (
 						<AnimatePresence initial={false}>
@@ -90,4 +90,18 @@ export function ChatView({ instanceId }: ChatViewProps) {
 			</div>
 		</div>
 	);
+}
+
+function EmptyMessageState({ thread }: { thread?: ReturnType<typeof useSubAgentStore.getState>["agents"][number] }) {
+	if (thread?.kind === "subagent" && (thread.state === "failed" || thread.state === "completed" || thread.state === "timed_out")) {
+		return (
+			<div className="max-w-sm rounded border border-border-subtle bg-bg-elevated px-4 py-3 text-center">
+				<div className="text-sm font-medium text-text-secondary">No session messages recorded.</div>
+				<div className="mt-1 text-xs leading-relaxed text-text-tertiary">
+					This subagent has run metadata, but no chat transcript was available. Check the run input, output, and error details.
+				</div>
+			</div>
+		);
+	}
+	return <span className="text-sm text-text-muted">Waiting for messages...</span>;
 }

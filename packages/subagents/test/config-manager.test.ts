@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
+import { loadConfigManager } from "../src/config-loader.js";
 import { resolveConfiguredModel, SubAgentConfigManager } from "../src/config-manager.js";
 
 function model(provider: string, id: string): Model<Api> {
@@ -28,35 +29,69 @@ function registry(models: Model<Api>[]) {
 
 describe("SubAgentConfigManager", () => {
 	it("loads defaults when no project config exists", () => {
+		const manager = SubAgentConfigManager.defaultsOnly();
+		expect(manager.getAgentConfig("planner")?.model).toBe("kimi-coding/kimi-for-coding");
+		expect(manager.getAgentConfig("analyzer")?.model).toBe("deepseek/deepseek-v4-flash");
+		expect(manager.getCompactionConfig()?.model).toBe("deepseek/deepseek-v4-flash");
+	});
+
+	it("merges project overrides with defaults", () => {
+		const manager = SubAgentConfigManager.fromConfig({
+			agents: {
+				planner: { model: "deepseek/deepseek-v4-flash" },
+			},
+			compaction: { model: "kimi-coding/kimi-for-coding" },
+		});
+		expect(manager.getAgentConfig("planner")?.model).toBe("deepseek/deepseek-v4-flash");
+		expect(manager.getAgentConfig("planner")?.thinkingLevel).toBe("medium");
+		expect(manager.getCompactionConfig()?.model).toBe("kimi-coding/kimi-for-coding");
+	});
+});
+
+describe("loadConfigManager", () => {
+	it("loads config.pi.ts and evaluates it", async () => {
 		const cwd = mkdtempSync(join(tmpdir(), "subagent-config-"));
 		try {
-			const manager = SubAgentConfigManager.load(cwd);
+			writeFileSync(
+				join(cwd, "config.pi.ts"),
+				`export default { agents: { executor: { model: "openai/gpt-4o" } } };`,
+			);
+
+			const manager = await loadConfigManager(cwd);
+			expect(manager.getAgentConfig("executor")?.model).toBe("openai/gpt-4o");
 			expect(manager.getAgentConfig("planner")?.model).toBe("kimi-coding/kimi-for-coding");
-			expect(manager.getAgentConfig("analyzer")?.model).toBe("deepseek/deepseek-v4-flash");
-			expect(manager.getCompactionConfig()?.model).toBe("deepseek/deepseek-v4-flash");
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}
 	});
 
-	it("merges project overrides with defaults", () => {
+	it("loads async config function", async () => {
 		const cwd = mkdtempSync(join(tmpdir(), "subagent-config-"));
+		const previousTestModel = process.env.TEST_MODEL;
 		try {
-			mkdirSync(join(cwd, ".pi"));
 			writeFileSync(
-				join(cwd, ".pi", "subagents.json"),
-				JSON.stringify({
-					agents: {
-						planner: { model: "deepseek/deepseek-v4-flash" },
-					},
-					compaction: { model: "kimi-coding/kimi-for-coding" },
-				}),
+				join(cwd, "config.pi.ts"),
+				`export default async (ctx) => ({ agents: { executor: { model: ctx.env.TEST_MODEL || "fallback" } } });`,
 			);
 
-			const manager = SubAgentConfigManager.load(cwd);
-			expect(manager.getAgentConfig("planner")?.model).toBe("deepseek/deepseek-v4-flash");
-			expect(manager.getAgentConfig("planner")?.thinkingLevel).toBe("medium");
-			expect(manager.getCompactionConfig()?.model).toBe("kimi-coding/kimi-for-coding");
+			process.env.TEST_MODEL = "anthropic/claude-3-5-sonnet";
+			const manager = await loadConfigManager(cwd);
+			expect(manager.getAgentConfig("executor")?.model).toBe("anthropic/claude-3-5-sonnet");
+		} finally {
+			if (previousTestModel === undefined) {
+				delete process.env.TEST_MODEL;
+			} else {
+				process.env.TEST_MODEL = previousTestModel;
+			}
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("falls back to defaults when no config.pi.ts exists", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "subagent-config-"));
+		try {
+			const manager = await loadConfigManager(cwd);
+			expect(manager.getAgentConfig("planner")?.model).toBe("kimi-coding/kimi-for-coding");
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}

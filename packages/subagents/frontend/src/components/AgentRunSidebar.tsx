@@ -50,6 +50,7 @@ export function AgentRunSidebar({ agent, run, isLoading }: AgentRunSidebarProps)
 	const modelLabel =
 		(run?.modelProvider && run.modelId ? `${run.modelProvider}/${run.modelId}` : null) ??
 		(agent?.modelProvider && agent.modelId ? `${agent.modelProvider}/${agent.modelId}` : "n/a");
+	const isMain = agent?.kind === "main";
 
 	return (
 		<aside className="flex w-[340px] shrink-0 flex-col border-l border-border-subtle bg-bg-elevated">
@@ -77,37 +78,48 @@ export function AgentRunSidebar({ agent, run, isLoading }: AgentRunSidebarProps)
 			</div>
 
 			<div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-				<section>
-					<div className="mb-2 flex items-center justify-between gap-2">
-						<h2 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">Input</h2>
-						<CopyButton text={input} label="Copy" />
-					</div>
-					<pre className="max-h-72 overflow-auto rounded border border-border-subtle bg-bg px-3 py-2 font-mono text-xs leading-relaxed text-text-secondary whitespace-pre-wrap">
-						{input || "No run input recorded yet."}
-					</pre>
-				</section>
-
-				{systemPrompt ? (
-					<section>
-						<div className="mb-2 flex items-center justify-between gap-2">
-							<h2 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">System Prompt</h2>
-							<CopyButton text={systemPrompt} label="Copy" />
-						</div>
-						<pre className="max-h-56 overflow-auto rounded border border-border-subtle bg-bg px-3 py-2 font-mono text-xs leading-relaxed text-text-secondary whitespace-pre-wrap">
-							{systemPrompt}
-						</pre>
+				{isMain ? (
+					<section className="rounded border border-border-subtle bg-bg px-3 py-2 text-xs leading-relaxed text-text-secondary">
+						<div className="text-text-tertiary">Session</div>
+						<div className="mt-1 break-all text-text-primary">{agent?.sessionId ?? "n/a"}</div>
+						<div className="mt-3 text-text-tertiary">Duration</div>
+						<div className="mt-1 text-text-primary">{formatDuration(agent?.durationMs ?? 0)}</div>
 					</section>
-				) : null}
+				) : (
+					<>
+						<section>
+							<div className="mb-2 flex items-center justify-between gap-2">
+								<h2 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">Input</h2>
+								<CopyButton text={input} label="Copy" />
+							</div>
+							<pre className="max-h-72 overflow-auto rounded border border-border-subtle bg-bg px-3 py-2 font-mono text-xs leading-relaxed text-text-secondary whitespace-pre-wrap">
+								{input || "No run input recorded yet."}
+							</pre>
+						</section>
 
-				<section>
-					<div className="mb-2 flex items-center justify-between gap-2">
-						<h2 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">Output</h2>
-						<CopyButton text={output} label="Copy" />
-					</div>
-					<div className="rounded border border-border-subtle bg-bg px-3 py-2">
-						{output ? <MarkdownRenderer content={output} /> : <div className="text-xs text-text-muted">No output recorded yet.</div>}
-					</div>
-				</section>
+						{systemPrompt ? (
+							<section>
+								<div className="mb-2 flex items-center justify-between gap-2">
+									<h2 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">System Prompt</h2>
+									<CopyButton text={systemPrompt} label="Copy" />
+								</div>
+								<pre className="max-h-56 overflow-auto rounded border border-border-subtle bg-bg px-3 py-2 font-mono text-xs leading-relaxed text-text-secondary whitespace-pre-wrap">
+									{systemPrompt}
+								</pre>
+							</section>
+						) : null}
+
+						<section>
+							<div className="mb-2 flex items-center justify-between gap-2">
+								<h2 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">Output</h2>
+								<CopyButton text={output} label="Copy" />
+							</div>
+							<div className="rounded border border-border-subtle bg-bg px-3 py-2">
+								{output ? <MarkdownRenderer content={output} /> : <div className="text-xs text-text-muted">No output recorded yet.</div>}
+							</div>
+						</section>
+					</>
+				)}
 
 				<div className="border-t border-border-subtle pt-3 text-xs text-text-tertiary">
 					<div>Started: {formatTime(run?.startedAt ?? agent?.startTime)}</div>
@@ -117,4 +129,16 @@ export function AgentRunSidebar({ agent, run, isLoading }: AgentRunSidebarProps)
 			</div>
 		</aside>
 	);
+}
+
+function formatDuration(value: number): string {
+	if (value <= 0) return "n/a";
+	const seconds = Math.round(value / 1000);
+	if (seconds < 60) return `${seconds}s`;
+	const minutes = Math.floor(seconds / 60);
+	const remainingSeconds = seconds % 60;
+	if (minutes < 60) return remainingSeconds ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+	const hours = Math.floor(minutes / 60);
+	const remainingMinutes = minutes % 60;
+	return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
