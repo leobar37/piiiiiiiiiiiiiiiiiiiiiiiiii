@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useSubAgentStore } from "../store/use-subagent-store.ts";
 import { useSessionMessagesStore } from "../store/session-messages.ts";
-import type { SubAgentEvent } from "../types.ts";
+import type { ChatMessage, SubAgentEvent, SubAgentInstanceState } from "../types.ts";
 import { convertAgentMessages } from "../utils/message-converter.ts";
 import { generateNextEvent } from "../mocks/sse-emitter.ts";
 import { dashboardDebugLedger } from "../dev/debug-ledger.ts";
+import { queryClient } from "../lib/query-client.ts";
 
 function isDev(): boolean {
 	return (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV ?? false;
@@ -76,6 +77,7 @@ export function useSseEvents(instanceId?: string) {
 				const event = generateNextEvent(agent);
 				dashboardDebugLedger.recordEvent(event);
 				storeRef.current.addEvent(event);
+				syncDashboardQueries(event);
 				handleSessionEvent(event);
 				lastEventTime = Date.now();
 				scheduleInactivityCheck();
@@ -146,6 +148,7 @@ export function useSseEvents(instanceId?: string) {
 										const event = JSON.parse(json) as SubAgentEvent;
 										dashboardDebugLedger.recordEvent(event);
 										storeRef.current.addEvent(event);
+										syncDashboardQueries(event);
 										handleSessionEvent(event);
 									} catch {
 										/* ignore malformed */
@@ -191,18 +194,21 @@ export function useSseEvents(instanceId?: string) {
 
 	function handleSessionEvent(event: SubAgentEvent): void {
 		if (event.type !== "session.event") return;
+		if (!event.instanceId) return;
 		const sessionEvent = event.sessionEvent as { type?: string; message?: Record<string, unknown> } | undefined;
 		if (!sessionEvent?.type) return;
 		if (sessionEvent.type === "message_start" && sessionEvent.message) {
 			const [message] = convertAgentMessages(event.instanceId, [sessionEvent.message]);
 			if (message) messagesRef.current.startMessage(event.instanceId, message);
 			messagesRef.current.setStreaming(event.instanceId, message?.role === "assistant");
+			syncMessageQuery(event.instanceId);
 			return;
 		}
 		if (sessionEvent.type === "message_update" && sessionEvent.message) {
 			const [message] = convertAgentMessages(event.instanceId, [sessionEvent.message]);
 			if (message) messagesRef.current.updatePartialMessage(event.instanceId, message);
 			messagesRef.current.setStreaming(event.instanceId, message?.role === "assistant");
+			syncMessageQuery(event.instanceId);
 			return;
 		}
 		if (sessionEvent.type !== "message_end" || !sessionEvent.message) return;
@@ -210,6 +216,126 @@ export function useSseEvents(instanceId?: string) {
 		if (message) {
 			messagesRef.current.finishMessage(event.instanceId, message);
 			messagesRef.current.setStreaming(event.instanceId, false);
+			syncMessageQuery(event.instanceId);
 		}
 	}
+}
+
+export function syncDashboardQueries(event: SubAgentEvent): void {
+	const instanceId = event.instanceId;
+	if (!instanceId) return;
+
+	if (event.type === "instance.created") {
+		const created = buildCreatedThread(event);
+		queryClient.setQueryData<SubAgentInstanceState[]>(["agents"], (current) => upsertThread(current, created));
+		queryClient.setQueryData(["agent", instanceId], created);
+		queryClient.invalidateQueries({ queryKey: ["agents"] });
+		return;
+	}
+
+	if (event.type === "instance.state") {
+		const nextState = readThreadState(event);
+		if (!nextState) return;
+		queryClient.setQueryData<SubAgentInstanceState[]>(["agents"], (current) => upsertThread(current, nextState));
+		queryClient.setQueryData(["agent", instanceId], nextState);
+		queryClient.invalidateQueries({ queryKey: ["agents"] });
+		return;
+	}
+
+	if (event.type === "lifecycle.change") {
+		const current = event.current;
+		if (typeof current !== "string") return;
+		queryClient.setQueryData<SubAgentInstanceState[]>(["agents"], (threads) =>
+			updateThread(threads, instanceId, { state: current as SubAgentInstanceState["state"] }));
+		queryClient.setQueryData<SubAgentInstanceState>(["agent", instanceId], (thread) =>
+			thread ? { ...thread, state: current as SubAgentInstanceState["state"] } : thread);
+		queryClient.invalidateQueries({ queryKey: ["agents"] });
+		return;
+	}
+
+	if (event.type === "task.end" || event.type === "error") {
+		const nextState: SubAgentInstanceState["state"] = event.type === "error" ? "failed" : readTaskEndState(event);
+		queryClient.setQueryData<SubAgentInstanceState[]>(["agents"], (threads) =>
+			updateThread(threads, instanceId, { state: nextState, currentTool: null, currentToolStartedAt: null }));
+		queryClient.setQueryData<SubAgentInstanceState>(["agent", instanceId], (thread) =>
+			thread ? { ...thread, state: nextState, currentTool: null, currentToolStartedAt: null } : thread);
+		setTimeout(() => {
+			queryClient.invalidateQueries({ queryKey: ["agents"] });
+			queryClient.invalidateQueries({ queryKey: ["agent", instanceId] });
+			queryClient.invalidateQueries({ queryKey: ["agent-run", instanceId] });
+		}, 50);
+	}
+}
+
+export function syncMessageQuery(instanceId: string): void {
+	const messages = useSessionMessagesStore.getState().getMessages(instanceId);
+	queryClient.setQueryData<ChatMessage[]>(["agent-messages", instanceId], messages);
+}
+
+function buildCreatedThread(event: SubAgentEvent): SubAgentInstanceState {
+	const taskId = typeof event.taskId === "string" ? event.taskId : "unknown";
+	const definitionName = typeof event.definitionName === "string" ? event.definitionName : "subagent";
+	const now = Date.now();
+	return {
+		instanceId: event.instanceId ?? "unknown",
+		taskId,
+		definitionName,
+		kind: event.kind === "main" ? "main" : "subagent",
+		parentThreadId: typeof event.parentThreadId === "string" ? event.parentThreadId : undefined,
+		parentToolCallId: typeof event.parentToolCallId === "string" ? event.parentToolCallId : undefined,
+		runId: typeof event.runId === "string" ? event.runId : undefined,
+		runIndex: typeof event.runIndex === "number" ? event.runIndex : undefined,
+		description: typeof event.description === "string" ? event.description : "",
+		state: "created",
+		startTime: null,
+		endTime: null,
+		turnCount: 0,
+		lastActivityAt: now,
+		currentTool: null,
+		error: null,
+		toolCount: 0,
+		currentToolStartedAt: null,
+		durationMs: 0,
+	};
+}
+
+function readThreadState(event: SubAgentEvent): SubAgentInstanceState | null {
+	const state = event.state;
+	if (!state || typeof state !== "object" || !("instanceId" in state)) return null;
+	const candidate = state as Partial<SubAgentInstanceState>;
+	if (typeof candidate.instanceId !== "string") return null;
+	if (typeof candidate.taskId !== "string") return null;
+	if (typeof candidate.definitionName !== "string") return null;
+	if (typeof candidate.state !== "string") return null;
+	return candidate as SubAgentInstanceState;
+}
+
+function readTaskEndState(event: SubAgentEvent): SubAgentInstanceState["state"] {
+	const result = event.result;
+	if (result && typeof result === "object" && "status" in result) {
+		const status = (result as { status?: unknown }).status;
+		if (status === "completed" || status === "blocked" || status === "timed_out" || status === "cancelled") {
+			return status;
+		}
+	}
+	return "failed";
+}
+
+function upsertThread(
+	threads: SubAgentInstanceState[] | undefined,
+	thread: SubAgentInstanceState,
+): SubAgentInstanceState[] {
+	const current = threads ?? [];
+	const index = current.findIndex((candidate) => candidate.instanceId === thread.instanceId);
+	if (index < 0) return [thread, ...current];
+	return current.map((candidate) => (candidate.instanceId === thread.instanceId ? { ...candidate, ...thread } : candidate));
+}
+
+function updateThread(
+	threads: SubAgentInstanceState[] | undefined,
+	instanceId: string,
+	patch: Partial<SubAgentInstanceState>,
+): SubAgentInstanceState[] | undefined {
+	if (!threads) return threads;
+	return threads.map((thread) => (thread.instanceId === instanceId ? { ...thread, ...patch } : thread));
 }

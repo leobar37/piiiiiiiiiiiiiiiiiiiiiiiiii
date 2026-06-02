@@ -19,7 +19,14 @@ export function BlockRenderer({ block, currentThreadId }: BlockRendererProps) {
 		case "toolCall":
 			return <ToolCallBlock id={block.id} name={block.name} args={block.arguments} currentThreadId={currentThreadId} />;
 		case "toolResult":
-			return <ToolResultBlock toolCallId={block.toolCallId} content={block.content} isError={block.isError} />;
+			return (
+				<ToolResultBlock
+					toolCallId={block.toolCallId}
+					toolName={block.toolName}
+					content={block.content}
+					isError={block.isError}
+				/>
+			);
 		case "image":
 			return <ImageBlock data={block.data} mimeType={block.mimeType} />;
 		default:

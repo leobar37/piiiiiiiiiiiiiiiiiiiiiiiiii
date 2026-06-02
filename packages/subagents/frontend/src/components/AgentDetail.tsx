@@ -1,7 +1,6 @@
 import { useEffect } from "react";
-import type { SubAgentEvent, SubAgentInstanceState } from "../types.ts";
+import type { SubAgentInstanceState } from "../types.ts";
 import { useAgent } from "../hooks/use-agent.ts";
-import { useAgentEvents } from "../hooks/use-agent-events.ts";
 import { useAgentMessages } from "../hooks/use-agent-messages.ts";
 import { useAgentRun } from "../hooks/use-agent-run.ts";
 import { useLionState } from "../hooks/use-lion-state.ts";
@@ -21,25 +20,16 @@ interface AgentDetailProps {
 
 export function AgentDetail({ instanceId, onBack }: AgentDetailProps) {
   const { data: fetchedAgent } = useAgent(instanceId);
-  const { data: fetchedEvents } = useAgentEvents(instanceId);
   const { data: fetchedMessages } = useAgentMessages(instanceId);
   const { data: fetchedRun, isLoading: isRunLoading } = useAgentRun(instanceId);
   const { data: lionState } = useLionState();
 
   const setMessages = useSessionMessagesStore((s) => s.setMessages);
-  const mergeEvents = useSubAgentStore((s) => s.mergeEvents);
   const agents = useSubAgentStore((s) => s.agents);
 
   const storeAgent = agents.find((a) => a.instanceId === instanceId);
 
   // Sync TanStack Query data into zustand stores on mount / change
-  // mergeEvents preserves SSE events that arrived before the REST response
-  useEffect(() => {
-    if (fetchedEvents) {
-      mergeEvents(fetchedEvents as SubAgentEvent[]);
-    }
-  }, [fetchedEvents, mergeEvents]);
-
   useEffect(() => {
     if (fetchedMessages) {
       setMessages(instanceId, fetchedMessages);

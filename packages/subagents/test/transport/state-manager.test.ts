@@ -1,22 +1,21 @@
-import { mkdtempSync } from "node:fs";
-import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { DashboardStateManager } from "../../src/transport/state-manager.js";
-import type { SubAgentEvent, SubAgentInstanceState } from "../../src/types.js";
+import type { SubAgentEvent, SubAgentInstanceState, SubAgentRunRecord } from "../../src/types.js";
+
+/**
+ * A mock run store that can be used to seed virtual instances.
+ */
+function makeMockRunStore(records: SubAgentRunRecord[] = []) {
+	return {
+		list: async () => records,
+	};
+}
 
 describe("DashboardStateManager", () => {
-	let tmpDir: string;
 	let manager: DashboardStateManager;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), "state-manager-test-"));
-		manager = new DashboardStateManager(tmpDir);
-	});
-
-	afterEach(async () => {
-		await rm(tmpDir, { recursive: true, force: true });
+		manager = new DashboardStateManager("/tmp/test");
 	});
 
 	function makeStateEvent(instanceId: string, overrides: Partial<SubAgentInstanceState> = {}): SubAgentEvent {
@@ -45,17 +44,34 @@ describe("DashboardStateManager", () => {
 		} as SubAgentEvent;
 	}
 
-	it("rehydrate() loads nothing when no events exist", async () => {
+	function makeRunRecord(overrides: Partial<SubAgentRunRecord> = {}): SubAgentRunRecord {
+		return {
+			version: 1,
+			sessionId: overrides.sessionId ?? "sess-1",
+			taskId: overrides.taskId ?? "task-1",
+			instanceId: overrides.instanceId ?? "inst-1",
+			definitionName: overrides.definitionName ?? "executor",
+			cwd: "/tmp/test",
+			prompt: "Do something",
+			status: "completed",
+			startedAt: Date.now() - 60000,
+			updatedAt: Date.now() - 10000,
+			turnCount: 2,
+			toolCount: 3,
+			...overrides,
+		};
+	}
+
+	it("rehydrate() is a no-op when no runStore is provided", async () => {
 		await manager.rehydrate();
 		const all = manager.getAllInstances();
 		expect(all).toEqual([]);
 	});
 
-	it("appendEvent() persists and updates instance state", async () => {
+	it("appendEvent() updates live instance state", async () => {
 		const event = makeStateEvent("inst-1");
 		await manager.appendEvent("inst-1", event);
 
-		// appendEvent with instance.state adds the instance to live set
 		expect(manager.isLive("inst-1")).toBe(true);
 
 		const instance = manager.getInstance("inst-1");
@@ -63,23 +79,6 @@ describe("DashboardStateManager", () => {
 		expect(instance!.instanceId).toBe("inst-1");
 		expect(instance!.state).toBe("running");
 		expect(instance!.isLive).toBe(true);
-	});
-
-	it("rehydrate() loads persisted events as virtual instances", async () => {
-		// Persist via first manager
-		const event = makeStateEvent("inst-1");
-		await manager.appendEvent("inst-1", event);
-
-		// Create a new manager in the same directory and rehydrate
-		const manager2 = new DashboardStateManager(tmpDir);
-		await manager2.rehydrate();
-
-		const instance = manager2.getInstance("inst-1");
-		expect(instance).toBeDefined();
-		expect(instance!.instanceId).toBe("inst-1");
-		expect(instance!.state).toBe("running");
-		// Rehydrated instances are virtual, not live
-		expect(instance!.isLive).toBe(false);
 	});
 
 	it("registerLiveInstance() adds live instance", () => {
@@ -127,21 +126,48 @@ describe("DashboardStateManager", () => {
 
 		manager.unregisterLiveInstance("live-1");
 		expect(manager.isLive("live-1")).toBe(false);
+
+		// Virtual instance should still be available
+		const virtual = manager.getInstance("live-1");
+		expect(virtual).toBeDefined();
+		expect(virtual!.isLive).toBe(false);
+	});
+
+	it("loadFromRunStore() creates virtual instances from run records", async () => {
+		const runRecord = makeRunRecord({
+			instanceId: "virtual-1",
+			taskId: "task-v1",
+			definitionName: "analyzer",
+			status: "completed",
+		});
+		const managerWithStore = new DashboardStateManager("/tmp/test", makeMockRunStore([runRecord]));
+		await managerWithStore.rehydrate();
+
+		const all = managerWithStore.getAllInstances();
+		expect(all).toHaveLength(1);
+
+		const virtual = all[0];
+		expect(virtual.instanceId).toBe("virtual-1");
+		expect(virtual.definitionName).toBe("analyzer");
+		expect(virtual.state).toBe("completed");
+		expect(virtual.isLive).toBe(false);
 	});
 
 	it("getAllInstances() returns merged live+virtual", async () => {
-		// First persist events to disk so rehydrate can load them as virtual
-		await manager.appendEvent("virtual-1", makeStateEvent("virtual-1", { state: "completed" }));
-
-		// Now create a new manager and rehydrate to get virtual instances
-		const manager2 = new DashboardStateManager(tmpDir);
-		await manager2.rehydrate();
+		const runRecord = makeRunRecord({
+			instanceId: "virtual-1",
+			taskId: "task-v1",
+			definitionName: "analyzer",
+			status: "completed",
+		});
+		const managerWithStore = new DashboardStateManager("/tmp/test", makeMockRunStore([runRecord]));
+		await managerWithStore.rehydrate();
 
 		// Add a live instance
 		const liveState: SubAgentInstanceState = {
 			instanceId: "live-1",
-			taskId: "task-1",
-			definitionName: "dev",
+			taskId: "task-l1",
+			definitionName: "executor",
 			state: "running",
 			startTime: Date.now(),
 			endTime: null,
@@ -153,9 +179,9 @@ describe("DashboardStateManager", () => {
 			currentToolStartedAt: null,
 			durationMs: 0,
 		};
-		manager2.registerLiveInstance(liveState);
+		managerWithStore.registerLiveInstance(liveState);
 
-		const all = manager2.getAllInstances();
+		const all = managerWithStore.getAllInstances();
 		expect(all).toHaveLength(2);
 
 		const virtual = all.find((i) => i.instanceId === "virtual-1");
@@ -214,5 +240,13 @@ describe("DashboardStateManager", () => {
 		expect(manager.isLive("live-check")).toBe(true);
 		manager.unregisterLiveInstance("live-check");
 		expect(manager.isLive("live-check")).toBe(false);
+	});
+
+	it("getEvents() returns live-process events for an instance", async () => {
+		const event = makeStateEvent("inst-1");
+		await manager.appendEvent("inst-1", event);
+
+		const events = await manager.getEvents("inst-1");
+		expect(events).toEqual([event]);
 	});
 });

@@ -23,12 +23,27 @@ function createSkill(options: { name: string; description: string; filePath: str
 
 describe("internal skills", () => {
 	it("resolves bundled internal skill paths", () => {
-		expect(INTERNAL_SKILL_NAMES).toEqual(["planner", "subagent-delegation"]);
+		expect(INTERNAL_SKILL_NAMES).toEqual(["planner", "subagent-delegation", "code-review"]);
 		for (const path of getInternalSkillPaths()) {
 			expect(path).toContain("packages/subagents/skills");
 		}
 		expect(getInternalSkillPath("planner")).toContain("skills/planner");
 		expect(getInternalSkillPath("subagent-delegation")).toContain("skills/subagent-delegation");
+		expect(getInternalSkillPath("code-review")).toContain("skills/code-review");
+	});
+
+	it("loads all bundled internal skills with precedence helper", () => {
+		const result = applyInternalSkillPrecedence({
+			base: { skills: [], diagnostics: [] },
+			cwd: process.cwd(),
+			agentDir: process.cwd(),
+		});
+
+		expect(result.skills.map((skill) => skill.name).sort()).toEqual([
+			"code-review",
+			"planner",
+			"subagent-delegation",
+		]);
 	});
 
 	it("prefers internal skills over base skills with the same name", () => {

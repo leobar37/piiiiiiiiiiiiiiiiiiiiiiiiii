@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadSkills, type ResourceDiagnostic, type Skill } from "@earendil-works/pi-coding-agent";
 
-export const INTERNAL_SKILL_NAMES = ["planner", "subagent-delegation"] as const;
+export const INTERNAL_SKILL_NAMES = ["planner", "subagent-delegation", "code-review"] as const;
 
 export type InternalSkillName = (typeof INTERNAL_SKILL_NAMES)[number];
 

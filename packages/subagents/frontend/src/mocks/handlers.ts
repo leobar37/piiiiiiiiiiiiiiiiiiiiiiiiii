@@ -6,6 +6,7 @@ import {
 	getRunForInstance,
 	MOCK_AGENTS,
 	MOCK_LION_STATE,
+	MOCK_PLAN_CHECKLIST,
 } from "./data.ts";
 import { createMockSseStream } from "./sse-emitter.ts";
 
@@ -26,6 +27,19 @@ export const handlers = [
 			});
 		}
 		return HttpResponse.json(MOCK_LION_STATE);
+	}),
+
+	// GET /api/lion/checklist
+	http.get("/api/lion/checklist", ({ request }) => {
+		const url = new URL(request.url);
+		const kind = url.searchParams.get("kind");
+		const reference = url.searchParams.get("reference");
+
+		if (kind === "plan" && (!reference || reference === MOCK_PLAN_CHECKLIST.rootPath)) {
+			return HttpResponse.json(MOCK_PLAN_CHECKLIST);
+		}
+
+		return new HttpResponse("Checklist not found", { status: 404 });
 	}),
 
 	// GET /api/threads

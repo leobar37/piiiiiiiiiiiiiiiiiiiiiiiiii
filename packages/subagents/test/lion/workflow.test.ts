@@ -963,7 +963,13 @@ function testLionToolsRegisterPlanActivationAndDelegationOnly(): void {
 	const runtime = new LionRuntime(pi as any);
 	registerLionTools(runtime);
 
-	assert.deepEqual([...pi.tools.keys()].sort(), ["lion_activate_plan", "lion_tasks"]);
+	assert.deepEqual([...pi.tools.keys()].sort(), [
+		"lion_activate_plan",
+		"lion_checklist_read",
+		"lion_checklist_record",
+		"lion_checklist_start_next",
+		"lion_tasks",
+	]);
 }
 
 function testLionDashboardUrlUsesStatusOnly(): void {

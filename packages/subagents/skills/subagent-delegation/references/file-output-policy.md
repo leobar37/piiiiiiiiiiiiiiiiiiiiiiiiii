@@ -45,7 +45,7 @@ Avoid generic names such as:
 The helper creates a standard shell without generating the intelligent content:
 
 ```bash
-node skills/subagent-delegation/scripts/delegation-writer.js create <slug> "<Title>"
+node scripts/delegation-writer.js create <slug> "<Title>"
 ```
 
 By default it refuses to overwrite existing files. Use `--force` only when the

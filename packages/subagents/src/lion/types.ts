@@ -41,10 +41,11 @@ export const LION_STATE_ENTRY_TYPE = "lion-state";
 export const LION_MESSAGE_TYPE = "lion-message";
 export const LION_DEFAULT_MAX_ATTEMPTS = 3;
 
-export type LionStrategyName = "plan" | "simple";
+export type LionStrategyName = "plan" | "simple" | "review";
 export type LionPhase = "planning" | "building";
 export type LionPlanKind = "structured" | "overview";
 export type LionTaskStatus = "pending" | "in_progress" | "complete" | "blocked" | "retryable";
+export type LionChecklistKind = "plan" | "review";
 export type LionReviewVerdict = "approved" | "rejected" | "unknown";
 export type LionBuildStatus = "approved" | "rejected" | "failed";
 export type LionVerificationStatus = "verified" | "failed" | "blocked" | "unverified";
@@ -110,6 +111,30 @@ export interface LionTask {
 	dependencies: string[];
 	requirements: string[];
 	phase?: string;
+	scope?: string[];
+	kind?: string;
+	last_summary?: string;
+	updated_at?: string;
+}
+
+export interface LionChecklistProgress {
+	completed: number;
+	total: number;
+	pending: number;
+	inProgress: number;
+	blocked: number;
+	retryable: number;
+	percent: number;
+}
+
+export interface LionChecklistSnapshot {
+	kind: LionChecklistKind;
+	slug: string;
+	rootPath: string;
+	checklistFile: string;
+	tasks: LionTask[];
+	progress: LionChecklistProgress;
+	updatedAt: string | null;
 }
 
 export interface LionPlan {
@@ -212,5 +237,37 @@ export interface LionEventMap {
 		definition: string;
 		status: DelegationStatus;
 		summary: string;
+	};
+	"lion.checklist.snapshot": LionEventBase & {
+		type: "lion.checklist.snapshot";
+		kind: LionChecklistKind;
+		slug: string;
+		rootPath: string;
+		checklist: LionChecklistSnapshot;
+	};
+	"lion.checklist.task_started": LionEventBase & {
+		type: "lion.checklist.task_started";
+		kind: LionChecklistKind;
+		slug: string;
+		rootPath: string;
+		checklist: LionChecklistSnapshot;
+		taskId: string;
+	};
+	"lion.checklist.task_recorded": LionEventBase & {
+		type: "lion.checklist.task_recorded";
+		kind: LionChecklistKind;
+		slug: string;
+		rootPath: string;
+		checklist: LionChecklistSnapshot;
+		taskId: string;
+		status: LionTaskStatus;
+		summary?: string;
+	};
+	"lion.checklist.updated": LionEventBase & {
+		type: "lion.checklist.updated";
+		kind: LionChecklistKind;
+		slug: string;
+		rootPath: string;
+		checklist: LionChecklistSnapshot;
 	};
 }

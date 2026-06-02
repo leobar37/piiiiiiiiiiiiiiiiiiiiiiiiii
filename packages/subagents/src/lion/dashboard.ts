@@ -27,6 +27,7 @@ export function getOrStartLionDashboard(runtime: LionRuntime): LionDashboard {
 class LionDashboardServer implements LionDashboard {
 	private transport: HttpServerTransport | null = null;
 	private unsubscribeBus?: () => void;
+	private unsubscribeLionBus?: () => void;
 
 	constructor(private runtime: LionRuntime) {}
 
@@ -52,6 +53,9 @@ class LionDashboardServer implements LionDashboard {
 		this.unsubscribeBus = controller.getEventBus().subscribe((event) => {
 			this.transport?.emit(event);
 		});
+		this.unsubscribeLionBus = this.runtime.events.on("*", (event) => {
+			this.transport?.emit(event);
+		});
 
 		await this.transport.start();
 
@@ -68,6 +72,8 @@ class LionDashboardServer implements LionDashboard {
 	async stop(): Promise<void> {
 		this.unsubscribeBus?.();
 		this.unsubscribeBus = undefined;
+		this.unsubscribeLionBus?.();
+		this.unsubscribeLionBus = undefined;
 		if (this.transport) {
 			await this.transport.stop();
 			this.transport = null;

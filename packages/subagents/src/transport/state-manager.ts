@@ -1,5 +1,4 @@
-import type { SubAgentEvent, SubAgentInstanceState, SubAgentState } from "../types.js";
-import { SubAgentEventStore } from "./event-store.js";
+import type { SubAgentEvent, SubAgentInstanceState, SubAgentRunRecord, SubAgentState } from "../types.js";
 import type { DashboardThreadState } from "./types.js";
 
 export interface VirtualInstance extends DashboardThreadState {
@@ -15,46 +14,38 @@ export interface VirtualInstance extends DashboardThreadState {
  * Manages dashboard-visible instance state across live and virtual instances.
  *
  * - Live instances: backed by a running SubAgentInstance in the controller
- * - Virtual instances: reconstructed from persisted events after Pi restart
+ * - Virtual instances: reconstructed from runStore records
  */
 export class DashboardStateManager {
-	private readonly eventStore: SubAgentEventStore;
 	private liveInstances = new Map<string, SubAgentInstanceState>();
 	private virtualInstances = new Map<string, VirtualInstance>();
+	private eventsByInstance = new Map<string, SubAgentEvent[]>();
+	private runStore: { list(): Promise<SubAgentRunRecord[]> };
 
-	constructor(cwd: string) {
-		this.eventStore = new SubAgentEventStore(cwd);
+	constructor(_cwd: string, runStore?: { list(): Promise<SubAgentRunRecord[]> }) {
+		this.runStore = runStore ?? { list: async () => [] };
 	}
 
 	/**
-	 * Rehydrate virtual instances from disk on transport start.
+	 * Rehydrate is a no-op since events are no longer persisted to disk.
+	 * Virtual instances are reconstructed from runStore records.
 	 */
 	async rehydrate(): Promise<void> {
-		const instanceIds = await this.eventStore.readAllInstanceIds();
-		for (const id of instanceIds) {
-			const events = await this.eventStore.read(id);
-			const virtual = this.rebuildVirtualInstance(id, events);
-			this.virtualInstances.set(id, virtual);
-		}
+		await this.loadFromRunStore();
 	}
 
 	/**
-	 * Persist an event and update the corresponding instance state.
+	 * Track live-process events and update the corresponding instance state.
+	 * Durable reconstruction still comes from runStore records.
 	 */
 	async appendEvent(instanceId: string, event: SubAgentEvent): Promise<void> {
-		await this.eventStore.append(instanceId, event);
+		const events = this.eventsByInstance.get(instanceId) ?? [];
+		this.eventsByInstance.set(instanceId, [...events, event].slice(-500));
 
 		// Update live instance state if we track it
 		if (event.type === "instance.state" && "state" in event) {
 			const state = (event as Record<string, unknown>).state as SubAgentInstanceState;
 			this.liveInstances.set(instanceId, state);
-		}
-
-		// Update virtual instance state from event
-		const virtual = this.virtualInstances.get(instanceId);
-		if (virtual) {
-			const updated = this.applyEventToVirtual(virtual, event);
-			this.virtualInstances.set(instanceId, updated);
 		}
 	}
 
@@ -65,8 +56,7 @@ export class DashboardStateManager {
 		this.liveInstances.set(state.instanceId, state);
 
 		// If a virtual exists, merge session info and prefer live state
-		const virtual = this.virtualInstances.get(state.instanceId);
-		if (virtual) {
+		if (this.virtualInstances.has(state.instanceId)) {
 			this.virtualInstances.delete(state.instanceId);
 		}
 
@@ -87,27 +77,30 @@ export class DashboardStateManager {
 		const live = this.liveInstances.get(instanceId);
 		this.liveInstances.delete(instanceId);
 
-		// Rebuild virtual from persisted events
+		// If a live instance was removed and no virtual exists, create a basic one
 		if (live) {
-			this.eventStore
-				.read(instanceId)
-				.then((events) => {
-					const virtual = this.rebuildVirtualInstance(instanceId, events);
-					this.virtualInstances.set(instanceId, virtual);
-				})
-				.catch(() => {
-					/* best effort */
-				});
+			const virtual: VirtualInstance = {
+				...live,
+				kind: "subagent",
+				isLive: false,
+				sessionFile: live.sessionFile,
+				sessionId: live.sessionId,
+				currentTool: null,
+				currentToolStartedAt: null,
+			};
+			this.virtualInstances.set(instanceId, virtual);
 		}
 	}
 
 	/**
 	 * Get all instances (live + virtual), with live taking precedence.
+	 * Virtual instances include both tracked (recently completed) and
+	 * runStore-backed instances.
 	 */
 	getAllInstances(): VirtualInstance[] {
 		const result = new Map<string, VirtualInstance>();
 
-		// Add virtual instances first
+		// Add virtual instances first (from tracked memory)
 		for (const [id, v] of this.virtualInstances) {
 			result.set(id, { ...v });
 		}
@@ -143,184 +136,99 @@ export class DashboardStateManager {
 				modelId: live.modelId ?? virtual?.modelId,
 			};
 		}
-		return this.virtualInstances.get(instanceId);
+
+		const existing = this.virtualInstances.get(instanceId);
+		if (existing) return existing;
+
+		return undefined;
 	}
 
 	isLive(instanceId: string): boolean {
 		return this.liveInstances.has(instanceId);
 	}
 
+	/**
+	 * Get live-process events for an instance.
+	 */
 	getEvents(instanceId: string): Promise<SubAgentEvent[]> {
-		return this.eventStore.read(instanceId);
+		return Promise.resolve([...(this.eventsByInstance.get(instanceId) ?? [])]);
 	}
 
 	/**
-	 * Return all known instance IDs (from persisted event files).
+	 * Return all known instance IDs from virtual instances in memory.
 	 */
 	async getAllInstanceIds(): Promise<string[]> {
-		return this.eventStore.readAllInstanceIds();
+		return Array.from(
+			new Set([...this.virtualInstances.keys(), ...this.liveInstances.keys(), ...this.eventsByInstance.keys()]),
+		);
 	}
 
-	// =====================================================================
-	// Internal: rebuild virtual instance from event history
-	// =====================================================================
-
-	private rebuildVirtualInstance(instanceId: string, events: SubAgentEvent[]): VirtualInstance {
-		const created = events.find((e) => e.type === "instance.created") as
-			| (SubAgentEvent & {
-					taskId?: string;
-					definitionName?: string;
-					parentThreadId?: string;
-					parentToolCallId?: string;
-					runId?: string;
-					runIndex?: number;
-			  })
-			| undefined;
-
-		const lastStateEvent = [...events].reverse().find((e) => e.type === "instance.state") as
-			| (SubAgentEvent & { state?: SubAgentInstanceState })
-			| undefined;
-
-		const taskEnd = [...events].reverse().find((e) => e.type === "task.end") as
-			| (SubAgentEvent & { result?: { status?: string; error?: string } })
-			| undefined;
-
-		const sessionInfo = events.find((e) => e.type === "instance.session") as
-			| (SubAgentEvent & { sessionFile?: string; sessionId?: string })
-			| undefined;
-
-		const errorEvent = [...events].reverse().find((e) => e.type === "error") as
-			| (SubAgentEvent & { error?: string })
-			| undefined;
-
-		// Determine final state
-		let state: SubAgentState = "created";
-		if (taskEnd) {
-			state =
-				taskEnd.result?.status === "completed"
-					? "completed"
-					: taskEnd.result?.status === "blocked"
-						? "blocked"
-						: "failed";
-		} else if (errorEvent) {
-			state = "failed";
-		} else if (lastStateEvent?.state) {
-			state = lastStateEvent.state.state;
-		}
-
-		const startTime = created?.timestamp ?? events[0]?.timestamp ?? null;
-		const endTime =
-			taskEnd?.timestamp ??
-			(state !== "running" && state !== "starting" ? (events[events.length - 1]?.timestamp ?? null) : null);
+	/**
+	 * Build a virtual instance from a run record for display purposes.
+	 * Uses run record metadata (prompt, summary, status, etc.).
+	 */
+	buildVirtualFromRun(record: SubAgentRunRecord): VirtualInstance {
+		const endTime = record.completedAt ?? (record.status === "running" ? null : record.updatedAt);
+		const state = mapRunStatusToState(record.status);
 
 		return {
-			instanceId,
-			taskId: created?.taskId ?? lastStateEvent?.state?.taskId ?? "",
-			definitionName: created?.definitionName ?? lastStateEvent?.state?.definitionName ?? "unknown",
-			parentThreadId: created?.parentThreadId ?? lastStateEvent?.state?.parentThreadId,
-			parentToolCallId: created?.parentToolCallId ?? lastStateEvent?.state?.parentToolCallId,
-			runId: created?.runId ?? lastStateEvent?.state?.runId,
-			runIndex: created?.runIndex ?? lastStateEvent?.state?.runIndex,
-			description: lastStateEvent?.state?.description,
+			instanceId: record.instanceId,
+			taskId: record.taskId,
+			definitionName: record.definitionName,
+			parentThreadId: record.parentThreadId,
+			parentToolCallId: record.parentToolCallId,
+			runId: record.runId,
+			runIndex: record.runIndex,
+			description: record.description,
 			state,
-			startTime,
+			startTime: record.startedAt,
 			endTime,
-			turnCount: lastStateEvent?.state?.turnCount ?? this.countTurns(events),
-			lastActivityAt: events[events.length - 1]?.timestamp ?? Date.now(),
+			turnCount: record.turnCount,
+			lastActivityAt: record.updatedAt,
 			currentTool: null,
-			error: errorEvent?.error ?? taskEnd?.result?.error ?? null,
-			toolCount: lastStateEvent?.state?.toolCount ?? this.countTools(events),
+			error: record.error ?? null,
+			toolCount: record.toolCount,
 			currentToolStartedAt: null,
-			durationMs: startTime && endTime ? endTime - startTime : startTime ? Date.now() - startTime : 0,
+			durationMs: endTime ? endTime - record.startedAt : Date.now() - record.startedAt,
 			kind: "subagent",
 			isLive: false,
-			sessionFile: sessionInfo?.sessionFile,
-			sessionId: sessionInfo?.sessionId,
-			modelProvider: lastStateEvent?.state?.modelProvider,
-			modelId: lastStateEvent?.state?.modelId,
+			sessionId: record.sessionId,
+			modelProvider: record.modelProvider,
+			modelId: record.modelId,
 		};
 	}
 
-	private applyEventToVirtual(virtual: VirtualInstance, event: SubAgentEvent): VirtualInstance {
-		const next = { ...virtual };
-
-		switch (event.type) {
-			case "lifecycle.change": {
-				const e = event as SubAgentEvent & { current?: SubAgentState };
-				if (e.current) next.state = e.current;
-				break;
+	/**
+	 * Load virtual instances from runStore, adding any that are not already tracked.
+	 */
+	async loadFromRunStore(): Promise<void> {
+		try {
+			const records = await this.runStore.list();
+			for (const record of records) {
+				if (this.liveInstances.has(record.instanceId)) continue;
+				if (this.virtualInstances.has(record.instanceId)) continue;
+				const virtual = this.buildVirtualFromRun(record);
+				this.virtualInstances.set(record.instanceId, virtual);
 			}
-			case "instance.state": {
-				const e = event as SubAgentEvent & { state?: SubAgentInstanceState };
-				if (e.state) {
-					next.state = e.state.state;
-					next.turnCount = e.state.turnCount;
-					next.toolCount = e.state.toolCount;
-					next.currentTool = e.state.currentTool;
-					next.error = e.state.error;
-					next.parentThreadId = e.state.parentThreadId;
-					next.parentToolCallId = e.state.parentToolCallId;
-					next.runId = e.state.runId;
-					next.runIndex = e.state.runIndex;
-					next.modelProvider = e.state.modelProvider;
-					next.modelId = e.state.modelId;
-				}
-				break;
-			}
-			case "turn.complete": {
-				const e = event as SubAgentEvent & { turnIndex?: number; toolCount?: number };
-				next.turnCount = Math.max(next.turnCount, (e.turnIndex ?? 0) + 1);
-				next.toolCount += e.toolCount ?? 0;
-				break;
-			}
-			case "tool.start": {
-				const e = event as SubAgentEvent & { toolName?: string };
-				next.currentTool = e.toolName ?? null;
-				break;
-			}
-			case "tool.end": {
-				next.currentTool = null;
-				break;
-			}
-			case "task.end": {
-				const e = event as SubAgentEvent & { result?: { status?: string; error?: string } };
-				next.state =
-					e.result?.status === "completed" ? "completed" : e.result?.status === "blocked" ? "blocked" : "failed";
-				next.error = e.result?.error ?? null;
-				next.endTime = event.timestamp;
-				break;
-			}
-			case "error": {
-				next.state = "failed";
-				const e = event as SubAgentEvent & { error?: string };
-				next.error = e.error ?? "Unknown error";
-				next.endTime = event.timestamp;
-				break;
-			}
-			case "instance.session": {
-				const e = event as SubAgentEvent & { sessionFile?: string; sessionId?: string };
-				next.sessionFile = e.sessionFile;
-				next.sessionId = e.sessionId;
-				break;
-			}
+		} catch {
+			// best effort
 		}
-
-		next.lastActivityAt = event.timestamp;
-		if (next.startTime) {
-			next.durationMs = next.endTime ? next.endTime - next.startTime : event.timestamp - next.startTime;
-		}
-
-		return next;
 	}
+}
 
-	private countTurns(events: SubAgentEvent[]): number {
-		const turnEvents = events.filter((e) => e.type === "turn.complete");
-		if (turnEvents.length === 0) return 0;
-		const indices = turnEvents.map((e) => (e as SubAgentEvent & { turnIndex?: number }).turnIndex ?? 0);
-		return Math.max(...indices) + 1;
-	}
-
-	private countTools(events: SubAgentEvent[]): number {
-		return events.filter((e) => e.type === "tool.start").length;
+function mapRunStatusToState(status: SubAgentRunRecord["status"]): SubAgentState {
+	switch (status) {
+		case "completed":
+			return "completed";
+		case "blocked":
+			return "blocked";
+		case "running":
+			return "running";
+		case "cancelled":
+			return "cancelled";
+		case "timed_out":
+			return "timed_out";
+		default:
+			return "failed";
 	}
 }

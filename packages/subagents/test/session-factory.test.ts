@@ -26,15 +26,22 @@ describe("session factory tool allowlist", () => {
 
 	it("removes lion_tasks from explicit subagent tool allowlists", () => {
 		const tools = preserveInternalSubagentTools(
-			["read", "lion_tasks"],
-			["read", "lion_tasks", "subagent_record_context"],
+			["read", "lion_tasks", "lion_checklist_record"],
+			["read", "lion_tasks", "lion_checklist_record", "subagent_record_context"],
 		);
 
 		expect(tools).toEqual(["read", "subagent_record_context"]);
 	});
 
-	it("removes lion_tasks from default active tool lists", () => {
-		const tools = filterDisallowedSubagentTools(["read", "lion_tasks", "bash"]);
+	it("removes Lion orchestration tools from default active tool lists", () => {
+		const tools = filterDisallowedSubagentTools([
+			"read",
+			"lion_tasks",
+			"lion_checklist_read",
+			"lion_checklist_start_next",
+			"lion_checklist_record",
+			"bash",
+		]);
 
 		expect(tools).toEqual(["read", "bash"]);
 	});

@@ -6,7 +6,7 @@ interface LionModeBadgeProps {
 
 export function formatLionModeLabel(state?: LionDashboardState): string {
 	if (!state?.active) return "Lion inactive";
-	const mode = state.strategy === "simple" ? "Simple mode" : "Plan mode";
+	const mode = state.strategy === "simple" ? "Simple mode" : state.strategy === "review" ? "Review mode" : "Plan mode";
 	const phase = state.phase === "building" ? "Building" : "Planning";
 	const detail = state.strategy === "simple" ? null : state.activeTaskId ?? state.activePlanSlug;
 	return [mode, phase, detail].filter(Boolean).join(" · ");

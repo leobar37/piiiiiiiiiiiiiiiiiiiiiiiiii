@@ -8,7 +8,8 @@ Goal:
 [Refactor one specific area while preserving or moving toward the final API below.]
 
 Required Skill:
-- Load and follow the `feature-executor` skill before starting.
+- Load and follow the project-specific implementation skill when available. If
+  none is available, follow the constraints in this handoff directly.
 
 Context:
 - Repo root: [absolute repo path]

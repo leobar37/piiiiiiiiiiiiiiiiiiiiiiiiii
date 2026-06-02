@@ -50,8 +50,9 @@ class DashboardDebugLedger {
 
 	recordEvent(event: SubAgentEvent): void {
 		if (!this.enabled()) return;
-		const existing = this.#events.get(event.instanceId) ?? [];
-		this.#events.set(event.instanceId, [...existing, event].slice(-100));
+		const eventKey = event.instanceId ?? "global";
+		const existing = this.#events.get(eventKey) ?? [];
+		this.#events.set(eventKey, [...existing, event].slice(-100));
 		this.log("debug", "sse", event.type, summarizeEvent(event), event.instanceId);
 	}
 

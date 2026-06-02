@@ -8,7 +8,7 @@ import { SubAgentEventBus } from "../../src/event-bus.js";
 import { SubAgentRunStore } from "../../src/run-store.js";
 import { HttpServerTransport } from "../../src/transport/http-server.js";
 import type { DashboardSessionSource } from "../../src/transport/types.js";
-import type { SubAgentInstanceState } from "../../src/types.js";
+import type { SubAgentEvent, SubAgentInstanceState } from "../../src/types.js";
 import { createMockBunServe } from "./bun-mock.js";
 
 // ---------------------------------------------------------------------------
@@ -247,6 +247,39 @@ describe("HttpServerTransport", () => {
 
 		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads/nonexistent`);
 		expect(res.status).toBe(404);
+	});
+
+	it("serves live-process events for a subagent thread", async () => {
+		transport = new HttpServerTransport({
+			controller: controller as any,
+			port: 0,
+			host: "127.0.0.1",
+		});
+		await transport.start();
+		await waitForServer();
+
+		const createdEvent: SubAgentEvent = {
+			type: "instance.created",
+			instanceId: "instance-1",
+			taskId: "task-1",
+			definitionName: "executor",
+			timestamp: 100,
+		};
+		const progressEvent: SubAgentEvent = {
+			type: "progress.update",
+			instanceId: "instance-1",
+			taskId: "task-1",
+			message: "Reading files",
+			timestamp: 110,
+		};
+		transport.emit(createdEvent);
+		transport.emit(progressEvent);
+
+		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads/instance-1/events`);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as Array<Record<string, unknown>>;
+		expect(body).toHaveLength(2);
+		expect(body.map((event) => event.type)).toEqual(["instance.created", "progress.update"]);
 	});
 
 	it("serves /api/threads/:id for projected-only completed runs", async () => {

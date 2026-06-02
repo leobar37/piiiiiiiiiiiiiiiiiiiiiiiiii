@@ -2,12 +2,15 @@ import { randomUUID } from "node:crypto";
 import type { DelegationStatus, SubAgentEvent } from "../../types.js";
 import type {
 	LionBuildResult,
+	LionChecklistKind,
+	LionChecklistSnapshot,
 	LionDelegationAgent,
 	LionEventMap,
 	LionPhase,
 	LionPlanKind,
 	LionReviewVerdict,
 	LionStrategyName,
+	LionTaskStatus,
 	LionTaskStrategy,
 	LionTasksResult,
 } from "../types.js";
@@ -229,5 +232,49 @@ export const LionEvents = {
 		summary: string;
 	}): LionEventMap["lion.tasks.task.end"] {
 		return { type: "lion.tasks.task.end", timestamp: Date.now(), id: randomUUID(), ...payload };
+	},
+
+	checklistSnapshot(payload: {
+		runId: string;
+		kind: LionChecklistKind;
+		slug: string;
+		rootPath: string;
+		checklist: LionChecklistSnapshot;
+	}): LionEventMap["lion.checklist.snapshot"] {
+		return { type: "lion.checklist.snapshot", timestamp: Date.now(), id: randomUUID(), ...payload };
+	},
+
+	checklistTaskStarted(payload: {
+		runId: string;
+		kind: LionChecklistKind;
+		slug: string;
+		rootPath: string;
+		checklist: LionChecklistSnapshot;
+		taskId: string;
+	}): LionEventMap["lion.checklist.task_started"] {
+		return { type: "lion.checklist.task_started", timestamp: Date.now(), id: randomUUID(), ...payload };
+	},
+
+	checklistTaskRecorded(payload: {
+		runId: string;
+		kind: LionChecklistKind;
+		slug: string;
+		rootPath: string;
+		checklist: LionChecklistSnapshot;
+		taskId: string;
+		status: LionTaskStatus;
+		summary?: string;
+	}): LionEventMap["lion.checklist.task_recorded"] {
+		return { type: "lion.checklist.task_recorded", timestamp: Date.now(), id: randomUUID(), ...payload };
+	},
+
+	checklistUpdated(payload: {
+		runId: string;
+		kind: LionChecklistKind;
+		slug: string;
+		rootPath: string;
+		checklist: LionChecklistSnapshot;
+	}): LionEventMap["lion.checklist.updated"] {
+		return { type: "lion.checklist.updated", timestamp: Date.now(), id: randomUUID(), ...payload };
 	},
 } as const;

@@ -18,7 +18,12 @@ import type {
 } from "./types.js";
 
 const INTERNAL_SUBAGENT_TOOLS = ["subagent_record_context", "subagent_read_context", "subagent_record_result"];
-const DISALLOWED_SUBAGENT_TOOLS = ["lion_tasks"];
+const DISALLOWED_SUBAGENT_TOOLS = [
+	"lion_tasks",
+	"lion_checklist_read",
+	"lion_checklist_start_next",
+	"lion_checklist_record",
+];
 
 function resolveBuilder(config: EffectiveSubAgentConfig): InstructionBuilder {
 	return config.instructionBuilder ?? DEFAULT_BUILDER;

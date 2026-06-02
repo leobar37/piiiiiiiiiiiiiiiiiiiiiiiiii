@@ -1,11 +1,12 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { LionEvent } from "../lion/types.js";
 import type { SubAgentEvent, SubAgentInstanceState } from "../types.js";
 
 export type DashboardThreadKind = "main" | "subagent";
 
 export interface DashboardLionState {
 	active: boolean;
-	strategy: "plan" | "simple";
+	strategy: "plan" | "simple" | "review";
 	phase: "planning" | "building";
 	activePlanPath: string | null;
 	activePlanSlug: string | null;
@@ -21,7 +22,7 @@ export interface DashboardThreadState extends SubAgentInstanceState {
 	runId?: string;
 	runIndex?: number;
 	orchestration?: {
-		strategy: "plan" | "simple";
+		strategy: "plan" | "simple" | "review";
 		planSlug?: string;
 		planPath?: string;
 	};
@@ -44,4 +45,4 @@ export interface SubAgentTransport {
 	emit(event: SubAgentTransportEvent): void;
 }
 
-export type SubAgentTransportEvent = SubAgentEvent;
+export type SubAgentTransportEvent = SubAgentEvent | LionEvent;

@@ -2,15 +2,11 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TaskExecutionResult } from "../task-executor.js";
 import { TaskExecutor } from "../task-executor.js";
 import type { ExecutionPlan, SubAgentCapabilities } from "../types.js";
+import { LionChecklistService } from "./checklist-service.js";
 import { addSyntheticRun, type LionRun, type LionSubagentRole } from "./core.js";
 import { LionEvents } from "./events/defs.js";
 import { classifyLionTaskResult } from "./evidence.js";
-import {
-	getNextExecutableTask,
-	loadLionPlan,
-	recordStructuredTaskResult,
-	updateStructuredTaskStatus,
-} from "./plans/index.js";
+import { loadLionPlan } from "./plans/index.js";
 import type { LionRuntime } from "./runtime.js";
 import { getLionStrategy } from "./strategies/index.js";
 import { escapeXml } from "./strategies/shared.js";
@@ -49,19 +45,23 @@ export interface RunTasksParent {
 type PreparedTaskConfig = NonNullable<RunTasksParams["tasks"]>[number];
 
 export class TaskRunner {
+	private checklistService = new LionChecklistService();
+
 	constructor(private runtime: LionRuntime) {}
 
 	async run(ctx: ExtensionContext, params: RunTasksParams, parent: RunTasksParent): Promise<LionToolResponse> {
 		const { runtime } = this;
 		const activePlanPath = runtime.state.activePlanPath;
-		const plan = activePlanPath ? loadLionPlan(activePlanPath) : null;
+		const plan = activePlanPath && runtime.state.strategy === "plan" ? loadLionPlan(activePlanPath) : null;
+		const cwd = ctx.cwd ?? ctx.sessionManager.getCwd();
+		const runId = createRunId();
 		runtime.rememberUiContext(ctx);
 
 		this.validateActivePlanSourceRole(params);
-		const selectedPlanTask = params.source === "active_plan_next_task" ? this.selectActivePlanTask(plan) : null;
+		const selectedPlanTask =
+			params.source === "active_plan_next_task" ? this.selectActivePlanTask(plan, cwd, runId) : null;
 		const rawTaskConfigs = this.resolveRequestedTasks(params, selectedPlanTask);
 
-		const runId = createRunId();
 		const bus = runtime.events;
 		const taskConfigs = rawTaskConfigs
 			.map((task) => this.applyPhasePolicy(task))
@@ -69,7 +69,6 @@ export class TaskRunner {
 		const strategy = params.strategy ?? "sequential";
 
 		// Initialize structured run logger for this batch
-		const cwd = ctx.cwd ?? ctx.sessionManager.getCwd();
 		const runLogger = runtime.initRunLogger(cwd, runId);
 		runLogger.startRun({
 			planSlug: plan?.slug ?? runtime.state.activePlanSlug,
@@ -187,7 +186,13 @@ export class TaskRunner {
 			const run =
 				runtime.core.activeRun ?? this.buildSyntheticRun(runId, strategy, batchTask, failedResult, taskConfigs);
 			if (selectedPlanTask && plan) {
-				recordStructuredTaskResult(plan, selectedPlanTask.id, isRetryable ? "retryable" : "blocked", error);
+				this.recordPlanChecklistResult(
+					cwd,
+					selectedPlanTask.id,
+					isRetryable ? "retryable" : "blocked",
+					error,
+					runId,
+				);
 				this.runtime.setActiveTask(null);
 			}
 			if (isRetryable) {
@@ -207,7 +212,7 @@ export class TaskRunner {
 		}
 
 		if (selectedPlanTask) {
-			this.recordSelectedPlanTaskResult(plan, selectedPlanTask.id, result);
+			this.recordSelectedPlanTaskResult(plan, selectedPlanTask.id, result, cwd, runId);
 		}
 		this.publishEndEvents(runtime, plan, runId, strategy, taskConfigs, result);
 		renderLionSubagentWidget(runtime, ctx);
@@ -271,7 +276,11 @@ export class TaskRunner {
 		}
 	}
 
-	private selectActivePlanTask(plan: ReturnType<typeof loadLionPlan> | null): LionTask | null {
+	private selectActivePlanTask(
+		plan: ReturnType<typeof loadLionPlan> | null,
+		cwd: string,
+		runId: string,
+	): LionTask | null {
 		if (this.runtime.state.strategy !== "plan") {
 			throw new Error("active_plan_next_task requires Lion plan mode.");
 		}
@@ -281,10 +290,23 @@ export class TaskRunner {
 		if (!plan) {
 			throw new Error("active_plan_next_task requires an active plan. Run /lion-activate <plan> first.");
 		}
-		const task = getNextExecutableTask(plan);
+		const { checklist, task } = this.checklistService.startNext({
+			kind: "plan",
+			activePlanPath: plan.rootPath,
+			cwd,
+		});
 		if (task) {
-			updateStructuredTaskStatus(plan, task.id, "in_progress");
 			this.runtime.setActiveTask(task.id);
+			this.runtime.emit(
+				LionEvents.checklistTaskStarted({
+					runId,
+					kind: checklist.kind,
+					slug: checklist.slug,
+					rootPath: checklist.rootPath,
+					checklist,
+					taskId: task.id,
+				}),
+			);
 		}
 		return task;
 	}
@@ -311,6 +333,21 @@ export class TaskRunner {
 
 	private applyPhasePolicy(task: PreparedTaskConfig): PreparedTaskConfig {
 		const state = this.runtime.state;
+		if (state.strategy === "review") {
+			if (task.definition === "executor") {
+				throw new Error("executor tasks are not allowed in Lion review mode.");
+			}
+			return {
+				...task,
+				capabilities: {
+					...task.capabilities,
+					canEdit: false,
+					canWrite: false,
+					canExecute: task.definition === "reviewer" || task.definition === "validator",
+				},
+				disabledTools: uniqueStrings([...(task.disabledTools ?? []), "edit", "write", "multi-edit"]),
+			};
+		}
 		if (state.strategy !== "plan") return task;
 
 		if (state.phase === "planning") {
@@ -337,6 +374,8 @@ export class TaskRunner {
 		plan: ReturnType<typeof loadLionPlan> | null,
 		taskId: string,
 		result: TaskExecutionResult,
+		cwd: string,
+		runId: string,
 	): void {
 		if (!plan) return;
 		const summary = result.results.map((item) => item.summary).join("\n\n");
@@ -366,8 +405,37 @@ export class TaskRunner {
 						].join("\n"),
 					),
 				].join("\n");
-		recordStructuredTaskResult(plan, taskId, status, gateSummary);
+		this.recordPlanChecklistResult(cwd, taskId, status, gateSummary, runId);
 		this.runtime.setActiveTask(null);
+	}
+
+	private recordPlanChecklistResult(
+		cwd: string,
+		taskId: string,
+		status: "complete" | "blocked" | "retryable",
+		summary: string,
+		runId = this.runtime.state.lastRunId ?? `checklist-${Date.now()}`,
+	): void {
+		const { checklist } = this.checklistService.recordResult({
+			kind: "plan",
+			activePlanPath: this.runtime.state.activePlanPath,
+			cwd,
+			taskId,
+			status,
+			summary,
+		});
+		this.runtime.emit(
+			LionEvents.checklistTaskRecorded({
+				runId,
+				kind: checklist.kind,
+				slug: checklist.slug,
+				rootPath: checklist.rootPath,
+				checklist,
+				taskId,
+				status,
+				summary,
+			}),
+		);
 	}
 
 	private publishStartEvents(
@@ -575,4 +643,8 @@ function isPlanningRole(definition: string): boolean {
 	return (
 		definition === "analyzer" || definition === "planner" || definition === "reviewer" || definition === "validator"
 	);
+}
+
+function uniqueStrings(values: string[]): string[] {
+	return Array.from(new Set(values));
 }

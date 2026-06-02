@@ -2,9 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { SubAgentController } from "../controller.js";
+import { LionChecklistService } from "../lion/checklist-service.js";
+import type { LionChecklistKind } from "../lion/types.js";
 import { SubAgentRunStore } from "../run-store.js";
 import type { SubAgentRunRecord, SubAgentState } from "../types.js";
-import { DashboardStateManager } from "./state-manager.js";
+import { DashboardStateManager, type VirtualInstance } from "./state-manager.js";
 import type {
 	DashboardLionState,
 	DashboardSessionSource,
@@ -33,6 +35,7 @@ function isDashboardMode(): boolean {
 interface SseClient {
 	controller: ReadableStreamDefaultController<Uint8Array>;
 	instanceId?: string;
+	lastActivityAt: number;
 }
 
 interface BunHttpServer {
@@ -89,11 +92,13 @@ export class HttpServerTransport implements SubAgentTransport {
 	readonly stateManager: DashboardStateManager;
 	private unsubscribeMainSession?: () => void;
 	private runStore: SubAgentRunStore;
+	private checklistService: LionChecklistService;
 
 	constructor(private options: HttpServerTransportOptions) {
 		this.staticDir = resolveStaticDir(options);
-		this.stateManager = new DashboardStateManager(options.controller.getCwd());
 		this.runStore = new SubAgentRunStore(options.controller.getCwd());
+		this.checklistService = new LionChecklistService();
+		this.stateManager = new DashboardStateManager(options.controller.getCwd(), this.runStore);
 		this.sseCleanupTimer = setInterval(() => this.cleanupStaleSseClients(), 30000);
 	}
 
@@ -167,8 +172,9 @@ export class HttpServerTransport implements SubAgentTransport {
 			}
 			try {
 				client.controller.enqueue(payload);
+				client.lastActivityAt = Date.now();
 			} catch {
-				/* client may be disconnected, remove lazily */
+				// Client disconnected — remove
 				this.clients.delete(client);
 			}
 		}
@@ -198,6 +204,10 @@ export class HttpServerTransport implements SubAgentTransport {
 
 		if (req.method === "GET" && pathname === "/api/lion/state") {
 			return this.withCors(this.serveLionState());
+		}
+
+		if (req.method === "GET" && pathname === "/api/lion/checklist") {
+			return this.withCors(this.serveLionChecklist(url));
 		}
 
 		if (req.method === "GET" && pathname === "/api/instances") {
@@ -316,6 +326,27 @@ export class HttpServerTransport implements SubAgentTransport {
 		return Response.json(this.options.lionState?.() ?? DEFAULT_LION_STATE);
 	}
 
+	private serveLionChecklist(url: URL): Response {
+		const kind = url.searchParams.get("kind");
+		if (kind !== "plan" && kind !== "review") {
+			return new Response("Invalid checklist kind", { status: 400 });
+		}
+		const reference = url.searchParams.get("reference") ?? undefined;
+		const state = this.options.lionState?.() ?? DEFAULT_LION_STATE;
+		try {
+			return Response.json(
+				this.checklistService.read({
+					kind: kind as LionChecklistKind,
+					reference,
+					activePlanPath: state.activePlanPath,
+					cwd: this.options.controller.getCwd(),
+				}),
+			);
+		} catch (error) {
+			return new Response(error instanceof Error ? error.message : String(error), { status: 404 });
+		}
+	}
+
 	private async serveThreads(): Promise<Response> {
 		const main = this.options.mainSession?.getThread();
 		const subagents = await this.getSubagentThreads();
@@ -328,6 +359,8 @@ export class HttpServerTransport implements SubAgentTransport {
 		for (const state of controllerStates) {
 			this.stateManager.registerLiveInstance(state);
 		}
+		// Ensure virtual instances from runStore are loaded
+		await this.stateManager.loadFromRunStore();
 		const runRecords = await this.runStore.list();
 		const byInstanceId = new Map<string, DashboardThreadState>();
 		const runsByInstanceId = new Map(runRecords.map((record) => [record.instanceId, record]));
@@ -404,16 +437,14 @@ export class HttpServerTransport implements SubAgentTransport {
 
 		// Virtual instance: read from SessionManager directly
 		const virtual = this.stateManager.getInstance(threadId);
-		if (virtual?.sessionFile) {
-			try {
-				const sm = SessionManager.open(virtual.sessionFile);
+		if (virtual?.sessionFile || virtual?.sessionId) {
+			const sm = await this.tryOpenSession(threadId, virtual);
+			if (sm) {
 				const context = sm.buildSessionContext();
 				return Response.json({
 					sessionId: sm.getSessionId(),
 					messages: context.messages,
 				});
-			} catch {
-				return new Response("Session not accessible", { status: 500 });
 			}
 		}
 
@@ -438,17 +469,46 @@ export class HttpServerTransport implements SubAgentTransport {
 
 		// Virtual instance: read from SessionManager directly
 		const virtual = this.stateManager.getInstance(threadId);
-		if (virtual?.sessionFile) {
-			try {
-				const sm = SessionManager.open(virtual.sessionFile);
-				const context = sm.buildSessionContext();
-				return Response.json(context.messages);
-			} catch {
-				return new Response("Session not accessible", { status: 500 });
+		if (virtual?.sessionFile || virtual?.sessionId) {
+			const sm = await this.tryOpenSession(threadId, virtual);
+			if (sm) {
+				return Response.json(sm.buildSessionContext().messages);
 			}
 		}
 
 		return new Response("Not Found", { status: 404 });
+	}
+
+	/**
+	 * Try to open a SessionManager for a virtual instance.
+	 * Falls back to constructing the session path from the run record
+	 * if sessionFile is not directly available (e.g. after restart).
+	 */
+	private async tryOpenSession(threadId: string, virtual: VirtualInstance): Promise<SessionManager | null> {
+		// Direct path available (handed over from live instance)
+		if (virtual.sessionFile) {
+			try {
+				return SessionManager.open(virtual.sessionFile);
+			} catch {
+				// Fall through to try run record
+			}
+		}
+
+		// Reconstruct from run record
+		if (virtual.sessionId) {
+			try {
+				const records = await this.runStore.list();
+				const record = records.find((r) => r.instanceId === threadId);
+				if (record?.cwd && record.sessionId) {
+					const sessionPath = join(record.cwd, ".pi", "sessions", `${record.sessionId}.json`);
+					return SessionManager.open(sessionPath);
+				}
+			} catch {
+				// Not found or inaccessible
+			}
+		}
+
+		return null;
 	}
 
 	private async serveRun(threadId: string): Promise<Response> {
@@ -479,7 +539,7 @@ export class HttpServerTransport implements SubAgentTransport {
 
 		const stream = new ReadableStream<Uint8Array>({
 			start: (controller) => {
-				const client: SseClient = { controller, instanceId };
+				const client: SseClient = { controller, instanceId, lastActivityAt: Date.now() };
 				this.clients.add(client);
 
 				req.signal.addEventListener("abort", () => {
@@ -504,10 +564,11 @@ export class HttpServerTransport implements SubAgentTransport {
 	}
 
 	private cleanupStaleSseClients(): void {
-		const heartbeat = encoder.encode(":heartbeat\n\n");
 		for (const client of this.clients) {
+			const heartbeat = encoder.encode(":heartbeat\n\n");
 			try {
 				client.controller.enqueue(heartbeat);
+				client.lastActivityAt = Date.now();
 			} catch {
 				this.clients.delete(client);
 			}

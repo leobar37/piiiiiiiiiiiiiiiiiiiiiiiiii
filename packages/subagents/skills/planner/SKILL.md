@@ -257,7 +257,7 @@ If an overview folder already exists:
 
 The planner skill ships a small Node CLI for checklist operations:
 
-- `skills/planner/scripts/planner-checklist.js`
+- `scripts/planner-checklist.js`
 
 Treat this CLI as the primary interface for checklist state.
 

@@ -80,7 +80,8 @@ Context:
   - [dependency constraints from dependency-graph.md]
 
 Planning instruction:
-- Before starting, load and follow the `feature-executor` skill.
+- Before starting, load and follow the relevant internal skill for the delegated
+  work. Use `code-review` for review tasks and `planner` for planning tasks.
 - Use the planner skill as a reasoning guide to form a coherent approach before
   editing, but do not write a separate detailed plan unless the parent session
   explicitly requests one.

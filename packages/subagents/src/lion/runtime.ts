@@ -380,6 +380,23 @@ export class LionRuntime {
 		};
 		this.logState("activate_plan", { planSlug: plan.slug, planPath: plan.rootPath, taskCount: plan.tasks.length });
 	}
+	activateReview(plan: LionPlan): void {
+		this.#state = {
+			...this.#state,
+			active: true,
+			strategy: "review",
+			phase: "planning",
+			activePlanPath: plan.rootPath,
+			activePlanSlug: plan.slug,
+			planKind: plan.kind,
+			activeTaskId: null,
+		};
+		this.logState("activate_review", {
+			reviewSlug: plan.slug,
+			reviewPath: plan.rootPath,
+			taskCount: plan.tasks.length,
+		});
+	}
 	setPhase(phase: LionPhase): void {
 		const previous = this.#state.phase;
 		this.#state = { ...this.#state, active: true, phase };

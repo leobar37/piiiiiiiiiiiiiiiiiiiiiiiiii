@@ -19,10 +19,10 @@ This skill produces delegation text. It does not launch implementation agents by
 default and does not modify application source code unless explicitly asked to
 create or update delegation artifacts.
 
-For implementation-style delegations, the receiving agent should normally load
-the `feature-executor` skill. This keeps execution, validation, drift handling,
-and final reporting consistent without repeating the entire operating protocol
-inside every handoff.
+For review-style delegations, the receiving agent should load the `code-review`
+skill. For planning-style delegations, use the `planner` skill. For
+implementation-style delegations, include the execution rules directly in the
+handoff unless a project-specific executor skill is available.
 
 ## Core Workflow
 
@@ -44,7 +44,7 @@ the delegation to another session.
 Use the bundled helper when creating a new delegation shell:
 
 ```bash
-node skills/subagent-delegation/scripts/delegation-writer.js create <slug> "<Title>"
+node scripts/delegation-writer.js create <slug> "<Title>"
 ```
 
 Use `--force` only when intentionally replacing an existing delegation file.
@@ -56,9 +56,8 @@ For the file policy, see `references/file-output-policy.md`.
 Every delegation must include:
 
 - `Goal`: one specific outcome for the receiving agent
-- `Required Skill`: the skill the receiving agent must load, normally
-  `feature-executor` for implementation, correction, validation, and
-  integration work
+- `Required Skill`: the skill the receiving agent must load, such as
+  `code-review` for review work or `planner` for planning work
 - `Context`: repo root, source plan or task, relevant files, dependency notes
 - `Objective`: concrete result expected after execution
 - `Scope`: what is included

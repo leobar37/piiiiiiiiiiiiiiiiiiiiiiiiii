@@ -8,10 +8,11 @@ Goal:
 [Implement, validate, investigate, or review one specific work unit.]
 
 Required Skill:
-- Load and follow the `feature-executor` skill before starting when this is
-  implementation, correction, validation, or integration work.
-- If this is investigation-only, use `feature-executor` for analysis and final
-  reporting, but do not edit source files unless explicitly authorized.
+- Load and follow `code-review` for review work.
+- Load and follow `planner` for planning work.
+- For implementation, correction, validation, or integration work, include the
+  required execution rules in this handoff unless a project-specific executor
+  skill is available.
 
 Context:
 - Repo root: [absolute repo path]

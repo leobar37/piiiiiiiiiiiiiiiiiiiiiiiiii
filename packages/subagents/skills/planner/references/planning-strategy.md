@@ -142,7 +142,7 @@ Also ensure the project-local helper exists:
 
 The bundled helper source lives at:
 
-- `skills/planner/scripts/planner-checklist.js`
+- `scripts/planner-checklist.js`
 
 Use these templates:
 

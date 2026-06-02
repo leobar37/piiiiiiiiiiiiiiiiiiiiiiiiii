@@ -112,7 +112,7 @@ export interface SubAgentDefinition {
 export type EffectiveSubAgentConfig = SubAgentDefinition;
 
 export interface SubAgentOrchestrationContext {
-	strategy: "plan" | "simple";
+	strategy: "plan" | "simple" | "review";
 	planSlug?: string;
 	planPath?: string;
 }

@@ -5,6 +5,10 @@
 ### Added
 
 - Added bundled internal `planner` and `subagent-delegation` skills for subagent sessions, with internal skills taking precedence over same-name external skills.
+- Added `/lion-code-review` to plan read-only code review delegations for dirty files and related functionality using the bundled `code-review` skill.
+- Added durable `.reviews/` code review plans backed by the internal Lion checklist tools.
+- Added internal Lion checklist tools and dashboard progress UI for durable `.plans/` and `.reviews/` checklists.
+- Added Lion `review` strategy so `/lion-code-review` creates an active durable `.reviews/` plan with read-only checklist execution and false-positive validation.
 
 ### Fixed
 

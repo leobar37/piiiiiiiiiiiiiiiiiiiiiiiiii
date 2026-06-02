@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { buildCodeReviewTodo, collectCodeReviewGitContext } from "./code-review.js";
 import { loadLionPlan, resolvePlanPath } from "./plans/index.js";
 import { buildPlanReviewPrompt } from "./prompts/index.js";
+import { createReviewPlanFromTodo, loadReviewPlan } from "./review-plan.js";
 import type { LionRuntime } from "./runtime.js";
 import { createRunId, formatPlanSummary } from "./utils.js";
 
@@ -202,12 +204,87 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 		},
 	});
 
+	pi.registerCommand("lion-code-review", {
+		description: "Activate Lion code review strategy and create a durable read-only review plan",
+		handler: async (args, ctx) => {
+			const runId = createRunId();
+			const input = args.trim();
+			const cwd = ctx.cwd ?? ctx.sessionManager.getCwd();
+			runtime.logState("command_lion_code_review", { runId, input, cwd });
+
+			const git = await collectCodeReviewGitContext(cwd);
+			const todo = buildCodeReviewTodo({ scope: input, git });
+			const reviewPlan = createReviewPlanFromTodo(cwd, { slug: input, todo });
+			runtime.activateReview({
+				kind: "structured",
+				slug: reviewPlan.slug,
+				rootPath: reviewPlan.rootPath,
+				contextFile: reviewPlan.contextFile,
+				indexFile: reviewPlan.indexFile,
+				checklistFile: reviewPlan.checklistFile,
+				tasks: reviewPlan.tasks,
+			});
+			runtime.persist("activate");
+			runtime.ensureController(ctx);
+			runtime.attachMainSession(ctx);
+			runtime.ui.updateStatus(ctx, runtime.state);
+			runtime.emit({
+				type: "lion.activate.complete",
+				timestamp: Date.now(),
+				runId,
+				strategy: runtime.state.strategy,
+				phase: runtime.state.phase,
+				planSlug: reviewPlan.slug,
+				planPath: reviewPlan.rootPath,
+			});
+			const content = [
+				"Lion code review strategy active.",
+				"",
+				todo.summary,
+				"",
+				`Durable review plan created: ${reviewPlan.rootPath}`,
+				"Use review planning to map environment, skills, flows, risks, and expected behavior before reporting bugs.",
+				"During review execution, merge findings by severity, dedupe repeated root causes, and validate false positives separately.",
+				"",
+				'Next step: use lion_checklist_start_next with kind "review" and this review path.',
+				reviewPlan.rootPath,
+			].join("\n");
+
+			const message = {
+				customType: "lion-orchestrator-feedback",
+				content,
+				display: false,
+				details: {
+					runId,
+					phase: runtime.state.phase,
+					strategy: runtime.state.strategy,
+					planSlug: reviewPlan.slug,
+					planPath: reviewPlan.rootPath,
+					nextTools: [],
+					nextToolsRequired: ["lion_checklist_start_next"],
+					reviewTodo: todo,
+					reviewPlan,
+				},
+			};
+
+			if (ctx.isIdle()) {
+				pi.sendMessage(message, { triggerTurn: true });
+			} else {
+				pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
+			}
+
+			runtime.ui.showMessage(`Lion code review strategy active.\n\n${reviewPlan.rootPath}`);
+		},
+	});
+
 	pi.registerCommand("lion-validate", {
 		description: "Ask the orchestrator to validate the active Lion plan through lion_tasks",
 		handler: async (args, ctx) => {
 			const activePlanPath = runtime.state.activePlanPath;
 			if (!activePlanPath) {
-				runtime.ui.showMessage("Lion validate requires an active plan. Run /lion-activate <plan> first.");
+				runtime.ui.showMessage(
+					"Lion validate requires an active plan or review. Run /lion-activate or /lion-code-review first.",
+				);
 				return;
 			}
 			if (runtime.state.phase !== "planning") {
@@ -216,8 +293,51 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 			}
 
 			const focus = args.trim() || undefined;
-			const plan = loadLionPlan(activePlanPath);
 			runtime.logState("command_lion_validate", { focus });
+			if (runtime.state.strategy === "review") {
+				const review = loadReviewPlan(activePlanPath, ctx.cwd ?? ctx.sessionManager.getCwd());
+				const content = [
+					"Lion review validation requested.",
+					`Review: ${review.slug}`,
+					`Path: ${review.rootPath}`,
+					focus ? `Focus: ${focus}` : "",
+					"",
+					"Use lion_tasks with validator delegations to validate reported findings and reject false positives.",
+					"Do not edit files. Do not switch to implementation.",
+					"Return verified findings, rejected false positives, inferred risks, unknowns, and action plan.",
+					"",
+					"Suggested delegation prompt:",
+					buildReviewValidationPrompt(review, focus),
+				]
+					.filter((line) => line !== "")
+					.join("\n");
+
+				const message = {
+					customType: "lion-orchestrator-feedback",
+					content,
+					display: false,
+					details: {
+						planSlug: review.slug,
+						planPath: review.rootPath,
+						phase: runtime.state.phase,
+						nextTools: ["lion_tasks"],
+						role: "validator",
+					},
+				};
+
+				if (ctx.isIdle()) {
+					pi.sendMessage(message, { triggerTurn: true });
+				} else {
+					pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
+				}
+
+				runtime.ui.showMessage(
+					`Lion review validation requested for ${review.slug}. Delegating through lion_tasks.`,
+				);
+				return;
+			}
+
+			const plan = loadLionPlan(activePlanPath);
 
 			const content = [
 				"Lion plan validation requested.",
@@ -267,10 +387,15 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 			}
 
 			const isPlanMode = runtime.state.strategy === "plan";
+			const isReviewMode = runtime.state.strategy === "review";
 			const activePlanPath = runtime.state.activePlanPath;
 
 			if (isPlanMode && !activePlanPath) {
 				runtime.ui.showMessage("Lion build requires an active plan. Run /lion-activate <plan> first.");
+				return;
+			}
+			if (isReviewMode && !activePlanPath) {
+				runtime.ui.showMessage("Lion review build requires an active review. Run /lion-code-review first.");
 				return;
 			}
 
@@ -289,12 +414,20 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 						'Immediately use lion_tasks with source: "active_plan_next_task" to select, execute, and record the next task.',
 						"Do not implement application code directly in the main thread.",
 					].join("\n")
-				: [
-						"Lion execution mode activated.",
-						"Simple orchestration is active. No durable plan is required.",
-						"Delegate work with lion_tasks and synthesize results in the main thread.",
-						"Do not implement application code directly unless it is trivial.",
-					].join("\n");
+				: isReviewMode
+					? [
+							"Lion review execution mode activated.",
+							`Review: ${runtime.state.activePlanSlug || activePlanPath}`,
+							"The orchestrator is now in control of read-only review checklist execution.",
+							'Immediately use lion_checklist_start_next with kind "review", then run the returned lionTasksParams with lion_tasks.',
+							"Do not edit application code. Use validators to reject false positives before final reporting.",
+						].join("\n")
+					: [
+							"Lion execution mode activated.",
+							"Simple orchestration is active. No durable plan is required.",
+							"Delegate work with lion_tasks and synthesize results in the main thread.",
+							"Do not implement application code directly unless it is trivial.",
+						].join("\n");
 
 			const nextTools = ["lion_tasks"];
 
@@ -320,7 +453,9 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 
 			const displayMessage = isPlanMode
 				? `Lion build mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`
-				: "Lion execution mode activated. Delegate with lion_tasks.";
+				: isReviewMode
+					? `Lion review execution mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`
+					: "Lion execution mode activated. Delegate with lion_tasks.";
 			runtime.ui.showMessage(displayMessage);
 		},
 	});
@@ -353,4 +488,42 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 			}
 		},
 	});
+}
+
+function buildReviewValidationPrompt(review: ReturnType<typeof loadReviewPlan>, focus?: string): string {
+	return [
+		'<delegation kind="code-review-validation">',
+		"  <role>validator</role>",
+		`  <review path="${escapeXml(review.rootPath)}" checklist="${escapeXml(review.checklistFile)}" />`,
+		focus ? `  <focus>${escapeXml(focus)}</focus>` : "",
+		"  <objective>Validate review findings and reject false positives before final reporting.</objective>",
+		"  <scope>",
+		...review.tasks.map(
+			(task) =>
+				`    <task id="${escapeXml(task.id)}" file="${escapeXml(task.file)}" status="${escapeXml(task.status)}" />`,
+		),
+		"  </scope>",
+		"  <constraints>",
+		"    <must>Read the review context, checklist, task summaries, and relevant source evidence.</must>",
+		"    <must>Check callers, guards, tests, config, schemas, or intended behavior that could explain away each suspected bug.</must>",
+		"    <must>Classify each item as verified, rejected false positive, inferred risk, or unknown.</must>",
+		"    <must_not>Edit files.</must_not>",
+		"    <must_not>Claim a finding is verified without concrete evidence.</must_not>",
+		"  </constraints>",
+		"  <output>",
+		"    <must_return>Verified findings, rejected false positives, inferred risks, unknowns, evidence checked, and action plan.</must_return>",
+		"  </output>",
+		"</delegation>",
+	]
+		.filter((line) => line !== "")
+		.join("\n");
+}
+
+function escapeXml(value: string): string {
+	return value
+		.replaceAll("&", "&amp;")
+		.replaceAll('"', "&quot;")
+		.replaceAll("'", "&apos;")
+		.replaceAll("<", "&lt;")
+		.replaceAll(">", "&gt;");
 }

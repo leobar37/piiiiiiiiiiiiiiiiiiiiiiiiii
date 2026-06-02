@@ -42,14 +42,14 @@ export interface SubAgentInstanceState {
 }
 
 export interface SubAgentOrchestrationContext {
-	strategy: "plan" | "simple";
+	strategy: "plan" | "simple" | "review";
 	planSlug?: string;
 	planPath?: string;
 }
 
 export interface LionDashboardState {
 	active: boolean;
-	strategy: "plan" | "simple";
+	strategy: "plan" | "simple" | "review";
 	phase: "planning" | "building";
 	activePlanPath: string | null;
 	activePlanSlug: string | null;
@@ -58,11 +58,48 @@ export interface LionDashboardState {
 	lastRunId: string | null;
 }
 
+export type LionChecklistKind = "plan" | "review";
+export type LionTaskStatus = "pending" | "in_progress" | "complete" | "blocked" | "retryable";
+
+export interface LionChecklistTask {
+	id: string;
+	title: string;
+	file: string;
+	status: LionTaskStatus;
+	dependencies: string[];
+	requirements: string[];
+	phase?: string;
+	scope?: string[];
+	kind?: string;
+	last_summary?: string;
+	updated_at?: string;
+}
+
+export interface LionChecklistProgress {
+	completed: number;
+	total: number;
+	pending: number;
+	inProgress: number;
+	blocked: number;
+	retryable: number;
+	percent: number;
+}
+
+export interface LionChecklistSnapshot {
+	kind: LionChecklistKind;
+	slug: string;
+	rootPath: string;
+	checklistFile: string;
+	tasks: LionChecklistTask[];
+	progress: LionChecklistProgress;
+	updatedAt: string | null;
+}
+
 export interface SubAgentEvent {
 	type: string;
 	timestamp: number;
-	instanceId: string;
-	taskId: string;
+	instanceId?: string;
+	taskId?: string;
 	[key: string]: unknown;
 }
 
@@ -117,7 +154,7 @@ export type MessageBlock =
 	| { type: "text"; text: string }
 	| { type: "thinking"; thinking: string; signature?: string; redacted?: boolean }
 	| { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> }
-	| { type: "toolResult"; toolCallId: string; content: string; isError: boolean }
+	| { type: "toolResult"; toolCallId: string; toolName?: string; content: string; isError: boolean }
 	| { type: "image"; data: string; mimeType: string };
 
 export interface ChatMessage {

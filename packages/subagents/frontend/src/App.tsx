@@ -5,6 +5,7 @@ import { useSseEvents } from "./hooks/use-sse.ts";
 import { navigateToThread, getHashThreadId } from "./navigation.ts";
 import { useSubAgentStore } from "./store/use-subagent-store.ts";
 import { SubagentListPanel } from "./components/SubagentListPanel.tsx";
+import { ChecklistDrawer } from "./components/ChecklistDrawer.tsx";
 
 function useHashThreadId(): string | null {
 	const [id, setId] = useState(() => getHashThreadId());
@@ -64,6 +65,7 @@ export default function App() {
 					</div>
 				)}
 			</main>
+			<ChecklistDrawer />
 		</div>
 	);
 }

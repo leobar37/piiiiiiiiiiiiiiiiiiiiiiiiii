@@ -1,8 +1,15 @@
-import type { LionDashboardState, SubAgentEvent, SubAgentInstanceState, SubAgentRunRecord } from "../types.ts";
+import type {
+	LionChecklistSnapshot,
+	LionDashboardState,
+	SubAgentEvent,
+	SubAgentInstanceState,
+	SubAgentRunRecord,
+} from "../types.ts";
 
 const now = Date.now();
 const mainThreadId = "main:mock-session";
 const lionTasksToolCallId = "main-tool-lion-tasks";
+const lionChecklistToolCallId = "main-tool-lion-checklist";
 const lionRunId = "mock-run-1";
 
 export const MOCK_LION_STATE: LionDashboardState = {
@@ -14,6 +21,75 @@ export const MOCK_LION_STATE: LionDashboardState = {
 	planKind: "structured",
 	activeTaskId: null,
 	lastRunId: lionRunId,
+};
+
+export const MOCK_PLAN_CHECKLIST: LionChecklistSnapshot = {
+	kind: "plan",
+	slug: "lion-dashboard-runtime",
+	rootPath: ".plans/lion-dashboard-runtime",
+	checklistFile: ".plans/lion-dashboard-runtime/checklist.json",
+	tasks: [
+		{
+			id: "task-1",
+			title: "Expose main session thread",
+			file: ".plans/lion-dashboard-runtime/tasks/task-1.md",
+			status: "complete",
+			dependencies: [],
+			requirements: ["Main session is rendered as a first-class thread."],
+			phase: "dashboard",
+			scope: ["packages/subagents/frontend"],
+			kind: "implementation",
+			last_summary: "Main session thread is visible and linked from the dashboard.",
+			updated_at: new Date(now - 52000).toISOString(),
+		},
+		{
+			id: "task-2",
+			title: "Render subagent drill-down",
+			file: ".plans/lion-dashboard-runtime/tasks/task-2.md",
+			status: "complete",
+			dependencies: ["task-1"],
+			requirements: ["Subagent histories stay isolated from the main thread."],
+			phase: "dashboard",
+			scope: ["packages/subagents/frontend"],
+			kind: "implementation",
+			last_summary: "Subagent drill-down renders run context without mixing histories.",
+			updated_at: new Date(now - 36000).toISOString(),
+		},
+		{
+			id: "task-3",
+			title: "Show plan progress in My Session",
+			file: ".plans/lion-dashboard-runtime/tasks/task-3.md",
+			status: "in_progress",
+			dependencies: ["task-1", "task-2"],
+			requirements: ["My Session shows checklist progress through mock data."],
+			phase: "dashboard",
+			scope: ["packages/subagents/frontend/src/mocks"],
+			kind: "implementation",
+			last_summary: "Mock data now carries the checklist snapshot used by the progress card.",
+			updated_at: new Date(now - 12000).toISOString(),
+		},
+		{
+			id: "task-4",
+			title: "Verify Browser mock flow",
+			file: ".plans/lion-dashboard-runtime/tasks/task-4.md",
+			status: "pending",
+			dependencies: ["task-3"],
+			requirements: ["Browser can open the progress card drawer without console errors."],
+			phase: "verification",
+			scope: ["packages/subagents/frontend"],
+			kind: "verification",
+		},
+	],
+	progress: {
+		completed: 2,
+		total: 4,
+		pending: 1,
+		inProgress: 1,
+		blocked: 0,
+		retryable: 0,
+		percent: 50,
+	},
+	updatedAt: new Date(now - 12000).toISOString(),
 };
 
 export const MOCK_AGENTS: SubAgentInstanceState[] = [
@@ -201,6 +277,17 @@ export const MOCK_EVENTS: SubAgentEvent[] = [
 		toolCount: 1,
 		hadError: false,
 		timestamp: now - 60000,
+	},
+	{
+		type: "lion.checklist.snapshot",
+		instanceId: mainThreadId,
+		taskId: "main",
+		runId: lionRunId,
+		kind: MOCK_PLAN_CHECKLIST.kind,
+		slug: MOCK_PLAN_CHECKLIST.slug,
+		rootPath: MOCK_PLAN_CHECKLIST.rootPath,
+		checklist: MOCK_PLAN_CHECKLIST,
+		timestamp: now - 57000,
 	},
 	{
 		type: "instance.created",
@@ -573,6 +660,34 @@ export const MOCK_SESSION_MESSAGES: Array<Record<string, unknown>> = [
 		content: [{ type: "text", text: "Started 3 Lion subagents for the dashboard refactor." }],
 		isError: false,
 		timestamp: now - 64000,
+		instanceId: mainThreadId,
+	},
+	{
+		role: "assistant",
+		content: [
+			{
+				type: "text",
+				text: "I'll read the active plan checklist so the dashboard can display current progress.",
+			},
+			{
+				type: "toolCall",
+				id: lionChecklistToolCallId,
+				name: "lion_checklist_read",
+				arguments: {
+					kind: "plan",
+				},
+			},
+		],
+		timestamp: now - 59000,
+		instanceId: mainThreadId,
+	},
+	{
+		role: "toolResult",
+		toolCallId: lionChecklistToolCallId,
+		toolName: "lion_checklist_read",
+		content: [{ type: "text", text: JSON.stringify({ checklist: MOCK_PLAN_CHECKLIST }) }],
+		isError: false,
+		timestamp: now - 58000,
 		instanceId: mainThreadId,
 	},
 	{

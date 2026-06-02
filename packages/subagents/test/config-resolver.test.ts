@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveEffectiveConfig } from "../src/config-resolver.js";
+import { reviewerDefinition } from "../src/definitions/reviewer.js";
 import type { DelegationTask, SubAgentDefinition } from "../src/types.js";
 
 const baseDefinition: SubAgentDefinition = {
@@ -142,6 +143,20 @@ describe("resolveEffectiveConfig", () => {
 
 		const config = resolveEffectiveConfig(baseDefinition, task);
 		expect(config.skillPaths).toEqual([".codex/skills/core/SKILL.md", ".codex/skills/frontend/SKILL.md"]);
+	});
+
+	it("loads the bundled code-review skill automatically for reviewer subagents", () => {
+		const task: DelegationTask = {
+			id: "task-1",
+			definition: "reviewer",
+			prompt: "Review the change",
+			skillPaths: [".codex/skills/core/SKILL.md"],
+		};
+
+		const config = resolveEffectiveConfig(reviewerDefinition, task);
+		expect(config.skillPaths?.some((path) => path.includes("skills/code-review"))).toBe(true);
+		expect(config.skillPaths).toContain(".codex/skills/core/SKILL.md");
+		expect(config.systemPrompt).toContain("false-positive explanation");
 	});
 
 	it("sets tools from task when provided (not union)", () => {

@@ -5,11 +5,11 @@ const path = require('path')
 
 function usage() {
   console.log(`Usage:
-  node skills/subagent-delegation/scripts/delegation-writer.js create <slug> "<Title>" [--force]
+  node scripts/delegation-writer.js create <slug> "<Title>" [--force]
 
 Examples:
-  node skills/subagent-delegation/scripts/delegation-writer.js create refactor-auth-api "Refactor Auth API Delegation"
-  node skills/subagent-delegation/scripts/delegation-writer.js create checkout-validation "Checkout Validation Agent Prompt" --force`)
+  node scripts/delegation-writer.js create refactor-auth-api "Refactor Auth API Delegation"
+  node scripts/delegation-writer.js create checkout-validation "Checkout Validation Agent Prompt" --force`)
 }
 
 function fail(message) {

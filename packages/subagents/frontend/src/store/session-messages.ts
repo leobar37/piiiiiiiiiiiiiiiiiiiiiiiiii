@@ -1,18 +1,24 @@
 import { create } from "zustand";
 import type { ChatMessage, MessageBlock } from "../types.ts";
 import { dashboardDebugLedger } from "../dev/debug-ledger.ts";
-import { findMessageIndex, findPartialMessageIndex, mergeHydratedMessages, upsertMessage } from "../utils/message-merge.ts";
 
 interface SessionMessagesState {
 	messagesByInstance: Map<string, ChatMessage[]>;
 	streamingByInstance: Map<string, boolean>;
 
+	/** Replace all messages for an instance (initial hydration from REST) */
 	setMessages: (instanceId: string, messages: ChatMessage[]) => void;
+	/** Append a new message or update by message.id */
 	addMessage: (instanceId: string, message: ChatMessage) => void;
+	/** Mark a message as partial+streaming (start of SSE stream) */
 	startMessage: (instanceId: string, message: ChatMessage) => void;
+	/** Update a partial streaming message in-place */
 	updatePartialMessage: (instanceId: string, message: ChatMessage) => void;
+	/** Mark a partial message as complete */
 	finishMessage: (instanceId: string, message: ChatMessage) => void;
+	/** Update blocks on an existing message by messageId */
 	updateMessageBlocks: (instanceId: string, messageId: string, blocks: MessageBlock[]) => void;
+	/** Set streaming state for an instance */
 	setStreaming: (instanceId: string, streaming: boolean) => void;
 	getMessages: (instanceId: string) => ChatMessage[];
 	clearMessages: (instanceId: string) => void;
@@ -25,9 +31,8 @@ export const useSessionMessagesStore = create<SessionMessagesState>((set, get) =
 	setMessages: (instanceId, messages) =>
 		set((state) => {
 			const next = new Map(state.messagesByInstance);
-			const merged = mergeHydratedMessages(next.get(instanceId) ?? [], messages);
-			next.set(instanceId, merged);
-			dashboardDebugLedger.recordMessages(instanceId, merged, "hydrate");
+			next.set(instanceId, messages);
+			dashboardDebugLedger.recordMessages(instanceId, messages, "hydrate");
 			return { messagesByInstance: next };
 		}),
 
@@ -35,16 +40,15 @@ export const useSessionMessagesStore = create<SessionMessagesState>((set, get) =
 		set((state) => {
 			const next = new Map(state.messagesByInstance);
 			const existing = next.get(instanceId) ?? [];
-			const duplicate = existing.some(
-				(item) =>
-					item.role === message.role &&
-					item.timestamp === message.timestamp &&
-					JSON.stringify(item.blocks) === JSON.stringify(message.blocks),
-			);
-			if (duplicate) return state;
-			const merged = upsertMessage(existing, message);
-			next.set(instanceId, merged);
-			dashboardDebugLedger.recordMessages(instanceId, merged, "add");
+			// Deduplicate by message.id
+			const idx = existing.findIndex((m) => m.id === message.id);
+			if (idx >= 0) {
+				existing[idx] = message;
+			} else {
+				existing.push(message);
+			}
+			next.set(instanceId, [...existing]);
+			dashboardDebugLedger.recordMessages(instanceId, next.get(instanceId) ?? [], "add");
 			return { messagesByInstance: next };
 		}),
 
@@ -53,12 +57,13 @@ export const useSessionMessagesStore = create<SessionMessagesState>((set, get) =
 			const next = new Map(state.messagesByInstance);
 			const existing = next.get(instanceId) ?? [];
 			const partialMessage = { ...message, partial: true, streaming: message.role === "assistant" };
-			const targetIndex = findPartialMessageIndex(existing, partialMessage);
-			if (targetIndex >= 0) {
-				next.set(instanceId, replaceAt(existing, targetIndex, partialMessage));
+			const idx = existing.findIndex((m) => m.id === message.id);
+			if (idx >= 0) {
+				existing[idx] = partialMessage;
 			} else {
-				next.set(instanceId, [...existing, partialMessage]);
+				existing.push(partialMessage);
 			}
+			next.set(instanceId, [...existing]);
 			dashboardDebugLedger.recordMessages(instanceId, next.get(instanceId) ?? [], "start");
 			return { messagesByInstance: next };
 		}),
@@ -67,16 +72,14 @@ export const useSessionMessagesStore = create<SessionMessagesState>((set, get) =
 		set((state) => {
 			const next = new Map(state.messagesByInstance);
 			const existing = next.get(instanceId) ?? [];
-			let targetIndex = findPartialMessageIndex(existing, message);
-			if (targetIndex === -1) {
-				targetIndex = findMessageIndex(existing, message);
-			}
+			const idx = existing.findIndex((m) => m.id === message.id);
 			const partialMessage = { ...message, partial: true, streaming: message.role === "assistant" };
-			if (targetIndex < 0) {
-				next.set(instanceId, [...existing, partialMessage]);
+			if (idx >= 0) {
+				existing[idx] = partialMessage;
 			} else {
-				next.set(instanceId, replaceAt(existing, targetIndex, partialMessage));
+				existing.push(partialMessage);
 			}
+			next.set(instanceId, [...existing]);
 			dashboardDebugLedger.recordMessages(instanceId, next.get(instanceId) ?? [], "update-partial");
 			return { messagesByInstance: next };
 		}),
@@ -85,16 +88,14 @@ export const useSessionMessagesStore = create<SessionMessagesState>((set, get) =
 		set((state) => {
 			const next = new Map(state.messagesByInstance);
 			const existing = next.get(instanceId) ?? [];
-			let targetIndex = findPartialMessageIndex(existing, message);
-			if (targetIndex === -1) {
-				targetIndex = findMessageIndex(existing, message);
-			}
+			const idx = existing.findIndex((m) => m.id === message.id);
 			const finalMessage = { ...message, partial: false, streaming: false };
-			if (targetIndex < 0) {
-				next.set(instanceId, [...existing, finalMessage]);
+			if (idx >= 0) {
+				existing[idx] = finalMessage;
 			} else {
-				next.set(instanceId, replaceAt(existing, targetIndex, finalMessage));
+				existing.push(finalMessage);
 			}
+			next.set(instanceId, [...existing]);
 			dashboardDebugLedger.recordMessages(instanceId, next.get(instanceId) ?? [], "finish");
 			return { messagesByInstance: next };
 		}),
@@ -133,7 +134,3 @@ export const useSessionMessagesStore = create<SessionMessagesState>((set, get) =
 			return { messagesByInstance: next, streamingByInstance: streamingNext };
 		}),
 }));
-
-function replaceAt(messages: ChatMessage[], index: number, message: ChatMessage): ChatMessage[] {
-	return messages.map((item, itemIndex) => (itemIndex === index ? message : item));
-}

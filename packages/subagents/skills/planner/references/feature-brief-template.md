@@ -69,7 +69,7 @@ Use this structure for each file in
 
 ## Suggested Delegation Skill
 
-- Required skill: `feature-executor`
+- Required skill: project-specific executor skill when available
 - Rationale: [why this feature is suitable for an execution agent]
 
 ## Suggested Next Command

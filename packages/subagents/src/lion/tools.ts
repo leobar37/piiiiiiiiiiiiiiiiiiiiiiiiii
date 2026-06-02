@@ -1,9 +1,21 @@
 import { Type } from "typebox";
+import { LionChecklistService } from "./checklist-service.js";
 import type { LionRun } from "./core.js";
+import { LionEvents } from "./events/defs.js";
 import { PlanActivator } from "./plan-activator.js";
+import { buildReviewTaskLionTasksParams, loadReviewPlan } from "./review-plan.js";
 import type { LionRuntime } from "./runtime.js";
+import type { RunTasksParams } from "./task-runner.js";
 import { TaskRunner } from "./task-runner.js";
-import type { LionBuildResult, LionPlan, LionTask, LionTaskResult } from "./types.js";
+import type {
+	LionBuildResult,
+	LionChecklistKind,
+	LionChecklistSnapshot,
+	LionPlan,
+	LionTask,
+	LionTaskResult,
+	LionTaskStatus,
+} from "./types.js";
 
 // =============================================================================
 // Shared types
@@ -15,6 +27,9 @@ export interface LionToolResponse {
 	plan?: LionPlan;
 	tasks?: LionTaskResult[];
 	nextTask?: LionTask | null;
+	checklist?: LionChecklistSnapshot;
+	checklistTask?: LionTask | null;
+	lionTasksParams?: RunTasksParams;
 	candidates?: Array<{
 		slug: string;
 		path: string;
@@ -112,6 +127,37 @@ const ActivatePlanParams = Type.Object({
 	}),
 });
 
+const ChecklistKind = Type.Union([Type.Literal("plan"), Type.Literal("review")]);
+
+const ChecklistReadParams = Type.Object({
+	kind: ChecklistKind,
+	reference: Type.Optional(
+		Type.String({
+			description: "Plan or review path/slug. Optional for kind=plan when a plan is active.",
+		}),
+	),
+});
+
+const ChecklistStartNextParams = ChecklistReadParams;
+
+const ChecklistRecordParams = Type.Object({
+	kind: ChecklistKind,
+	reference: Type.Optional(
+		Type.String({
+			description: "Plan or review path/slug. Optional for kind=plan when a plan is active.",
+		}),
+	),
+	taskId: Type.String({ description: "Checklist task id to record." }),
+	status: Type.Union([
+		Type.Literal("pending"),
+		Type.Literal("in_progress"),
+		Type.Literal("complete"),
+		Type.Literal("blocked"),
+		Type.Literal("retryable"),
+	]),
+	summary: Type.Optional(Type.String({ description: "Short evidence-backed task summary." })),
+});
+
 // =============================================================================
 // Tool registration
 // =============================================================================
@@ -119,6 +165,7 @@ const ActivatePlanParams = Type.Object({
 export function registerLionTools(runtime: LionRuntime): void {
 	const activator = new PlanActivator(runtime);
 	const runner = new TaskRunner(runtime);
+	const checklistService = new LionChecklistService();
 
 	runtime.pi.registerTool({
 		name: "lion_activate_plan",
@@ -131,6 +178,130 @@ export function registerLionTools(runtime: LionRuntime): void {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const result = activator.activate(ctx, params.reference);
 			runtime.logTool("lion_activate_plan", { reference: params.reference }, result);
+			return toToolResult(result);
+		},
+	});
+
+	runtime.pi.registerTool({
+		name: "lion_checklist_read",
+		label: "Lion Checklist Read",
+		description: "Read the durable Lion checklist snapshot for an active plan or review plan.",
+		promptSnippet:
+			"Use lion_checklist_read to inspect durable checklist progress. Do not read or edit checklist.json directly.",
+		parameters: ChecklistReadParams,
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const checklist = checklistService.read({
+				kind: params.kind as LionChecklistKind,
+				reference: params.reference,
+				activePlanPath: runtime.state.activePlanPath,
+				cwd: ctx.cwd ?? ctx.sessionManager.getCwd(),
+			});
+			const runId = runtime.state.lastRunId ?? `checklist-${Date.now()}`;
+			runtime.emit(
+				LionEvents.checklistSnapshot({
+					runId,
+					kind: checklist.kind,
+					slug: checklist.slug,
+					rootPath: checklist.rootPath,
+					checklist,
+				}),
+			);
+			const result: LionToolResponse = { run: runtime.core.activeRun, checklist };
+			runtime.logTool("lion_checklist_read", params, result);
+			return toToolResult(result);
+		},
+	});
+
+	runtime.pi.registerTool({
+		name: "lion_checklist_start_next",
+		label: "Lion Checklist Start Next",
+		description: "Mark the next durable checklist task in progress and return the updated snapshot.",
+		promptSnippet:
+			"Use lion_checklist_start_next before preparing work from a durable plan or review checklist. Do not update checklist.json manually.",
+		parameters: ChecklistStartNextParams,
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const { checklist, task } = checklistService.startNext({
+				kind: params.kind as LionChecklistKind,
+				reference: params.reference,
+				activePlanPath: runtime.state.activePlanPath,
+				cwd: ctx.cwd ?? ctx.sessionManager.getCwd(),
+			});
+			const reviewPlan =
+				checklist.kind === "review" && task
+					? loadReviewPlan(params.reference ?? checklist.rootPath, ctx.cwd ?? ctx.sessionManager.getCwd())
+					: null;
+			const reviewTask = reviewPlan?.tasks.find((item) => item.id === task?.id);
+			const lionTasksParams =
+				reviewPlan && reviewTask ? buildReviewTaskLionTasksParams(reviewPlan, reviewTask) : undefined;
+			if (checklist.kind === "plan" || checklist.kind === "review") runtime.setActiveTask(task?.id ?? null);
+			const runId = runtime.state.lastRunId ?? `checklist-${Date.now()}`;
+			runtime.emit(
+				task
+					? LionEvents.checklistTaskStarted({
+							runId,
+							kind: checklist.kind,
+							slug: checklist.slug,
+							rootPath: checklist.rootPath,
+							checklist,
+							taskId: task.id,
+						})
+					: LionEvents.checklistUpdated({
+							runId,
+							kind: checklist.kind,
+							slug: checklist.slug,
+							rootPath: checklist.rootPath,
+							checklist,
+						}),
+			);
+			const result: LionToolResponse = {
+				run: runtime.core.activeRun,
+				checklist,
+				checklistTask: task,
+				lionTasksParams,
+			};
+			runtime.logTool("lion_checklist_start_next", params, result);
+			return toToolResult(result);
+		},
+	});
+
+	runtime.pi.registerTool({
+		name: "lion_checklist_record",
+		label: "Lion Checklist Record",
+		description: "Record a durable checklist task result for an active plan or review plan.",
+		promptSnippet:
+			"Use lion_checklist_record to mark durable checklist tasks complete, blocked, retryable, pending, or in progress. Include evidence in summary.",
+		parameters: ChecklistRecordParams,
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const { checklist, task } = checklistService.recordResult({
+				kind: params.kind as LionChecklistKind,
+				reference: params.reference,
+				activePlanPath: runtime.state.activePlanPath,
+				cwd: ctx.cwd ?? ctx.sessionManager.getCwd(),
+				taskId: params.taskId,
+				status: params.status as LionTaskStatus,
+				summary: params.summary,
+			});
+			if (
+				(checklist.kind === "plan" || checklist.kind === "review") &&
+				runtime.state.activeTaskId === params.taskId
+			) {
+				runtime.setActiveTask(null);
+			}
+			const runId = runtime.state.lastRunId ?? `checklist-${Date.now()}`;
+			runtime.emit(
+				LionEvents.checklistTaskRecorded({
+					runId,
+					kind: checklist.kind,
+					slug: checklist.slug,
+					rootPath: checklist.rootPath,
+					checklist,
+					taskId: params.taskId,
+					status: params.status as LionTaskStatus,
+					summary: params.summary,
+				}),
+			);
+			const result: LionToolResponse = { run: runtime.core.activeRun, checklist, checklistTask: task };
+			runtime.logTool("lion_checklist_record", params, result);
 			return toToolResult(result);
 		},
 	});

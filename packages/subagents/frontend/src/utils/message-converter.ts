@@ -118,7 +118,7 @@ function contentToBlocks(content: unknown): MessageBlock[] {
 
 function toolResultToBlocks(msg: BackendToolResultMessage): MessageBlock[] {
 	const text = contentToText(msg.content);
-	return [{ type: "toolResult", toolCallId: msg.toolCallId, content: text, isError: msg.isError }];
+	return [{ type: "toolResult", toolCallId: msg.toolCallId, toolName: msg.toolName, content: text, isError: msg.isError }];
 }
 
 function contentToText(content: unknown): string {

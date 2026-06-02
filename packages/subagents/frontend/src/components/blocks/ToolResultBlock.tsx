@@ -1,8 +1,11 @@
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { useState } from "react";
+import { ChecklistProgressBlock } from "../ChecklistProgressBlock.tsx";
+import type { LionChecklistSnapshot } from "../../types.ts";
 
 interface ToolResultBlockProps {
 	toolCallId: string;
+	toolName?: string;
 	content: string;
 	isError: boolean;
 }
@@ -30,8 +33,11 @@ function isPlainOutput(content: string): boolean {
 	return lines.some((line) => line.startsWith("$ ") || line.includes("Error:") || line.includes(" at "));
 }
 
-export function ToolResultBlock({ content, isError }: ToolResultBlockProps) {
+export function ToolResultBlock({ toolName, content, isError }: ToolResultBlockProps) {
 	const [isExpanded, setIsExpanded] = useState(false);
+	const checklist = parseChecklistResult(toolName, content);
+	if (!isError && checklist) return <ChecklistProgressBlock checklist={checklist} />;
+
 	const formatted = tryFormatJson(content);
 	const renderAsPre = isError || isJson(content) || isPlainOutput(content);
 	const summary = summarizeToolResult(content, isError);
@@ -80,6 +86,16 @@ export function ToolResultBlock({ content, isError }: ToolResultBlockProps) {
 			) : null}
 		</div>
 	);
+}
+
+function parseChecklistResult(toolName: string | undefined, content: string): LionChecklistSnapshot | null {
+	if (!toolName?.startsWith("lion_checklist_")) return null;
+	try {
+		const parsed = JSON.parse(content) as { checklist?: LionChecklistSnapshot };
+		return parsed.checklist ?? null;
+	} catch {
+		return null;
+	}
 }
 
 function summarizeToolResult(content: string, isError: boolean): string {

@@ -45,7 +45,7 @@ explicitly provided or inferred from session context.]
 - Feature ID: `F-00X`
 - Type: implementation | investigation | validation | correction | integration
 - Reason: [why this is the next safest useful work unit]
-- Required skill for receiving agent: `feature-executor`
+- Required skill for receiving agent: project-specific executor skill when available
 ```
 
 Notes:

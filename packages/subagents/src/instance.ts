@@ -207,13 +207,13 @@ export class SubAgentInstance {
 		return new Promise<DelegationResult>((resolve, reject) => {
 			this.completionResolve = resolve;
 
-			this.runAgentLoop().catch((err) => {
+			this.runAgentLoop().catch(async (err) => {
 				const errorMessage = err instanceof Error ? err.message : String(err);
 				this.error = errorMessage;
 				this.transition("failed");
 				this.endTime = Date.now();
 				const result = this.buildResult("failed", errorMessage);
-				this.recordRunCompletion(result).catch(() => {});
+				await this.recordRunCompletion(result).catch(() => {});
 				this.logEvent({
 					type: "task.end",
 					instanceId: this.instanceId,
@@ -322,7 +322,11 @@ export class SubAgentInstance {
 
 			case "agent_end": {
 				this.transition("completing");
-				this.handleCompletion();
+				this.handleCompletion().catch((err) => {
+					const errorMessage = err instanceof Error ? err.message : String(err);
+					this.error = errorMessage;
+					this.transition("failed");
+				});
 				break;
 			}
 
@@ -450,13 +454,13 @@ export class SubAgentInstance {
 		return null;
 	}
 
-	private handleCompletion(): void {
+	private async handleCompletion(): Promise<void> {
 		this.endTime = Date.now();
 		const summary = this.buildCompletionSummary();
 		const status = this.recordedResult?.status ?? "completed";
 		this.transition("completed");
 		const result = this.buildResult(status, summary);
-		this.recordRunCompletion(result).catch(() => {});
+		await this.recordRunCompletion(result).catch(() => {});
 		const endEvent: SubAgentEvent = {
 			type: "task.end",
 			instanceId: this.instanceId,

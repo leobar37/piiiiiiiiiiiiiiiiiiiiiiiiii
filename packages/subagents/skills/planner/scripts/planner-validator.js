@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * planner-validator.js
- * 
- * CLI simple para gestionar checklist de validators.
- * Solo gestiona estado - los fixes son sub-agentes, no archivos.
+ *
+ * Simple CLI for managing validator checklist state.
+ * It only manages state. Fixes belong to subagents, not files.
  */
 
 const fs = require('fs')

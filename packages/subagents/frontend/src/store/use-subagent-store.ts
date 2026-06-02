@@ -1,11 +1,13 @@
 import { create } from "zustand";
-import type { SubAgentEvent, SubAgentInstanceState } from "../types.ts";
+import type { LionChecklistSnapshot, SubAgentEvent, SubAgentInstanceState } from "../types.ts";
 import { navigateToThread } from "../navigation.ts";
 
 interface SubAgentStore {
 	agents: SubAgentInstanceState[];
 	selectedAgentId: string | null;
 	events: SubAgentEvent[];
+	checklistsByKey: Record<string, LionChecklistSnapshot>;
+	openChecklistKey: string | null;
 	isConnected: boolean;
 
 	setAgents: (agents: SubAgentInstanceState[]) => void;
@@ -14,6 +16,8 @@ interface SubAgentStore {
 	setEvents: (events: SubAgentEvent[]) => void;
 	mergeEvents: (events: SubAgentEvent[]) => void;
 	addEvent: (event: SubAgentEvent) => void;
+	upsertChecklist: (checklist: LionChecklistSnapshot) => void;
+	openChecklist: (key: string | null) => void;
 	setConnected: (v: boolean) => void;
 }
 
@@ -21,6 +25,8 @@ export const useSubAgentStore = create<SubAgentStore>((set) => ({
 	agents: [],
 	selectedAgentId: null,
 	events: [],
+	checklistsByKey: {},
+	openChecklistKey: null,
 	isConnected: false,
 
 	setAgents: (agents) => set({ agents }),
@@ -115,6 +121,19 @@ export const useSubAgentStore = create<SubAgentStore>((set) => ({
 				}
 			}
 
+			if (event.type.startsWith("lion.checklist.")) {
+				const checklist = (event as unknown as { checklist?: LionChecklistSnapshot }).checklist;
+				if (checklist) {
+					return {
+						events: [...state.events, event],
+						checklistsByKey: {
+							...state.checklistsByKey,
+							[checklistKey(checklist)]: checklist,
+						},
+					};
+				}
+			}
+
 			const nextAgents = state.agents.map((a) => {
 				if (a.instanceId !== event.instanceId) return a;
 				if (event.type === "instance.state") {
@@ -159,5 +178,19 @@ export const useSubAgentStore = create<SubAgentStore>((set) => ({
 			};
 		}),
 
+	upsertChecklist: (checklist) =>
+		set((state) => ({
+			checklistsByKey: {
+				...state.checklistsByKey,
+				[checklistKey(checklist)]: checklist,
+			},
+		})),
+
+	openChecklist: (key) => set({ openChecklistKey: key }),
+
 	setConnected: (v) => set({ isConnected: v }),
 }));
+
+export function checklistKey(checklist: LionChecklistSnapshot): string {
+	return `${checklist.kind}:${checklist.rootPath}`;
+}
