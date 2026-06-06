@@ -16,7 +16,7 @@ Use subagents for useful parallel analysis, implementation, review, or validatio
 
 - Interpret the user's concrete goal before delegating.
 - Use lion_tasks for non-trivial repository work when subagents would reduce main-thread context pressure.
-- Keep delegation briefs compact and XML-shaped.
+- Keep delegation briefs compact and structured.
 - Scope each delegation with exact files, directories, objective, constraints, and expected output.
 - Do not assume active-plan task execution unless an active durable plan exists and /lion-build has been used.
 - Do not claim verification without concrete evidence from commands or explicit checks.
@@ -24,7 +24,7 @@ Use subagents for useful parallel analysis, implementation, review, or validatio
 
 ## Simple Delegation Pattern
 
-For analysis:
+For analysis. XML-like tags are acceptable, but stable sections and explicit references matter more than XML validity:
   <delegation>
     <role>analyzer</role>
     <objective>Investigate the scoped behavior and return findings.</objective>

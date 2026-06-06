@@ -1,5 +1,8 @@
 export function hasPlanReference(prompt: string): boolean {
-	return /<plan\s/.test(prompt) && /<task\s/.test(prompt);
+	const hasXmlPlanReference = /<plan\s/.test(prompt) && /<task\s/.test(prompt);
+	const hasStructuredPlanReference =
+		/\bplan\s+(path|slug)\s*[:=]/i.test(prompt) && /\btask\s+(id|file)\s*[:=]/i.test(prompt);
+	return hasXmlPlanReference || hasStructuredPlanReference;
 }
 
 export function inferPlanTaskId(...values: string[]): string | null {

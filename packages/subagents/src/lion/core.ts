@@ -1,8 +1,5 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { DelegationResult } from "../types.js";
 import type { LionBuildResult, LionPlan, LionReviewVerdict, LionTask } from "./types.js";
-
-export const LION_CORE_ENTRY_TYPE = "lion-core";
 
 export type LionRunStatus =
 	| "idle"
@@ -48,14 +45,6 @@ export interface LionRun {
 export interface LionCore {
 	activeRun: LionRun | null;
 	runHistory: LionRun[];
-}
-
-export interface PersistedLionCoreState {
-	version: 1;
-	action: "start" | "record" | "finish" | "restore";
-	activeRun: LionRun | null;
-	runHistory: LionRun[];
-	updatedAt: number;
 }
 
 export function createLionCore(): LionCore {
@@ -183,33 +172,6 @@ export function snapshot(core: LionCore): LionCore {
 	return {
 		activeRun: core.activeRun ? cloneRun(core.activeRun) : null,
 		runHistory: core.runHistory.map(cloneRun),
-	};
-}
-
-export function buildPersistedLionCore(
-	core: LionCore,
-	action: PersistedLionCoreState["action"],
-): PersistedLionCoreState {
-	return {
-		version: 1,
-		action,
-		activeRun: core.activeRun ? cloneRun(core.activeRun) : null,
-		runHistory: core.runHistory.map(cloneRun),
-		updatedAt: Date.now(),
-	};
-}
-
-export function restoreLionCore(ctx: ExtensionContext): LionCore {
-	const states = ctx.sessionManager
-		.getBranch()
-		.filter((entry) => entry.type === "custom" && entry.customType === LION_CORE_ENTRY_TYPE)
-		.map((entry) => (entry as { data: PersistedLionCoreState }).data)
-		.sort((a, b) => a.updatedAt - b.updatedAt);
-	const lastState = states[states.length - 1];
-	if (!lastState || lastState.version !== 1) return createLionCore();
-	return {
-		activeRun: lastState.activeRun ? cloneRun(lastState.activeRun) : null,
-		runHistory: lastState.runHistory.map(cloneRun),
 	};
 }
 

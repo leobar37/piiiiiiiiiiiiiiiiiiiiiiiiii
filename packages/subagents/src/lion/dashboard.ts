@@ -59,10 +59,7 @@ class LionDashboardServer implements LionDashboard {
 
 		await this.transport.start();
 
-		// Replay persisted historical events so SSE clients receive the full event history.
-		// transport.start() already calls rehydrate() internally; this explicit call ensures
-		// events are fully loaded before replaying them to any connected dashboard client.
-		await this.transport.stateManager.rehydrate();
+		// Replay currently tracked live-process events to any connected dashboard client.
 		await this.transport.replayEventsToSse();
 
 		const port = this.transport.port;

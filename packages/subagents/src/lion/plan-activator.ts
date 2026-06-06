@@ -27,7 +27,7 @@ export class PlanActivator {
 
 		const plan = loadLionPlan(resolution.planPath);
 		this.runtime.activatePlan(plan);
-		this.runtime.persist("activate");
+		this.runtime.persist();
 		bus.emit(
 			LionEvents.planLoaded({
 				runId,

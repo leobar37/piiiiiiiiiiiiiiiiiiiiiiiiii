@@ -10,6 +10,7 @@ import type {
 	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { SessionLogger } from "@local/pi-logger";
+import type { DashboardCommand } from "./api/session-control.js";
 import { SubAgentConfigManager } from "./config-manager.js";
 import { resolveEffectiveConfig } from "./config-resolver.js";
 import { SubAgentContextStore as FileSubAgentContextStore } from "./context-store.js";
@@ -374,6 +375,10 @@ export class SubAgentController {
 
 	instanceSetActiveTools(taskId: string, toolNames: string[]): void {
 		this.requireInstance(taskId).setActiveTools(toolNames);
+	}
+
+	instanceGetCommands(taskId: string): DashboardCommand[] {
+		return this.requireInstance(taskId).getCommands();
 	}
 
 	// =====================================================================

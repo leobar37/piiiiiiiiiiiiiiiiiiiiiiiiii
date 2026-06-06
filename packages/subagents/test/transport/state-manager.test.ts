@@ -62,8 +62,8 @@ describe("DashboardStateManager", () => {
 		};
 	}
 
-	it("rehydrate() is a no-op when no runStore is provided", async () => {
-		await manager.rehydrate();
+	it("loadFromRunStore() is a no-op when no runStore is provided", async () => {
+		await manager.loadFromRunStore();
 		const all = manager.getAllInstances();
 		expect(all).toEqual([]);
 	});
@@ -141,7 +141,7 @@ describe("DashboardStateManager", () => {
 			status: "completed",
 		});
 		const managerWithStore = new DashboardStateManager("/tmp/test", makeMockRunStore([runRecord]));
-		await managerWithStore.rehydrate();
+		await managerWithStore.loadFromRunStore();
 
 		const all = managerWithStore.getAllInstances();
 		expect(all).toHaveLength(1);
@@ -161,7 +161,7 @@ describe("DashboardStateManager", () => {
 			status: "completed",
 		});
 		const managerWithStore = new DashboardStateManager("/tmp/test", makeMockRunStore([runRecord]));
-		await managerWithStore.rehydrate();
+		await managerWithStore.loadFromRunStore();
 
 		// Add a live instance
 		const liveState: SubAgentInstanceState = {

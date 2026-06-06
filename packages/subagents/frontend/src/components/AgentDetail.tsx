@@ -12,6 +12,7 @@ import { navigateToThread } from "../navigation.ts";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
 import { AgentRunSidebar } from "./AgentRunSidebar.tsx";
 import { LionModeBadge } from "./LionModeBadge.tsx";
+import { ChatComposer } from "./ChatComposer.tsx";
 
 interface AgentDetailProps {
   instanceId: string;
@@ -88,7 +89,12 @@ export function AgentDetail({ instanceId, onBack }: AgentDetailProps) {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="min-w-0 flex-1 overflow-hidden">
           <ErrorBoundary threadId={instanceId}>
-            <ChatView instanceId={instanceId} />
+            <div className="flex h-full min-w-0 flex-col">
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <ChatView instanceId={instanceId} />
+              </div>
+              <ChatComposer instanceId={instanceId} thread={displayAgent} />
+            </div>
           </ErrorBoundary>
         </div>
         <AgentRunSidebar agent={displayAgent} run={fetchedRun} isLoading={isRunLoading} />

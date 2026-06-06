@@ -4,7 +4,7 @@ import { SubAgentConfigManager } from "../config-manager.js";
 import { SubAgentContextStore } from "../context-store.js";
 import type { SubAgentController } from "../controller.js";
 import type { DelegationResult, SubAgentEvent, SubAgentRuntimeConfigManager } from "../types.js";
-import { createLionCore, type LionCore, type LionSubagentRole, restoreLionCore } from "./core.js";
+import { createLionCore, type LionCore, type LionSubagentRole } from "./core.js";
 import type { LionDashboard } from "./dashboard.js";
 import { getOrStartLionDashboard } from "./dashboard.js";
 import { LionDelegationGuard } from "./delegation-guard.js";
@@ -18,21 +18,19 @@ import {
 } from "./job-tracker.js";
 import { LionLogger } from "./logger.js";
 import { MainSessionBridge } from "./main-session.js";
-import { LionPersistence } from "./persistence.js";
 import { type MainLogEntry, RunLogger } from "./run-logger.js";
 import { createInitialLionState } from "./state.js";
+import { readLionState, writeLionState } from "./state-store.js";
 import { getLionStrategy } from "./strategies/index.js";
 import { createLionSubAgentController } from "./subagents/index.js";
-import type { LionBuildResult, LionEvent, LionPhase, LionPlan, LionState, PersistedLionState } from "./types.js";
+import type { LionBuildResult, LionEvent, LionPhase, LionPlan, LionState } from "./types.js";
 import { LionUI } from "./ui.js";
 
 export const LION_ORCHESTRATOR_FEEDBACK_TYPE = "lion-orchestrator-feedback";
 
 export type { LionSubagentJob, LionSubagentUiState, RetainedLionSubagent } from "./job-tracker.js";
-export { LionPersistence } from "./persistence.js";
 
 export class LionRuntime {
-	readonly persistence: LionPersistence;
 	readonly events: LionRuntimeEventBus;
 	readonly ui: LionUI;
 	readonly mainSession: MainSessionBridge;
@@ -52,16 +50,17 @@ export class LionRuntime {
 	#lastUiContext: ExtensionContext | null;
 	#widgetTimer: ReturnType<typeof setInterval> | null;
 	#configManager: SubAgentRuntimeConfigManager | null;
+	#cwd: string;
 	dashboard: LionDashboard | null;
 
-	constructor(pi: ExtensionAPI) {
+	constructor(pi: ExtensionAPI, cwd: string) {
 		this.#pi = pi;
-		this.persistence = new LionPersistence(pi);
+		this.#cwd = cwd;
 		this.#logger = new LionLogger();
 		this.#sessionLogger = null;
 		this.#jobTracker = new SubagentJobManager();
 		this.ui = new LionUI(pi);
-		this.mainSession = new MainSessionBridge();
+		this.mainSession = new MainSessionBridge(pi);
 		this.delegationGuard = new LionDelegationGuard();
 		this.#state = createInitialLionState();
 		this.#core = createLionCore();
@@ -82,6 +81,14 @@ export class LionRuntime {
 	}
 	set pi(value: ExtensionAPI) {
 		this.#pi = value;
+		this.mainSession.setApi(value);
+	}
+
+	get cwd(): string {
+		return this.#cwd;
+	}
+	set cwd(value: string) {
+		this.#cwd = value;
 	}
 
 	get logger(): SessionLogger | null {
@@ -230,8 +237,14 @@ export class LionRuntime {
 	}
 
 	restore(ctx: ExtensionContext): void {
-		this.#state = this.persistence.restoreState(ctx);
-		this.#core = restoreLionCore(ctx);
+		const saved = readLionState(this.#cwd, ctx);
+		if (saved) {
+			this.#state = saved.state;
+			this.#core = saved.core;
+		} else {
+			this.#state = createInitialLionState();
+			this.#core = createLionCore();
+		}
 		this.#activeRunId = this.#core.activeRun?.runId ?? null;
 		if (this.#state.active) {
 			this.ensureController(ctx);
@@ -246,11 +259,8 @@ export class LionRuntime {
 	recordMainSessionEvent(event: Parameters<MainSessionBridge["record"]>[0], ctx: ExtensionContext): void {
 		if (this.#state.active) this.mainSession.record(event, ctx);
 	}
-	persist(action: PersistedLionState["action"]): void {
-		this.persistence.saveState(this.#state, action);
-	}
-	saveCore(action: "start" | "record" | "finish" | "restore"): void {
-		this.persistence.saveCore(this.#core, action);
+	persist(): void {
+		writeLionState(this.#cwd, this.#state, this.#core);
 	}
 
 	queueFeedback(ctx: ExtensionContext, content: string, details: Record<string, unknown>): void {

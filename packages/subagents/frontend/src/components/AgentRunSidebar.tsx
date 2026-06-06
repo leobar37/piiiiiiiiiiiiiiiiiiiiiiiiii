@@ -1,5 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-import { fetchLionChecklist } from "../api.ts";
+import { useLionChecklist } from "../hooks/use-lion-checklist.ts";
 import { useLionState } from "../hooks/use-lion-state.ts";
 import type { SubAgentInstanceState, SubAgentRunRecord } from "../types.ts";
 import { useSubAgentStore } from "../store/use-subagent-store.ts";
@@ -59,16 +58,14 @@ export function AgentRunSidebar({ agent, run, isLoading }: AgentRunSidebarProps)
 		(run?.modelProvider && run.modelId ? `${run.modelProvider}/${run.modelId}` : null) ??
 		(agent?.modelProvider && agent.modelId ? `${agent.modelProvider}/${agent.modelId}` : "n/a");
 	const isMain = agent?.kind === "main";
-	const { data: planChecklist } = useQuery({
-		queryKey: ["lion-checklist", "plan", activePlanReference],
-		queryFn: () => fetchLionChecklist("plan", activePlanReference),
+	const { data: planChecklist } = useLionChecklist("plan", activePlanReference, {
 		enabled: isMain && lionState?.strategy === "plan" && Boolean(activePlanReference),
 		refetchInterval: 2000,
 	});
 	const runProgress = isMain && agent && lionState?.phase === "building" ? getRunProgress(agents, agent.instanceId) : null;
 
 	return (
-		<aside className="flex w-[340px] shrink-0 flex-col border-l border-border-subtle bg-bg-elevated">
+			<aside className="hidden w-[340px] shrink-0 flex-col border-l border-border-subtle bg-bg-elevated lg:flex">
 			<div className="border-b border-border-subtle px-4 py-3">
 				<div className="text-xs uppercase tracking-wide text-text-tertiary">Run</div>
 				<div className="mt-1 truncate text-sm font-medium text-text-primary">{run?.description ?? agent?.description ?? agent?.definitionName ?? "Subagent"}</div>

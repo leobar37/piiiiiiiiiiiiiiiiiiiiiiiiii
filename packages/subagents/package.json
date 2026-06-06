@@ -20,8 +20,11 @@
   },
   "dependencies": {
     "@local/pi-logger": "workspace:*",
+    "@orpc/contract": "^1.14.3",
+    "@orpc/server": "^1.14.3",
     "esbuild": "^0.28.0",
-    "typebox": "^1.1.24"
+    "typebox": "^1.1.24",
+    "zod": "^3.24.2"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

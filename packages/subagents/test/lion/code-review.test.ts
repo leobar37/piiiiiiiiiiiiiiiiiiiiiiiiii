@@ -49,7 +49,7 @@ describe("Lion code review orchestration", () => {
 	it("registers /lion-code-review, activates review strategy, and creates a durable plan", async () => {
 		const cwd = mkdtempSync(join(tmpdir(), "lion-code-review-"));
 		const pi = fakePiWithCommands();
-		const runtime = new LionRuntime(pi as any);
+		const runtime = new LionRuntime(pi as any, cwd);
 
 		try {
 			registerLionCommands(pi as any, runtime);
@@ -74,7 +74,7 @@ describe("Lion code review orchestration", () => {
 		const todo = buildCodeReviewTodo({ scope: "crm feature", git: dirtyGit });
 		const plan = createReviewPlanFromTodo(cwd, { slug: "crm feature", todo });
 		const pi = fakePiWithTools();
-		const runtime = new LionRuntime(pi as any);
+		const runtime = new LionRuntime(pi as any, cwd);
 
 		try {
 			const loaded = loadReviewPlan(plan.rootPath, cwd);
@@ -101,7 +101,7 @@ describe("Lion code review orchestration", () => {
 		const todo = buildCodeReviewTodo({ scope: "sales responsive", git: dirtyGit });
 		const plan = createReviewPlanFromTodo(cwd, { slug: "sales responsive", todo });
 		const pi = fakePiWithTools();
-		const runtime = new LionRuntime(pi as any);
+		const runtime = new LionRuntime(pi as any, cwd);
 
 		try {
 			runtime.activateReview({
@@ -132,7 +132,7 @@ describe("Lion code review orchestration", () => {
 		const plan = writeActivePlanFixture(cwd);
 		const originalChecklist = readFileSync(plan.checklistFile!, "utf-8");
 		const pi = fakePiWithCommands();
-		const runtime = new LionRuntime(pi as any);
+		const runtime = new LionRuntime(pi as any, cwd);
 		runtime.activatePlan(plan);
 
 		try {
@@ -160,7 +160,7 @@ describe("Lion code review orchestration", () => {
 		const todo = buildCodeReviewTodo({ scope: "crm feature", git: dirtyGit });
 		const review = createReviewPlanFromTodo(cwd, { slug: "crm feature", todo });
 		const pi = fakePiWithTools();
-		const runtime = new LionRuntime(pi as any);
+		const runtime = new LionRuntime(pi as any, cwd);
 
 		try {
 			registerLionTools(runtime);

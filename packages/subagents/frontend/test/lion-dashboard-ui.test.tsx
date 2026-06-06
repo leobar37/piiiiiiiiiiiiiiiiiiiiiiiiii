@@ -1,9 +1,12 @@
 import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AgentRunSidebar } from "../src/components/AgentRunSidebar";
+import { ChatComposer } from "../src/components/ChatComposer";
 import { LionModeBadge } from "../src/components/LionModeBadge";
 import { groupSubagents, SubagentListPanel } from "../src/components/SubagentListPanel";
+import { useSubAgentStore } from "../src/store/use-subagent-store";
 import type { LionDashboardState, SubAgentInstanceState, SubAgentRunRecord } from "../src/types";
 
 const baseAgent: SubAgentInstanceState = {
@@ -111,9 +114,20 @@ function createLionState(overrides: Partial<LionDashboardState>): LionDashboardS
 	};
 }
 
+function renderWithQueryClient(element: React.ReactElement): string {
+	const queryClient = new QueryClient({
+		defaultOptions: {
+			queries: {
+				retry: false,
+			},
+		},
+	});
+	return renderToString(<QueryClientProvider client={queryClient}>{element}</QueryClientProvider>);
+}
+
 describe("Lion dashboard UI", () => {
 	it("hides run input and output for the main session", () => {
-		const html = renderToString(
+		const html = renderWithQueryClient(
 			<AgentRunSidebar
 				agent={{
 					...baseAgent,
@@ -135,7 +149,7 @@ describe("Lion dashboard UI", () => {
 	});
 
 	it("shows run input and output for subagents", () => {
-		const html = renderToString(<AgentRunSidebar agent={baseAgent} run={baseRun} />);
+		const html = renderWithQueryClient(<AgentRunSidebar agent={baseAgent} run={baseRun} />);
 
 		expect(html).toContain("Input");
 		expect(html).toContain("Implement the requested change.");
@@ -200,5 +214,17 @@ describe("Lion dashboard UI", () => {
 		expect(groupSubagents(agents, "completed").flatMap((group) => group.threads.map((thread) => thread.instanceId))).toEqual([
 			"subagent-completed",
 		]);
+	});
+
+	it("renders composer mode controls", () => {
+		useSubAgentStore.getState().setConnected(true);
+
+		const html = renderWithQueryClient(<ChatComposer instanceId="subagent-running" thread={runningAgent} />);
+
+		expect(html).toContain("Message thread");
+		expect(html).toContain("Prompt");
+		expect(html).toContain("Follow-up");
+		expect(html).toContain("Steer");
+		expect(html).toContain("aria-label=\"Send\"");
 	});
 });

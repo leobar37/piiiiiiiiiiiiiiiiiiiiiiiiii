@@ -1,10 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchLionState } from "../api.ts";
+import { api } from "../api/client.ts";
 
 export function useLionState() {
 	return useQuery({
-		queryKey: ["lion-state"],
-		queryFn: fetchLionState,
+		...api.lion.state.queryOptions(),
 		refetchInterval: 2000,
 	});
 }

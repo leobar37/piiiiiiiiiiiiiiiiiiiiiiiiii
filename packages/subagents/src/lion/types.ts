@@ -37,8 +37,6 @@ export interface LionTasksResult {
 	completedAt: number;
 }
 
-export const LION_STATE_ENTRY_TYPE = "lion-state";
-export const LION_MESSAGE_TYPE = "lion-message";
 export const LION_DEFAULT_MAX_ATTEMPTS = 3;
 
 export type LionStrategyName = "plan" | "simple" | "review";
@@ -96,11 +94,6 @@ export interface LionState {
 	maxAttempts: number;
 	lastRunId: string | null;
 	lastBuild?: LionBuildResult;
-}
-
-export interface PersistedLionState extends LionState {
-	action: "activate" | "mode" | "build" | "clear";
-	updatedAt: number;
 }
 
 export interface LionTask {

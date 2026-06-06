@@ -209,7 +209,7 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 			planSlug: "lion-dashboard-runtime",
 			planPath: ".plans/lion-dashboard-runtime",
 		},
-		state: "queued",
+		state: "created",
 		startTime: null,
 		endTime: null,
 		turnCount: 0,
@@ -826,8 +826,32 @@ export function getEventsForInstance(instanceId: string): SubAgentEvent[] {
 	return MOCK_EVENTS.filter((e) => e.instanceId === instanceId);
 }
 
+type MockSentMessage = Record<string, unknown> & {
+	id: string;
+	instanceId: string;
+	role: "user";
+	content: string;
+	timestamp: number;
+};
+
+const sentMessagesByInstance = new Map<string, MockSentMessage[]>();
+
+export function appendMockPromptMessage(instanceId: string, message: string): MockSentMessage {
+	const timestamp = Date.now();
+	const sentMessage: MockSentMessage = {
+		id: `mock-user-${instanceId}-${timestamp}`,
+		instanceId,
+		role: "user",
+		content: message,
+		timestamp,
+	};
+	const existing = sentMessagesByInstance.get(instanceId) ?? [];
+	sentMessagesByInstance.set(instanceId, [...existing, sentMessage]);
+	return sentMessage;
+}
+
 export function getMessagesForInstance(instanceId: string): Array<Record<string, unknown>> {
-	return MOCK_SESSION_MESSAGES.filter((m) => m.instanceId === instanceId);
+	return [...MOCK_SESSION_MESSAGES.filter((m) => m.instanceId === instanceId), ...(sentMessagesByInstance.get(instanceId) ?? [])];
 }
 
 export function getAgentById(instanceId: string): SubAgentInstanceState | undefined {

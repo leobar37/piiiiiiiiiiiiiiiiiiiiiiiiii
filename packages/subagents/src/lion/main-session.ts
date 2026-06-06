@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ExtensionContext, ExtensionEvent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionEvent } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
+import { formatDashboardCommands, type ThreadPromptMode } from "../api/session-control.js";
 import type { DashboardSessionSource, DashboardThreadState } from "../transport/types.js";
 import type { SubAgentEvent, SubAgentInstanceState } from "../types.js";
 import type { LionBuildResult } from "./types.js";
@@ -27,6 +28,15 @@ export class MainSessionBridge implements DashboardSessionSource {
 	private startTime: number | null = null;
 	private endTime: number | null = null;
 	private currentToolStartedAt: number | null = null;
+	private pi: ExtensionAPI | null;
+
+	constructor(pi?: ExtensionAPI) {
+		this.pi = pi ?? null;
+	}
+
+	setApi(pi: ExtensionAPI): void {
+		this.pi = pi;
+	}
 
 	attach(ctx: ExtensionContext): void {
 		const now = Date.now();
@@ -216,6 +226,26 @@ export class MainSessionBridge implements DashboardSessionSource {
 	getEvents(threadId: string): SubAgentEvent[] {
 		if (!this.thread || this.thread.instanceId !== threadId) return [];
 		return this.events;
+	}
+
+	async sendMessage(threadId: string, message: string, mode: ThreadPromptMode): Promise<void> {
+		if (!this.thread || this.thread.instanceId !== threadId || !this.pi) {
+			throw new Error("Main session is not controllable");
+		}
+		if (mode === "follow_up") {
+			this.pi.sendUserMessage(message, { deliverAs: "followUp" });
+			return;
+		}
+		if (mode === "steer") {
+			this.pi.sendUserMessage(message, { deliverAs: "steer" });
+			return;
+		}
+		this.pi.sendUserMessage(message);
+	}
+
+	getCommands(threadId: string) {
+		if (!this.thread || this.thread.instanceId !== threadId || !this.pi) return [];
+		return formatDashboardCommands(this.pi.getCommands());
 	}
 
 	subscribe(listener: (event: SubAgentEvent) => void): () => void {

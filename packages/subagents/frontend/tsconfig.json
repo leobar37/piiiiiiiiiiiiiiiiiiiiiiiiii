@@ -11,7 +11,11 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@subagents/contract": ["../src/api/contract.ts"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "../src/api"]
 }

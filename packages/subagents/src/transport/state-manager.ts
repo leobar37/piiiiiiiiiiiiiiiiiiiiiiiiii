@@ -27,14 +27,6 @@ export class DashboardStateManager {
 	}
 
 	/**
-	 * Rehydrate is a no-op since events are no longer persisted to disk.
-	 * Virtual instances are reconstructed from runStore records.
-	 */
-	async rehydrate(): Promise<void> {
-		await this.loadFromRunStore();
-	}
-
-	/**
 	 * Track live-process events and update the corresponding instance state.
 	 * Durable reconstruction still comes from runStore records.
 	 */

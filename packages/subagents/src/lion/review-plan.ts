@@ -266,7 +266,15 @@ function formatChecklist(slug: string, tasks: ReviewPlanTask[]): string {
 }
 
 function extractPromptPaths(prompt: string): string[] {
-	return Array.from(prompt.matchAll(/<path>(.*?)<\/path>/g)).map((match) => unescapeXml(match[1]));
+	const xmlPaths = Array.from(prompt.matchAll(/<path>(.*?)<\/path>/g)).map((match) => unescapeXml(match[1]));
+	const markdownPaths = Array.from(prompt.matchAll(/^\s*[-*]\s+`?((?:\.{1,2}\/|\/|[\w.-]+\/)[^`\n]+?)`?\s*$/gm)).map(
+		(match) => match[1].trim(),
+	);
+	return unique([...xmlPaths, ...markdownPaths]);
+}
+
+function unique(values: string[]): string[] {
+	return Array.from(new Set(values.filter(Boolean)));
 }
 
 function sanitizeSlug(value: string): string {

@@ -10,9 +10,14 @@ import { stopLionSubagentWidget } from "./ui/subagents-widget.js";
 import { createRunId } from "./utils.js";
 
 export function lionExtension(pi: ExtensionAPI): void {
-	const runtime = new LionRuntime(pi);
+	const runtime = new LionRuntime(pi, process.cwd());
 
 	function restore(ctx: ExtensionContext): void {
+		const cwd = ctx.sessionManager.getCwd();
+		if (runtime.cwd !== cwd) {
+			// Re-initialize runtime with correct cwd for state persistence
+			(runtime as unknown as { cwd: string }).cwd = cwd;
+		}
 		runtime.restore(ctx);
 	}
 

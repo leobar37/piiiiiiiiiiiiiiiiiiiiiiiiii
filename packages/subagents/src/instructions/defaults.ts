@@ -10,7 +10,7 @@ function sourceTruthInstruction(ctx: Parameters<InstructionBuilder>[0]): string 
 export const DEFAULT_BUILDER: InstructionBuilder = (ctx) =>
 	`${ctx.config.name}. ${ctx.config.description}
 
-XML delegation brief:
+Structured delegation brief:
 ${ctx.task.prompt}
 
 <role_contract>
@@ -30,7 +30,7 @@ When done, provide a concise summary of what you did.`;
 export const EXECUTOR_BUILDER: InstructionBuilder = (ctx) =>
 	`${ctx.config.name}. ${ctx.config.description}
 
-XML delegation brief:
+Structured delegation brief:
 ${ctx.task.prompt}
 
 <executor_contract>
@@ -53,7 +53,7 @@ When done, summarize what you changed and why.`;
 export const ANALYZER_BUILDER: InstructionBuilder = (ctx) =>
 	`${ctx.config.name}. ${ctx.config.description}
 
-XML delegation brief:
+Structured delegation brief:
 ${ctx.task.prompt}
 
 <analyzer_contract>
@@ -77,7 +77,7 @@ Investigate thoroughly and return a concrete report with findings, relevant file
 export const PLANNER_BUILDER: InstructionBuilder = (ctx) =>
 	`${ctx.config.name}. ${ctx.config.description}
 
-XML delegation brief:
+Structured delegation brief:
 ${ctx.task.prompt}
 
 <planner_contract>
@@ -98,7 +98,7 @@ Produce a clear, actionable plan. Break it into ordered steps with boundaries, d
 export const REVIEWER_BUILDER: InstructionBuilder = (ctx) =>
 	`${ctx.config.name}. ${ctx.config.description}
 
-XML delegation brief:
+Structured delegation brief:
 ${ctx.task.prompt}
 
 <reviewer_contract>

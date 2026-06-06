@@ -1,5 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { LION_MESSAGE_TYPE, type LionState } from "./types.js";
+import type { LionState } from "./types.js";
+
+const LION_MESSAGE_TYPE = "lion-message";
 
 export class LionUI {
 	constructor(private readonly pi: ExtensionAPI) {}

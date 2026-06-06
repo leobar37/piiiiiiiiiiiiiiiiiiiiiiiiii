@@ -93,7 +93,7 @@ describe("Default instruction builders", () => {
 		const builders = [DEFAULT_BUILDER, EXECUTOR_BUILDER, ANALYZER_BUILDER, PLANNER_BUILDER, REVIEWER_BUILDER];
 		for (const builder of builders) {
 			const output = builder(makeCtx());
-			expect(output).toContain("XML delegation brief:");
+			expect(output).toContain("Structured delegation brief:");
 			expect(output).toContain("source of truth");
 			expect(output).toContain("Read referenced sources before");
 			expect(output).toContain("subagent_record_context");

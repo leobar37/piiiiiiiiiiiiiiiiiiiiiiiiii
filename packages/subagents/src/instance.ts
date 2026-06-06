@@ -12,6 +12,7 @@ import type {
 	ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { LogEntryType, SessionLogger } from "@local/pi-logger";
+import { type DashboardCommand, getAgentSessionCommands } from "./api/session-control.js";
 import type { SubAgentEventBus } from "./event-bus.js";
 import { buildSubAgentInstructions, createSubAgentSession } from "./session-factory.js";
 import { SubAgentSummarizer } from "./summarizer.js";
@@ -918,6 +919,10 @@ export class SubAgentInstance {
 
 	setActiveTools(toolNames: string[]): void {
 		this.assertSessionReady().setActiveToolsByName(toolNames);
+	}
+
+	getCommands(): DashboardCommand[] {
+		return getAgentSessionCommands(this.assertSessionReady());
 	}
 }
 

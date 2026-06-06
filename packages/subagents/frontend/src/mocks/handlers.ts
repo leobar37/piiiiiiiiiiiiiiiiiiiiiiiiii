@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import {
 	getAgentById,
+	appendMockPromptMessage,
 	getEventsForInstance,
 	getMessagesForInstance,
 	getRunForInstance,
@@ -10,106 +11,136 @@ import {
 } from "./data.ts";
 import { createMockSseStream } from "./sse-emitter.ts";
 
+function orpcJson(data: unknown): ReturnType<typeof HttpResponse.json> {
+	return HttpResponse.json({ json: data });
+}
+
+function isORPCPath(url: URL, segments: string[]): boolean {
+	const path = url.pathname.replace("/rpc/", "").split("/");
+	return path.length === segments.length && path.every((s, i) => s === segments[i]);
+}
+
+async function getORPCInput(request: Request, url: URL): Promise<unknown> {
+	if (request.method === "GET") {
+		const data = url.searchParams.get("data");
+		return data ? JSON.parse(data) : undefined;
+	}
+	try {
+		const body = (await request.json()) as { json?: unknown };
+		return body.json;
+	} catch {
+		return undefined;
+	}
+}
+
 export const handlers = [
-	// GET /api/lion/state
-	http.get("/api/lion/state", ({ request }) => {
+	http.all("/rpc/*", async ({ request }) => {
 		const url = new URL(request.url);
-		const mode = url.searchParams.get("mode");
-		if (mode === "simple") {
-			return HttpResponse.json({
-				...MOCK_LION_STATE,
-				strategy: "simple",
-				phase: "building",
-				activePlanPath: null,
-				activePlanSlug: null,
-				planKind: null,
-				activeTaskId: null,
+
+		// GET /rpc/lion/state (no input)
+		if (isORPCPath(url, ["lion", "state"])) {
+			const mode = url.searchParams.get("mode");
+			if (mode === "simple") {
+				return orpcJson({
+					...MOCK_LION_STATE,
+					strategy: "simple",
+					phase: "building",
+					activePlanPath: null,
+					activePlanSlug: null,
+					planKind: null,
+					activeTaskId: null,
+				});
+			}
+			return orpcJson(MOCK_LION_STATE);
+		}
+
+		// POST /rpc/lion/checklist
+		if (isORPCPath(url, ["lion", "checklist"])) {
+			const input = (await getORPCInput(request, url)) as { kind: string; reference?: string } | undefined;
+			const kind = input?.kind;
+			const reference = input?.reference;
+			if (kind === "plan" && (!reference || reference === MOCK_PLAN_CHECKLIST.rootPath)) {
+				return orpcJson(MOCK_PLAN_CHECKLIST);
+			}
+			return new HttpResponse("Checklist not found", { status: 404 });
+		}
+
+		// POST /rpc/threads/list
+		if (isORPCPath(url, ["threads", "list"])) {
+			return orpcJson(MOCK_AGENTS);
+		}
+
+		// POST /rpc/threads/get
+		if (isORPCPath(url, ["threads", "get"])) {
+			const input = (await getORPCInput(request, url)) as { threadId: string } | undefined;
+			const agent = getAgentById(input?.threadId ?? "");
+			if (!agent) {
+				return new HttpResponse("Not Found", { status: 404 });
+			}
+			return orpcJson(agent);
+		}
+
+		// POST /rpc/threads/session
+		if (isORPCPath(url, ["threads", "session"])) {
+			const input = (await getORPCInput(request, url)) as { threadId: string } | undefined;
+			const messages = getMessagesForInstance(input?.threadId ?? "");
+			return orpcJson({
+				sessionId: `mock-session-${input?.threadId ?? ""}`,
+				messages,
 			});
 		}
-		return HttpResponse.json(MOCK_LION_STATE);
-	}),
 
-	// GET /api/lion/checklist
-	http.get("/api/lion/checklist", ({ request }) => {
-		const url = new URL(request.url);
-		const kind = url.searchParams.get("kind");
-		const reference = url.searchParams.get("reference");
-
-		if (kind === "plan" && (!reference || reference === MOCK_PLAN_CHECKLIST.rootPath)) {
-			return HttpResponse.json(MOCK_PLAN_CHECKLIST);
+		// POST /rpc/threads/messages
+		if (isORPCPath(url, ["threads", "messages"])) {
+			const input = (await getORPCInput(request, url)) as { threadId: string } | undefined;
+			const messages = getMessagesForInstance(input?.threadId ?? "");
+			return orpcJson(messages);
 		}
 
-		return new HttpResponse("Checklist not found", { status: 404 });
-	}),
-
-	// GET /api/threads
-	http.get("/api/threads", () => {
-		return HttpResponse.json(MOCK_AGENTS);
-	}),
-
-	// GET /api/threads/:id
-	http.get("/api/threads/:id", ({ params }) => {
-		const agent = getAgentById(params.id as string);
-		if (!agent) {
-			return new HttpResponse("Not Found", { status: 404 });
+		// POST /rpc/threads/events
+		if (isORPCPath(url, ["threads", "events"])) {
+			const input = (await getORPCInput(request, url)) as { threadId: string } | undefined;
+			const events = getEventsForInstance(input?.threadId ?? "");
+			return orpcJson(events);
 		}
-		return HttpResponse.json(agent);
-	}),
 
-	// GET /api/threads/:id/events
-	http.get("/api/threads/:id/events", ({ params }) => {
-		const events = getEventsForInstance(params.id as string);
-		return HttpResponse.json(events);
-	}),
-
-	// GET /api/threads/:id/messages
-	http.get("/api/threads/:id/messages", ({ params }) => {
-		const messages = getMessagesForInstance(params.id as string);
-		return HttpResponse.json(messages);
-	}),
-
-	// GET /api/threads/:id/run
-	http.get("/api/threads/:id/run", ({ params }) => {
-		const run = getRunForInstance(params.id as string);
-		if (!run) {
-			return new HttpResponse("Run record not found", { status: 404 });
+		// POST /rpc/threads/run
+		if (isORPCPath(url, ["threads", "run"])) {
+			const input = (await getORPCInput(request, url)) as { threadId: string } | undefined;
+			const run = getRunForInstance(input?.threadId ?? "");
+			if (!run) {
+				return new HttpResponse("Run record not found", { status: 404 });
+			}
+			return orpcJson(run);
 		}
-		return HttpResponse.json(run);
-	}),
 
-	// GET /api/instances
-	http.get("/api/instances", () => {
-		return HttpResponse.json(MOCK_AGENTS);
-	}),
-
-	// GET /api/instances/:id
-	http.get("/api/instances/:id", ({ params }) => {
-		const agent = getAgentById(params.id as string);
-		if (!agent) {
-			return new HttpResponse("Not Found", { status: 404 });
+		// POST /rpc/threads/prompt
+		if (isORPCPath(url, ["threads", "prompt"])) {
+			const input = (await getORPCInput(request, url)) as
+				| { threadId: string; message: string; mode: "prompt" | "follow_up" | "steer" }
+				| undefined;
+				if (!input?.threadId || !input.message.trim()) {
+					return new HttpResponse("Invalid prompt", { status: 400 });
+				}
+				appendMockPromptMessage(input.threadId, input.message.trim());
+				return orpcJson({
+					threadId: input.threadId,
+				mode: input.mode,
+				status: "sent",
+				acceptedAt: Date.now(),
+			});
 		}
-		return HttpResponse.json(agent);
-	}),
 
-	// GET /api/instances/:id/events
-	http.get("/api/instances/:id/events", ({ params }) => {
-		const events = getEventsForInstance(params.id as string);
-		return HttpResponse.json(events);
-	}),
-
-	// GET /api/instances/:id/messages
-	http.get("/api/instances/:id/messages", ({ params }) => {
-		const messages = getMessagesForInstance(params.id as string);
-		return HttpResponse.json(messages);
-	}),
-
-	// GET /api/instances/:id/run
-	http.get("/api/instances/:id/run", ({ params }) => {
-		const run = getRunForInstance(params.id as string);
-		if (!run) {
-			return new HttpResponse("Run record not found", { status: 404 });
+		// POST /rpc/threads/commands
+		if (isORPCPath(url, ["threads", "commands"])) {
+			return orpcJson([
+				{ name: "lion-build", description: "Activate Lion build/execution mode", source: "extension" },
+				{ name: "lion-validate", description: "Ask the orchestrator to validate the active Lion plan", source: "extension" },
+				{ name: "skill:planner", description: "Create technical implementation plans", source: "skill" },
+			]);
 		}
-		return HttpResponse.json(run);
+
+		return new HttpResponse("Not Found", { status: 404 });
 	}),
 
 	// GET /events (SSE)

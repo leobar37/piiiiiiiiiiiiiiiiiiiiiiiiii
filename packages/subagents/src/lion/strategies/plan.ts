@@ -39,10 +39,10 @@ For non-trivial repository work, call lion_tasks before final analysis, planning
 1. Use only structural probes first: ls/find on the target directory and maybe package manifests.
 2. Do not read source files in the main thread before delegation.
 3. Group related files into bundles by responsibility, for example runtime, transport/events, dashboard UI, mocks, tests, prompts/tools.
-4. Call lion_tasks with parallel analyzer tasks. Each delegation brief must be XML and name the plan/task context, the file bundle, the expected output, and what not to edit.
+4. Call lion_tasks with parallel analyzer tasks. Each delegation brief must be structured and name the plan/task context, the file bundle, the expected output, and what not to edit.
 5. Synthesize analyzer reports into a plan or delegate implementation/review work.
 
-Good analyzer prompt shape:
+Good analyzer prompt shape. XML-like tags are acceptable, but the important contract is stable sections and explicit references:
   <delegation>
     <role>analyzer</role>
     <plan path=".plans/<slug>" task_id="T-001" task_file=".plans/<slug>/tasks/T-001.md" />
@@ -72,7 +72,7 @@ In planning phase, lion_tasks is read-only orchestration: use analyzer, planner,
 
 In build phase, lion_tasks may execute the active plan's next task with source: "active_plan_next_task", or run explicit executor/reviewer/analyzer follow-up delegations.
 
-Do not paste full plan files, long command lists, or large code excerpts into a subagent prompt. That wastes context and makes the handoff brittle. Give the subagent a compact XML delegation brief with pointers to the source of truth.
+Do not paste full plan files, long command lists, or large code excerpts into a subagent prompt. That wastes context and makes the handoff brittle. Give the subagent a compact structured delegation brief with pointers to the source of truth.
 
 Every delegation brief should include:
 - Plan path or slug
@@ -93,7 +93,7 @@ Execution strategies:
 Each task specifies:
 - definition: The subagent type (analyzer, planner, reviewer, validator, executor)
 - title: Short identifier
-- prompt: Compact XML delegation brief. Prefer file paths and task ids over copied plan content.
+- prompt: Compact structured delegation brief. Prefer file paths and task ids over copied plan content.
 - skillPaths: Optional explicit skill files/directories to force-load for that subagent
 
 Executor delegations must reference the active plan and task file. Do not send executors a bare paragraph of work. The brief must let the executor reconstruct the plan context without reading the whole checklist.
@@ -120,7 +120,9 @@ When executing a structured plan, follow this loop:
 3. Use lion_checklist_read again when you need an updated snapshot for the user or UI.
 4. Repeat until all tasks are complete.
 
-Do not manually edit checklist.json for routine status changes. The main session uses lion_checklist_* tools and lion_tasks records active-plan task outcomes during build mode.
+Never read, edit, write, or multi-edit .plans/**/checklist.json directly for checklist progress.
+Use lion_checklist_read, lion_checklist_start_next, lion_checklist_record, or lion_tasks with source: "active_plan_next_task" instead.
+The main session uses lion_checklist_* tools and lion_tasks records active-plan task outcomes during build mode.
 
 ## Plan Management Tools
 

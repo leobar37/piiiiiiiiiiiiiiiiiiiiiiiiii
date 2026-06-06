@@ -26,7 +26,10 @@ import {
 import { StructuredLionPlanFile } from "../../src/lion/plans/structured.js";
 import { buildPlanReviewPrompt } from "../../src/lion/prompts/plan-reviewer.js";
 import { buildPlanningSystemPrompt } from "../../src/lion/prompts/planning.js";
+import { createReviewPlanFromTodo } from "../../src/lion/review-plan.js";
 import { LionRuntime } from "../../src/lion/runtime.js";
+import { getLionStatePath, readLionState, writeLionState } from "../../src/lion/state-store.js";
+import { hasPlanReference } from "../../src/lion/strategies/shared.js";
 import { TaskRunner } from "../../src/lion/task-runner.js";
 import { registerLionTools } from "../../src/lion/tools.js";
 import type { LionPlan, LionTask } from "../../src/lion/types.js";
@@ -107,7 +110,7 @@ function testStartRunInitializesRun(): void {
 function testFinishRunMarksComplete(): void {
 	const cwd = createStructuredPlanDirWithChecklist();
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		const loadedPlan = new StructuredLionPlanFile(cwd).loadPlan();
 		startRun(runtime.core, { runId: "run-1", plan: loadedPlan, task: loadedPlan.tasks[0], maxAttempts: 3 });
 		recordReviewVerdict(runtime.core, "approved", "ok\n<LION-APPROVE>");
@@ -195,7 +198,7 @@ function testBuildPlanningSystemPrompt(): void {
 	};
 	const prompt = buildPlanningSystemPrompt(state);
 	assert.ok(prompt.includes("test-plan"));
-	assert.ok(prompt.includes("compact XML delegation brief"));
+	assert.ok(prompt.includes("compact structured delegation brief"));
 	assert.ok(prompt.includes("Do not paste full plan files"));
 	assert.ok(prompt.includes("<delegation>"));
 	assert.ok(prompt.includes("<must_not>Ask the user for clarification.</must_not>"));
@@ -205,12 +208,55 @@ function testBuildPlanningSystemPrompt(): void {
 	assert.ok(prompt.includes('source: "active_plan_next_task"'));
 	assert.ok(!prompt.includes("lion_next_task"));
 	assert.ok(!prompt.includes("lion_record_task_result"));
-	assert.ok(prompt.includes("Do not manually edit checklist.json"));
+	assert.ok(prompt.includes("Never read, edit, write, or multi-edit .plans/**/checklist.json directly"));
 	assert.ok(prompt.includes("Interpret User Intent First"));
 	assert.ok(prompt.includes("This interpretation belongs to the main Lion orchestration thread"));
 	assert.ok(prompt.includes("Do not delegate the raw user prompt just to understand it"));
 	assert.ok(prompt.includes("use any relevant loaded skill"));
 	assert.ok(prompt.includes("Executor delegations must reference the active plan and task file"));
+}
+
+function testHasPlanReferenceSupportsStructuredBriefs(): void {
+	assert.equal(hasPlanReference('<plan path=".plans/test" />\n<task id="T-001" />'), true);
+	assert.equal(hasPlanReference("Plan path: .plans/test\nTask id: T-001\nObjective: Do it"), true);
+	assert.equal(hasPlanReference("Objective: Do it\nScope: packages/subagents"), false);
+}
+
+function testReviewPlanExtractsMarkdownScopePaths(): void {
+	const cwd = mkdtempSync(join(tmpdir(), "lion-review-plan-"));
+	try {
+		const plan = createReviewPlanFromTodo(cwd, {
+			slug: "markdown-scope",
+			todo: {
+				scope: "markdown scope",
+				userPrompt: "",
+				selectedStrategy: "prompt_scope",
+				priorityFiles: [],
+				recentCommitFiles: [],
+				relatedCandidates: [],
+				summary: "Review markdown scope",
+				tasks: [
+					{
+						definition: "reviewer",
+						title: "Review markdown paths",
+						prompt: [
+							"Role: reviewer",
+							"Scope:",
+							"- `packages/subagents/src/lion/tools.ts`",
+							"- packages/subagents/src/lion/strategies/plan.ts",
+						].join("\n"),
+					},
+				],
+			},
+		});
+
+		assert.deepEqual(plan.tasks[0].scope, [
+			"packages/subagents/src/lion/tools.ts",
+			"packages/subagents/src/lion/strategies/plan.ts",
+		]);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
 }
 
 function testBuildSimpleSystemPrompt(): void {
@@ -240,7 +286,7 @@ async function testTaskRunnerAddsPlanContextToDelegations(): Promise<void> {
 	const capturedPrompts: string[] = [];
 	const capturedSkillPaths: Array<string[] | undefined> = [];
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		const loaded = loadLionPlan(dir);
 		runtime.activatePlan(loaded);
 		runtime.setPhase("building");
@@ -305,7 +351,7 @@ async function testTaskRunnerAddsPlanContextWhenBriefHasGenericLionContext(): Pr
 	const dir = createStructuredPlanDirWithChecklist();
 	const capturedPrompts: string[] = [];
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		const loaded = loadLionPlan(dir);
 		runtime.activatePlan(loaded);
 		runtime.setPhase("building");
@@ -365,7 +411,7 @@ async function testTaskRunnerAddsPlanContextWhenBriefHasGenericLionContext(): Pr
 async function testTaskRunnerAddsSimpleContextToDelegations(): Promise<void> {
 	const capturedPrompts: string[] = [];
 	const capturedOrchestration: Array<DelegationTask["orchestration"]> = [];
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activateSimple();
 	runtime.activeController = {
 		createInstance(task: DelegationTask) {
@@ -418,7 +464,7 @@ async function testTaskRunnerAddsSimpleContextToDelegations(): Promise<void> {
 async function testTaskRunnerRejectsExecutorInPlanningPhase(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist();
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		const runner = new TaskRunner(runtime);
 
@@ -443,7 +489,7 @@ async function testTaskRunnerForcesAnalyzerReadOnlyInPlanningPhase(): Promise<vo
 	const dir = createStructuredPlanDirWithChecklist();
 	const capturedTasks: DelegationTask[] = [];
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		runtime.activeController = {
 			createInstance(task: DelegationTask) {
@@ -506,7 +552,7 @@ async function testTaskRunnerForcesAnalyzerReadOnlyInPlanningPhase(): Promise<vo
 async function testTaskRunnerAllowsValidatorInPlanningPhase(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist();
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		let capturedTask: DelegationTask | undefined;
 		runtime.activeController = {
@@ -554,7 +600,7 @@ async function testTaskRunnerAllowsValidatorInPlanningPhase(): Promise<void> {
 async function testTaskRunnerAllowsReviewerInPlanningPhase(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist();
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		let capturedTask: DelegationTask | undefined;
 		runtime.activeController = {
@@ -600,7 +646,7 @@ async function testTaskRunnerAllowsReviewerInPlanningPhase(): Promise<void> {
 }
 
 async function testTaskRunnerRejectsReviewerInReviewPlanningPhase(): Promise<void> {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activateReview(plan);
 	const runner = new TaskRunner(runtime);
 
@@ -629,7 +675,7 @@ async function testTaskRunnerRejectsReviewerInReviewPlanningPhase(): Promise<voi
 async function testTaskRunnerRunsActivePlanNextTaskInBuildPhase(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist();
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		runtime.setPhase("building");
 		runtime.activeController = {
@@ -677,7 +723,7 @@ async function testTaskRunnerRunsActivePlanNextTaskInBuildPhase(): Promise<void>
 async function testTaskRunnerBlocksActivePlanTaskWithoutStructuredResult(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist();
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		runtime.setPhase("building");
 		runtime.activeController = {
@@ -729,7 +775,7 @@ async function testTaskRunnerBlocksActivePlanTaskWithoutStructuredResult(): Prom
 async function testTaskRunnerRejectsNonExecutorActivePlanSource(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist();
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		runtime.setPhase("building");
 		const runner = new TaskRunner(runtime);
@@ -753,7 +799,7 @@ async function testTaskRunnerEscapesActivePlanTaskPrompt(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist({ title: 'Fix <runtime> & "quotes"' });
 	const capturedPrompts: string[] = [];
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		runtime.setPhase("building");
 		runtime.activeController = {
@@ -802,7 +848,7 @@ async function testTaskRunnerEscapesActivePlanTaskPrompt(): Promise<void> {
 async function testTaskRunnerReturnsUpdatedPlanOnActivePlanFailure(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist();
 	try {
-		const runtime = new LionRuntime(fakePi() as any);
+		const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		runtime.setPhase("building");
 		runtime.activeController = {
@@ -834,7 +880,7 @@ async function testTaskRunnerMarksDelegationLimitAsRetryable(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist();
 	const pi = fakePi();
 	try {
-		const runtime = new LionRuntime(pi as any);
+		const runtime = new LionRuntime(pi as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		runtime.setPhase("building");
 		runtime.activeController = {
@@ -946,7 +992,7 @@ async function testLionActivatePlanToolKeepsPlanningPhase(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist();
 	const pi = fakePiWithTools();
 	try {
-		const runtime = new LionRuntime(pi as any);
+		const runtime = new LionRuntime(pi as any, TEST_CWD);
 		registerLionTools(runtime);
 		const tool = pi.tools.get("lion_activate_plan");
 		assert.ok(tool);
@@ -965,7 +1011,7 @@ async function testLionValidateCommandInjectsLionTasksPrompt(): Promise<void> {
 	const dir = createStructuredPlanDirWithChecklist();
 	const pi = fakePiWithCommands();
 	try {
-		const runtime = new LionRuntime(pi as any);
+		const runtime = new LionRuntime(pi as any, TEST_CWD);
 		runtime.activatePlan(loadLionPlan(dir));
 		pi.messages.length = 0;
 		registerLionCommands(pi as any, runtime);
@@ -985,9 +1031,50 @@ async function testLionValidateCommandInjectsLionTasksPrompt(): Promise<void> {
 	}
 }
 
+async function testLionReviewCommandCreatesPlanReviewPipeline(): Promise<void> {
+	const planDir = createStructuredPlanDirWithChecklist();
+	const cwd = mkdtempSync(join(tmpdir(), "lion-review-command-"));
+	const pi = fakePiWithCommands();
+	try {
+		const runtime = new LionRuntime(pi as any, TEST_CWD);
+		runtime.activatePlan(loadLionPlan(planDir));
+		pi.messages.length = 0;
+		registerLionCommands(pi as any, runtime);
+
+		await pi.commands.get("lion-review")!.handler("focus regressions", fakeCtx({ cwd }) as any);
+
+		const injected = pi.messages.find((message) => message.content?.customType === "lion-orchestrator-feedback");
+		assert.ok(injected);
+		assert.deepEqual(injected.options, { triggerTurn: true });
+		assert.equal(runtime.state.strategy, "review");
+		assert.equal(runtime.state.phase, "planning");
+		assert.ok(runtime.state.activePlanPath?.startsWith(join(cwd, ".reviews")));
+		assert.deepEqual(injected.content.details.nextToolsRequired, ["lion_checklist_start_next"]);
+		assert.deepEqual(injected.content.details.nextTools, ["lion_checklist_start_next", "lion_tasks"]);
+		assert.equal(injected.content.details.sourcePlanPath, planDir);
+		assert.ok(injected.content.content.includes("Lion plan review pipeline created."));
+		assert.ok(injected.content.content.includes("Source plan:"));
+		assert.ok(injected.content.content.includes("Focus: focus regressions"));
+	} finally {
+		rmSync(planDir, { recursive: true, force: true });
+		rmSync(cwd, { recursive: true, force: true });
+	}
+}
+
+async function testLionReviewCommandRequiresActivePlan(): Promise<void> {
+	const pi = fakePiWithCommands();
+	const runtime = new LionRuntime(pi as any, TEST_CWD);
+	registerLionCommands(pi as any, runtime);
+
+	await pi.commands.get("lion-review")!.handler("", fakeCtx({}) as any);
+
+	assert.equal(runtime.state.strategy, "plan");
+	assert.equal(runtime.state.activePlanPath, null);
+}
+
 function testLionToolsRegisterPlanActivationAndDelegationOnly(): void {
 	const pi = fakePiWithTools();
-	const runtime = new LionRuntime(pi as any);
+	const runtime = new LionRuntime(pi as any, TEST_CWD);
 	registerLionTools(runtime);
 
 	assert.deepEqual([...pi.tools.keys()].sort(), [
@@ -1001,7 +1088,7 @@ function testLionToolsRegisterPlanActivationAndDelegationOnly(): void {
 
 function testLionDashboardUrlUsesStatusOnly(): void {
 	const pi = fakePi();
-	const runtime = new LionRuntime(pi as any);
+	const runtime = new LionRuntime(pi as any, TEST_CWD);
 	const statusUpdates: Array<{ key: string; value: string | undefined }> = [];
 	const ctx = fakeCtx({ hasUI: true, statusUpdates });
 
@@ -1040,13 +1127,13 @@ async function testLionExtensionDoesNotGuardWhenInactive(): Promise<void> {
 }
 
 function testDelegationGuardTurnCompatibilityMethods(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	assert.equal(runtime.delegationGuard.startTurn(), undefined);
 	assert.equal(runtime.delegationGuard.endTurn(), undefined);
 }
 
 function testDelegationGuardAllowsStructureProbes(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	for (let i = 0; i < 3; i++) {
@@ -1056,7 +1143,7 @@ function testDelegationGuardAllowsStructureProbes(): void {
 }
 
 function testDelegationGuardAllowsReads(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	const result = runtime.delegationGuard.handleToolCall(readToolCall("packages/subagents/src/file.ts"));
@@ -1065,7 +1152,7 @@ function testDelegationGuardAllowsReads(): void {
 }
 
 function testDelegationGuardAllowsUnlimitedStructureProbes(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	for (let i = 0; i < 3; i++) {
@@ -1077,7 +1164,7 @@ function testDelegationGuardAllowsUnlimitedStructureProbes(): void {
 }
 
 function testDelegationGuardAllowsAfterLionTasks(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	runtime.delegationGuard.handleToolCall({
@@ -1092,7 +1179,7 @@ function testDelegationGuardAllowsAfterLionTasks(): void {
 }
 
 function testDelegationGuardReleasesLionTasksOnToolResult(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	const first = runtime.delegationGuard.handleToolCall(lionTasksToolCall("tool-1"));
@@ -1105,7 +1192,7 @@ function testDelegationGuardReleasesLionTasksOnToolResult(): void {
 }
 
 function testDelegationGuardAllowsSequentialTopLevelLionTasks(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	for (let i = 0; i < 5; i++) {
@@ -1119,7 +1206,7 @@ function testDelegationGuardAllowsSequentialTopLevelLionTasks(): void {
 }
 
 function testDelegationGuardBlocksActualNestedLionTasks(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	for (let i = 0; i < 3; i++) {
@@ -1133,7 +1220,7 @@ function testDelegationGuardBlocksActualNestedLionTasks(): void {
 }
 
 function testDelegationGuardAllowsDirectEdits(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	const result = runtime.delegationGuard.handleToolCall({
@@ -1147,7 +1234,7 @@ function testDelegationGuardAllowsDirectEdits(): void {
 }
 
 function testDelegationGuardAllowsPlanReads(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	for (let i = 0; i < 8; i++) {
@@ -1157,7 +1244,7 @@ function testDelegationGuardAllowsPlanReads(): void {
 }
 
 function testDelegationGuardAllowsPlanEdits(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	const result = runtime.delegationGuard.handleToolCall({
@@ -1171,7 +1258,7 @@ function testDelegationGuardAllowsPlanEdits(): void {
 }
 
 function testDelegationGuardAllowsPlanMultiEdits(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlanning();
 
 	const result = runtime.delegationGuard.handleToolCall({
@@ -1189,21 +1276,66 @@ function testDelegationGuardAllowsPlanMultiEdits(): void {
 	assert.equal(result, undefined);
 }
 
+function testDelegationGuardBlocksPlanChecklistReads(): void {
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
+	runtime.activatePlanning();
+
+	const result = runtime.delegationGuard.handleToolCall(readToolCall(".plans/lion/checklist.json"));
+
+	assert.equal(result?.block, true);
+	assert.match(result?.reason ?? "", /lion_checklist_read/);
+}
+
+function testDelegationGuardBlocksReviewChecklistEdits(): void {
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
+	runtime.activatePlanning();
+
+	const result = runtime.delegationGuard.handleToolCall({
+		type: "tool_call",
+		toolName: "edit",
+		toolCallId: "tool-1",
+		input: { path: ".reviews/lion-review/checklist.json" },
+	});
+
+	assert.equal(result?.block, true);
+	assert.match(result?.reason ?? "", /lion_checklist_start_next/);
+}
+
+function testDelegationGuardBlocksChecklistMultiEdits(): void {
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
+	runtime.activatePlanning();
+
+	const result = runtime.delegationGuard.handleToolCall({
+		type: "tool_call",
+		toolName: "multi-edit",
+		toolCallId: "tool-1",
+		input: {
+			edits: [
+				{ path: ".plans/lion/tasks/T-001.md", oldText: "old", newText: "new" },
+				{ path: ".plans/lion/checklist.json", oldText: "old", newText: "new" },
+			],
+		},
+	});
+
+	assert.equal(result?.block, true);
+	assert.match(result?.reason ?? "", /Direct multi-edit access/);
+}
+
 function testWidgetLinesWithNoJobs(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const lines = buildLionSubagentWidgetLines(runtime.subagentUi.values(), plainTheme as any);
 	assert.equal(lines.length, 0);
 }
 
 function testWidgetLinesWithJobs(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	const lines = buildLionSubagentWidgetLines(runtime.subagentUi.values(), plainTheme as any);
 	assert.ok(lines.some((line) => line.includes("Build auth")));
 }
 
 function testWidgetLinesWithCompletedJob(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	const result = delegationResult(
 		{ id: "task-1", definition: "coder", prompt: "do it" } as DelegationTask,
@@ -1222,7 +1354,7 @@ function testWidgetLinesWithCompletedJob(): void {
 }
 
 function testWidgetLinesWithFailedJob(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
 		type: "error",
@@ -1237,7 +1369,7 @@ function testWidgetLinesWithFailedJob(): void {
 }
 
 function testWidgetLinesHidesProgressDetails(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startJob({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.subagentUi.set("task-1", {
 		runId: "run-1",
@@ -1263,7 +1395,7 @@ function testWidgetLinesHidesProgressDetails(): void {
 }
 
 function testWidgetLinesFitInPanel(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	for (let i = 0; i < 10; i++) {
 		runtime.startJob({ runId: "run-1", taskId: `task-${i}`, role: "executor", title: `Job ${i}` });
 	}
@@ -1278,7 +1410,7 @@ function testWidgetLinesFitInPanel(): void {
 }
 
 function testWidgetCleanupRemovesOldCompleted(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const now = Date.now();
 	runtime.startJob({
 		runId: "run-1",
@@ -1305,7 +1437,7 @@ function testWidgetCleanupRemovesOldCompleted(): void {
 }
 
 function testWidgetCleanupKeepsRecentCompleted(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const now = Date.now();
 	runtime.startJob({ runId: "run-1", taskId: "task-1", role: "executor", title: "Recent job" });
 	runtime.finishJob(
@@ -1319,7 +1451,7 @@ function testWidgetCleanupKeepsRecentCompleted(): void {
 }
 
 function testWidgetCleanupKeepsRunning(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const now = Date.now();
 	runtime.startJob({
 		runId: "run-1",
@@ -1342,7 +1474,7 @@ function testWidgetCleanupKeepsRunning(): void {
 }
 
 function testWidgetCleanupRemovesOrphanedQueued(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const now = Date.now();
 	runtime.startJob({
 		runId: "run-1",
@@ -1364,7 +1496,7 @@ function testWidgetCleanupRemovesOrphanedQueued(): void {
 }
 
 function testWidgetCleanupKeepsRecentQueued(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const now = Date.now();
 	runtime.startJob({
 		runId: "run-1",
@@ -1576,91 +1708,111 @@ function testResolvePlanPathWithDir(): void {
 }
 
 function testRuntimeRestoreState(): void {
-	const pi = fakePi();
-	const runtime = new LionRuntime(pi as any);
-	const ctx = fakeCtx({
-		entries: [
+	const cwd = mkdtempSync(join(tmpdir(), "lion-restore-"));
+	try {
+		writeLionState(
+			cwd,
 			{
-				type: "custom",
-				customType: "lion-state",
-				data: {
-					version: 2,
-					action: "activate",
-					active: true,
-					strategy: "plan",
-					phase: "planning",
-					activePlanPath: "/tmp/plan",
-					activePlanSlug: "plan",
-					planKind: "structured",
-					activeTaskId: null,
-					maxAttempts: 3,
-					lastRunId: null,
-					lastBuild: null,
-				},
+				version: 2,
+				active: true,
+				strategy: "plan",
+				phase: "planning",
+				activePlanPath: "/tmp/plan",
+				activePlanSlug: "plan",
+				planKind: "structured",
+				activeTaskId: null,
+				maxAttempts: 3,
+				lastRunId: null,
 			},
-		],
-	});
-	runtime.restore(ctx as any);
-	assert.equal(runtime.state.active, true);
-	assert.equal(runtime.state.strategy, "plan");
-	assert.equal(runtime.state.phase, "planning");
-	assert.equal(runtime.state.activePlanSlug, "plan");
+			createLionCore(),
+		);
+		const runtime = new LionRuntime(fakePi() as any, cwd);
+		runtime.restore(fakeCtx({ cwd }) as any);
+		assert.equal(runtime.state.active, true);
+		assert.equal(runtime.state.strategy, "plan");
+		assert.equal(runtime.state.phase, "planning");
+		assert.equal(runtime.state.activePlanSlug, "plan");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
 }
 
 function testRuntimeRestoreStateIgnoresLegacyVersion(): void {
-	const pi = fakePi();
-	const runtime = new LionRuntime(pi as any);
-	const ctx = fakeCtx({
-		entries: [
-			{
-				type: "custom",
-				customType: "lion-state",
-				data: {
-					version: 1,
-					action: "activate",
-					active: true,
-					mode: "planning",
-					activePlanPath: "/tmp/plan",
-					activePlanSlug: "plan",
-				},
-			},
-		],
-	});
-	runtime.restore(ctx as any);
-	assert.equal(runtime.state.active, false);
-	assert.equal(runtime.state.strategy, "plan");
-	assert.equal(runtime.state.phase, "planning");
+	const cwd = mkdtempSync(join(tmpdir(), "lion-restore-legacy-"));
+	try {
+		// Write a version 1 document (should be treated as invalid)
+		const statePath = getLionStatePath(cwd);
+		mkdirSync(join(cwd, ".pi", "lion"), { recursive: true });
+		writeFileSync(
+			statePath,
+			JSON.stringify({
+				version: 1,
+				state: { version: 1, active: true },
+				core: { activeRun: null, runHistory: [] },
+				updatedAt: Date.now(),
+			}),
+		);
+		const runtime = new LionRuntime(fakePi() as any, cwd);
+		runtime.restore(fakeCtx({ cwd }) as any);
+		assert.equal(runtime.state.active, false);
+		assert.equal(runtime.state.strategy, "plan");
+		assert.equal(runtime.state.phase, "planning");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
 }
 
 function testRuntimeRestoreStateInvalidVersion(): void {
-	const pi = fakePi();
-	const runtime = new LionRuntime(pi as any);
-	const ctx = fakeCtx({
-		entries: [{ type: "custom", customType: "lion-state", data: { version: 999, action: "activate" } }],
-	});
-	runtime.restore(ctx as any);
-	assert.equal(runtime.state.active, false);
+	const cwd = mkdtempSync(join(tmpdir(), "lion-restore-invalid-"));
+	try {
+		const statePath = getLionStatePath(cwd);
+		mkdirSync(join(cwd, ".pi", "lion"), { recursive: true });
+		writeFileSync(
+			statePath,
+			JSON.stringify({
+				version: 999,
+				state: {},
+				core: {},
+				updatedAt: Date.now(),
+			}),
+		);
+		const runtime = new LionRuntime(fakePi() as any, cwd);
+		runtime.restore(fakeCtx({ cwd }) as any);
+		assert.equal(runtime.state.active, false);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
 }
 
 function testRuntimeRestoreStateNoEntries(): void {
-	const pi = fakePi();
-	const runtime = new LionRuntime(pi as any);
-	const ctx = fakeCtx({ entries: [] });
-	runtime.restore(ctx as any);
-	assert.equal(runtime.state.active, false);
+	const cwd = mkdtempSync(join(tmpdir(), "lion-restore-empty-"));
+	try {
+		const runtime = new LionRuntime(fakePi() as any, cwd);
+		runtime.restore(fakeCtx({ cwd, entries: [] }) as any);
+		assert.equal(runtime.state.active, false);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
 }
 
 function testRuntimePersist(): void {
-	const pi = fakePi();
-	const runtime = new LionRuntime(pi as any);
-	runtime.activatePlanning();
-	runtime.persist("activate");
-	assert.equal(pi.entries.length, 1);
-	assert.equal(pi.entries[0].type, "lion-state");
+	const cwd = mkdtempSync(join(tmpdir(), "lion-persist-"));
+	try {
+		const runtime = new LionRuntime(fakePi() as any, cwd);
+		runtime.activatePlanning();
+		runtime.persist();
+		const saved = readLionState(cwd);
+		assert.ok(saved);
+		assert.equal(saved.state.active, true);
+		assert.equal(saved.state.strategy, "plan");
+		assert.equal(saved.state.phase, "planning");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
 }
 
 function testRuntimeEmit(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const events: any[] = [];
 	runtime.events.on("lion.activate.start", (event) => events.push(event));
 	runtime.emit({ type: "lion.activate.start", timestamp: 1, runId: "run-1", input: "test" });
@@ -1669,7 +1821,7 @@ function testRuntimeEmit(): void {
 }
 
 function testRuntimeRetainAndRelease(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.retainSubagent({ runId: "run-1", role: "executor", taskId: "task-1" });
 	assert.ok(runtime.retainedInstances.has("task-1"));
 	runtime.releaseRun("run-1");
@@ -1677,7 +1829,7 @@ function testRuntimeRetainAndRelease(): void {
 }
 
 function testRuntimeRetainMultipleSameRun(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.retainSubagent({ runId: "run-1", role: "executor", taskId: "task-1" });
 	runtime.retainSubagent({ runId: "run-1", role: "reviewer", taskId: "task-2" });
 	assert.equal(runtime.retainedInstances.size, 2);
@@ -1686,7 +1838,7 @@ function testRuntimeRetainMultipleSameRun(): void {
 }
 
 function testRuntimeCreateSubAgentController(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const ctx = fakeCtx({}) as any;
 	const controller = runtime.createSubAgentController(ctx, "run-1");
 	assert.ok(controller);
@@ -1695,7 +1847,7 @@ function testRuntimeCreateSubAgentController(): void {
 }
 
 function testRuntimeEnsureControllerReturnsSame(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const ctx = fakeCtx({}) as any;
 	const c1 = runtime.ensureController(ctx);
 	const c2 = runtime.ensureController(ctx);
@@ -1703,14 +1855,14 @@ function testRuntimeEnsureControllerReturnsSame(): void {
 }
 
 function testRuntimeSetMode(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.setPhase("building");
 	assert.equal(runtime.state.phase, "building");
 	assert.equal(runtime.state.active, true);
 }
 
 function testRuntimeActivateSimple(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activatePlan(plan);
 	runtime.activateSimple();
 	assert.equal(runtime.state.active, true);
@@ -1723,7 +1875,7 @@ function testRuntimeActivateSimple(): void {
 
 async function testLionSimpleCommandActivatesSimpleStrategy(): Promise<void> {
 	const pi = fakePiWithCommands();
-	const runtime = new LionRuntime(pi as any);
+	const runtime = new LionRuntime(pi as any, TEST_CWD);
 	registerLionCommands(pi as any, runtime);
 
 	await pi.commands.get("lion-simple")!.handler("packages/subagents", fakeCtx({}) as any);
@@ -1736,7 +1888,7 @@ async function testLionSimpleCommandActivatesSimpleStrategy(): Promise<void> {
 }
 
 async function testRuntimeCompactionInstructionsUseStrategy(): Promise<void> {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.activateSimple();
 	const simple = await runtime.buildCompactionInstructions(fakeCtx({}) as any);
 	assert.ok(simple?.includes("Lion simple orchestration is active"));
@@ -1754,19 +1906,19 @@ async function testRuntimeCompactionInstructionsUseStrategy(): Promise<void> {
 }
 
 function testRuntimeSetActiveTask(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.setActiveTask("T-001");
 	assert.equal(runtime.state.activeTaskId, "T-001");
 }
 
 function testRuntimeSetLastRun(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.setLastRun("run-1");
 	assert.equal(runtime.state.lastRunId, "run-1");
 }
 
 function testRuntimeApplyBuildResult(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const result = { status: "approved" as const, summary: "Done", taskId: "T-001", attempts: 1 };
 	runtime.applyBuildResult(result);
 	assert.equal(runtime.state.phase, "planning");
@@ -1776,7 +1928,7 @@ function testRuntimeApplyBuildResult(): void {
 
 function testRuntimeQueueFeedbackWhenIdle(): void {
 	const pi = fakePi();
-	const runtime = new LionRuntime(pi as any);
+	const runtime = new LionRuntime(pi as any, TEST_CWD);
 	const ctx = fakeCtx({ isIdle: true, hasPending: false }) as any;
 	runtime.queueFeedback(ctx, "test", { foo: 1 });
 	assert.equal(pi.messages.length, 1);
@@ -1785,7 +1937,7 @@ function testRuntimeQueueFeedbackWhenIdle(): void {
 
 function testRuntimeQueueFeedbackWhenBusy(): void {
 	const pi = fakePi();
-	const runtime = new LionRuntime(pi as any);
+	const runtime = new LionRuntime(pi as any, TEST_CWD);
 	const ctx = fakeCtx({ isIdle: false, hasPending: false }) as any;
 	runtime.queueFeedback(ctx, "test", { foo: 1 });
 	assert.equal(pi.messages.length, 1);
@@ -1794,7 +1946,7 @@ function testRuntimeQueueFeedbackWhenBusy(): void {
 
 function testRuntimeQueueFeedbackSkipsWhenPending(): void {
 	const pi = fakePi();
-	const runtime = new LionRuntime(pi as any);
+	const runtime = new LionRuntime(pi as any, TEST_CWD);
 	const ctx = fakeCtx({ isIdle: true, hasPending: true }) as any;
 	runtime.queueFeedback(ctx, "test", { foo: 1 });
 	assert.equal(pi.messages.length, 1);
@@ -1802,7 +1954,7 @@ function testRuntimeQueueFeedbackSkipsWhenPending(): void {
 }
 
 function testRuntimeGetSubagentHealth(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startJob({ runId: "run-1", taskId: "task-1", role: "executor", title: "Job 1", timestamp: 1 });
 	runtime.startJob({ runId: "run-1", taskId: "task-2", role: "reviewer", title: "Job 2", timestamp: 2 });
 	const health = runtime.getSubagentHealth();
@@ -1811,7 +1963,7 @@ function testRuntimeGetSubagentHealth(): void {
 }
 
 function testRuntimeGetSubagentHealthByTaskId(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startJob({ runId: "run-1", taskId: "task-1", role: "executor", title: "Job 1" });
 	runtime.startJob({ runId: "run-1", taskId: "task-2", role: "reviewer", title: "Job 2" });
 	const health = runtime.getSubagentHealth("task-1");
@@ -1820,7 +1972,7 @@ function testRuntimeGetSubagentHealthByTaskId(): void {
 }
 
 function testRuntimeRecordSubagentUiEvent(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
 		type: "task.start",
@@ -1836,7 +1988,7 @@ function testRuntimeRecordSubagentUiEvent(): void {
 }
 
 function testRuntimeRecordSubagentUiEventTurnComplete(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
 		type: "turn.complete",
@@ -1853,7 +2005,7 @@ function testRuntimeRecordSubagentUiEventTurnComplete(): void {
 }
 
 function testRuntimeRecordSubagentUiEventToolStart(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
 		type: "tool.start",
@@ -1868,7 +2020,7 @@ function testRuntimeRecordSubagentUiEventToolStart(): void {
 }
 
 function testRuntimeRecordSubagentUiEventToolEnd(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
 		type: "tool.start",
@@ -1892,7 +2044,7 @@ function testRuntimeRecordSubagentUiEventToolEnd(): void {
 }
 
 function testRuntimeRecordSubagentUiEventProgress(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
 		type: "progress.update",
@@ -1906,7 +2058,7 @@ function testRuntimeRecordSubagentUiEventProgress(): void {
 }
 
 function testRuntimeRecordSubagentUiEventTaskEnd(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
 		type: "task.end",
@@ -1926,7 +2078,7 @@ function testRuntimeRecordSubagentUiEventTaskEnd(): void {
 }
 
 function testRuntimeRecordSubagentUiEventTaskEndBlocked(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startJob({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	const result = delegationResult(
@@ -1947,7 +2099,7 @@ function testRuntimeRecordSubagentUiEventTaskEndBlocked(): void {
 }
 
 function testRuntimeRecordSubagentUiEventError(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
 		type: "error",
@@ -1963,7 +2115,7 @@ function testRuntimeRecordSubagentUiEventError(): void {
 }
 
 function testRuntimeRecordSubagentUiEventInstanceState(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
 		type: "instance.state",
@@ -1993,7 +2145,7 @@ function testRuntimeRecordSubagentUiEventInstanceState(): void {
 }
 
 function testRuntimeRecordSubagentUiEventInstanceStateStarting(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startJob({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
@@ -2022,7 +2174,7 @@ function testRuntimeRecordSubagentUiEventInstanceStateStarting(): void {
 }
 
 function testRuntimeRecordSubagentUiEventIgnoresNoTaskId(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	runtime.recordSubagentUiEvent({
 		type: "lifecycle.change",
@@ -2036,7 +2188,7 @@ function testRuntimeRecordSubagentUiEventIgnoresNoTaskId(): void {
 }
 
 function testRuntimeFinishJob(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startJob({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	const result = delegationResult(
 		{ id: "task-1", definition: "coder", prompt: "do it" } as DelegationTask,
@@ -2049,7 +2201,7 @@ function testRuntimeFinishJob(): void {
 }
 
 function testRuntimeFinishJobBlocked(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startJob({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	const result = delegationResult(
 		{ id: "task-1", definition: "coder", prompt: "do it" } as DelegationTask,
@@ -2062,7 +2214,7 @@ function testRuntimeFinishJobBlocked(): void {
 }
 
 function testRuntimeFinishJobWithError(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startJob({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	const job = runtime.finishJob("task-1", null, "failed");
 	assert.equal(job?.status, "failed");
@@ -2070,13 +2222,13 @@ function testRuntimeFinishJobWithError(): void {
 }
 
 function testRuntimeFinishJobUnknownTask(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const job = runtime.finishJob("unknown", null);
 	assert.equal(job, null);
 }
 
 function testRuntimeStartJob(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const job = runtime.startJob({ runId: "run-1", taskId: "task-1", role: "executor", title: "Build auth" });
 	assert.equal(job.status, "queued");
 	assert.equal(job.title, "Build auth");
@@ -2084,7 +2236,7 @@ function testRuntimeStartJob(): void {
 }
 
 function testRuntimeMarksStalledJobs(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	runtime.startJob({
 		runId: "run-1",
 		taskId: "task-1",
@@ -2097,14 +2249,14 @@ function testRuntimeMarksStalledJobs(): void {
 }
 
 function testRuntimeRememberUiContext(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const ctx = fakeCtx({ hasUI: true }) as any;
 	runtime.rememberUiContext(ctx);
 	assert.equal(runtime.lastUiContext, ctx);
 }
 
 function testRuntimeRememberUiContextNoUI(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const ctx = fakeCtx({ hasUI: false }) as any;
 	runtime.rememberUiContext(ctx);
 	assert.equal(runtime.lastUiContext, null);
@@ -2142,7 +2294,7 @@ function testMainSessionBridgeEmitsSessionEvents(): void {
 }
 
 function testRuntimeCleanupSubagentUi(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const now = Date.now();
 	runtime.startSubagentUi({
 		runId: "run-1",
@@ -2159,7 +2311,7 @@ function testRuntimeCleanupSubagentUi(): void {
 }
 
 function testRuntimeCleanupSubagentUiKeepsRecent(): void {
-	const runtime = new LionRuntime(fakePi() as any);
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
 	const now = Date.now();
 	runtime.startSubagentUi({ runId: "run-1", taskId: "task-1", role: "executor", title: "Recent" });
 	runtime.subagentUi.get("task-1")!.status = "completed";
@@ -2170,6 +2322,8 @@ function testRuntimeCleanupSubagentUiKeepsRecent(): void {
 }
 
 // Helpers
+
+const TEST_CWD = "/tmp";
 
 function fakePi() {
 	return {
@@ -2206,6 +2360,7 @@ function fakePiWithTools() {
 
 function fakeCtx(opts: {
 	entries?: any[];
+	cwd?: string;
 	isIdle?: boolean;
 	hasPending?: boolean;
 	hasUI?: boolean;
@@ -2216,11 +2371,12 @@ function fakeCtx(opts: {
 			getBranch: () => opts.entries || [],
 			getEntries: () => opts.entries || [],
 			getLeafId: () => undefined,
-			getCwd: () => "/tmp",
+			getCwd: () => opts.cwd ?? "/tmp",
 			getSessionId: () => "test-session",
 			getSessionFile: () => undefined,
 			getSessionName: () => undefined,
 		},
+		cwd: opts.cwd,
 		isIdle: () => opts.isIdle ?? true,
 		hasPendingMessages: () => opts.hasPending ?? false,
 		hasUI: opts.hasUI ?? false,
@@ -2384,6 +2540,8 @@ const tests = [
 	{ name: "testParseReviewVerdict", fn: testParseReviewVerdict },
 	{ name: "testBuildPlanReviewPrompt", fn: testBuildPlanReviewPrompt },
 	{ name: "testBuildPlanningSystemPrompt", fn: testBuildPlanningSystemPrompt },
+	{ name: "testHasPlanReferenceSupportsStructuredBriefs", fn: testHasPlanReferenceSupportsStructuredBriefs },
+	{ name: "testReviewPlanExtractsMarkdownScopePaths", fn: testReviewPlanExtractsMarkdownScopePaths },
 	{ name: "testBuildSimpleSystemPrompt", fn: testBuildSimpleSystemPrompt },
 	{ name: "testTaskRunnerAddsPlanContextToDelegations", fn: testTaskRunnerAddsPlanContextToDelegations },
 	{
@@ -2439,6 +2597,8 @@ const tests = [
 	{ name: "testLionTaskEvidenceUsesRecordedResult", fn: testLionTaskEvidenceUsesRecordedResult },
 	{ name: "testLionActivatePlanToolKeepsPlanningPhase", fn: testLionActivatePlanToolKeepsPlanningPhase },
 	{ name: "testLionValidateCommandInjectsLionTasksPrompt", fn: testLionValidateCommandInjectsLionTasksPrompt },
+	{ name: "testLionReviewCommandCreatesPlanReviewPipeline", fn: testLionReviewCommandCreatesPlanReviewPipeline },
+	{ name: "testLionReviewCommandRequiresActivePlan", fn: testLionReviewCommandRequiresActivePlan },
 	{
 		name: "testLionToolsRegisterPlanActivationAndDelegationOnly",
 		fn: testLionToolsRegisterPlanActivationAndDelegationOnly,
@@ -2463,6 +2623,9 @@ const tests = [
 	{ name: "testDelegationGuardAllowsPlanReads", fn: testDelegationGuardAllowsPlanReads },
 	{ name: "testDelegationGuardAllowsPlanEdits", fn: testDelegationGuardAllowsPlanEdits },
 	{ name: "testDelegationGuardAllowsPlanMultiEdits", fn: testDelegationGuardAllowsPlanMultiEdits },
+	{ name: "testDelegationGuardBlocksPlanChecklistReads", fn: testDelegationGuardBlocksPlanChecklistReads },
+	{ name: "testDelegationGuardBlocksReviewChecklistEdits", fn: testDelegationGuardBlocksReviewChecklistEdits },
+	{ name: "testDelegationGuardBlocksChecklistMultiEdits", fn: testDelegationGuardBlocksChecklistMultiEdits },
 	{ name: "testWidgetLinesWithNoJobs", fn: testWidgetLinesWithNoJobs },
 	{ name: "testWidgetLinesWithJobs", fn: testWidgetLinesWithJobs },
 	{ name: "testWidgetLinesWithCompletedJob", fn: testWidgetLinesWithCompletedJob },

@@ -3,7 +3,7 @@ import { rm } from "node:fs/promises";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SubAgentEventBus } from "../../src/event-bus.js";
 import { SubAgentRunStore } from "../../src/run-store.js";
 import { HttpServerTransport } from "../../src/transport/http-server.js";
@@ -37,18 +37,66 @@ function createMockMainSession(): DashboardSessionSource {
 	};
 }
 
+function createControllableMainSession(
+	calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer" }>,
+): DashboardSessionSource {
+	return {
+		getThread: () => ({
+			instanceId: "main:session-1",
+			taskId: "main",
+			definitionName: "main-agent",
+			kind: "main",
+			state: "paused",
+			startTime: null,
+			endTime: null,
+			turnCount: 0,
+			lastActivityAt: 100,
+			currentTool: null,
+			error: null,
+			toolCount: 0,
+			currentToolStartedAt: null,
+			durationMs: 0,
+			sessionId: "session-1",
+		}),
+		getMessages: () => [],
+		getEvents: () => [],
+		sendMessage: async (_threadId, message, mode) => {
+			calls.push({ message, mode });
+		},
+		getCommands: () => [{ name: "lion-build", description: "Activate Lion build mode", source: "extension" }],
+		subscribe: () => {
+			return () => {};
+		},
+	};
+}
+
 type MockController = ReturnType<typeof createMockController>;
+
+async function callRpc(port: number, procedure: string, input?: unknown): Promise<Response> {
+	const body = input === undefined ? {} : { json: input };
+	return fetch(`http://127.0.0.1:${port}/rpc${procedure}`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(body),
+	});
+}
 
 describe("HttpServerTransport", () => {
 	let tmpDir: string;
 	let controller: MockController;
 	let transport: HttpServerTransport;
+	let originalBun: typeof Bun | undefined;
 
 	beforeEach(() => {
 		tmpDir = mkdtempSync(join(tmpdir(), "http-server-test-"));
 		controller = createMockController(tmpDir);
 		const mock = createMockBunServe();
-		vi.stubGlobal("Bun", mock);
+		originalBun = globalThis.Bun;
+		Object.defineProperty(globalThis, "Bun", {
+			value: { serve: mock.serve },
+			configurable: true,
+			writable: true,
+		});
 	});
 
 	afterEach(async () => {
@@ -60,15 +108,26 @@ describe("HttpServerTransport", () => {
 			}
 		}
 		await rm(tmpDir, { recursive: true, force: true });
-		vi.unstubAllGlobals();
+		if (originalBun) {
+			Object.defineProperty(globalThis, "Bun", {
+				value: originalBun,
+				configurable: true,
+				writable: true,
+			});
+		} else {
+			delete (globalThis as { Bun?: typeof Bun }).Bun;
+		}
 	});
 
 	/**
-	 * Node's server.listen() is async.  Yield one microtask so
-	 * that server.address() returns a real port after Bun.serve().
+	 * Node's server.listen() may need a few ticks before server.address()
+	 * returns a real port. Poll briefly to avoid flakiness.
 	 */
 	async function waitForServer(): Promise<void> {
-		await new Promise<void>((resolve) => setImmediate(resolve));
+		for (let i = 0; i < 50; i++) {
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			if (transport?.port > 0) return;
+		}
 	}
 
 	// ---- tests -----------------------------------------------------------
@@ -84,7 +143,7 @@ describe("HttpServerTransport", () => {
 		expect(transport.port).toBeGreaterThan(0);
 	});
 
-	it("serves /api/threads endpoint", async () => {
+	it("serves ORPC /rpc/threads.list endpoint", async () => {
 		transport = new HttpServerTransport({
 			controller: controller as any,
 			port: 0,
@@ -94,13 +153,46 @@ describe("HttpServerTransport", () => {
 		await transport.start();
 		await waitForServer();
 
-		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads`);
+		const res = await callRpc(transport.port, "/threads/list");
 		expect(res.status).toBe(200);
 		const body = await res.json();
-		expect(Array.isArray(body)).toBe(true);
+		expect(Array.isArray(body.json)).toBe(true);
 	});
 
-	it("serves persisted completed runs in /api/threads without dashboard events", async () => {
+	it("serves dashboard prompt and commands for the main thread", async () => {
+		const calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer" }> = [];
+		transport = new HttpServerTransport({
+			controller: controller as any,
+			port: 0,
+			host: "127.0.0.1",
+			mainSession: createControllableMainSession(calls),
+		});
+		await transport.start();
+		await waitForServer();
+
+		const commandsRes = await callRpc(transport.port, "/threads/commands", { threadId: "main:session-1" });
+		expect(commandsRes.status).toBe(200);
+		const commandsBody = (await commandsRes.json()) as { json: Array<Record<string, unknown>> };
+		expect(commandsBody.json).toEqual([
+			{ name: "lion-build", description: "Activate Lion build mode", source: "extension" },
+		]);
+
+		const promptRes = await callRpc(transport.port, "/threads/prompt", {
+			threadId: "main:session-1",
+			message: "Continue the run",
+			mode: "follow_up",
+		});
+		expect(promptRes.status).toBe(200);
+		const promptBody = (await promptRes.json()) as { json: Record<string, unknown> };
+		expect(promptBody.json).toMatchObject({
+			threadId: "main:session-1",
+			mode: "follow_up",
+			status: "sent",
+		});
+		expect(calls).toEqual([{ message: "Continue the run", mode: "follow_up" }]);
+	});
+
+	it("serves persisted completed runs in /rpc/threads.list", async () => {
 		const runStore = new SubAgentRunStore(tmpDir);
 		await runStore.start({
 			sessionId: "session-1",
@@ -132,11 +224,11 @@ describe("HttpServerTransport", () => {
 		await transport.start();
 		await waitForServer();
 
-		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads`);
+		const res = await callRpc(transport.port, "/threads/list");
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as Array<Record<string, unknown>>;
-		expect(body).toHaveLength(1);
-		expect(body[0]).toMatchObject({
+		const body = (await res.json()) as { json: Array<Record<string, unknown>> };
+		expect(body.json).toHaveLength(1);
+		expect(body.json[0]).toMatchObject({
 			instanceId: "instance-1",
 			taskId: "task-1",
 			definitionName: "executor",
@@ -149,6 +241,68 @@ describe("HttpServerTransport", () => {
 			turnCount: 1,
 			toolCount: 2,
 		});
+	});
+
+	it("filters persisted subagent runs to the current main session", async () => {
+		const runStore = new SubAgentRunStore(tmpDir);
+		await runStore.start({
+			sessionId: "current-subagent-session",
+			taskId: "task-current",
+			instanceId: "instance-current",
+			definitionName: "executor",
+			cwd: tmpDir,
+			parentThreadId: "main:session-1",
+			runId: "run-current",
+			description: "Current session run",
+			prompt: "Current input",
+			startedAt: 100,
+		});
+		await runStore.complete({
+			sessionId: "current-subagent-session",
+			taskId: "task-current",
+			status: "completed",
+			summary: "Current output",
+			completedAt: 200,
+			turnCount: 1,
+			toolCount: 2,
+		});
+		await runStore.start({
+			sessionId: "old-subagent-session",
+			taskId: "task-old",
+			instanceId: "instance-old",
+			definitionName: "executor",
+			cwd: tmpDir,
+			parentThreadId: "main:old-session",
+			runId: "run-old",
+			description: "Old session run",
+			prompt: "Old input",
+			startedAt: 300,
+		});
+		await runStore.complete({
+			sessionId: "old-subagent-session",
+			taskId: "task-old",
+			status: "completed",
+			summary: "Old output",
+			completedAt: 400,
+			turnCount: 3,
+			toolCount: 4,
+		});
+
+		const calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer" }> = [];
+		transport = new HttpServerTransport({
+			controller: controller as any,
+			port: 0,
+			host: "127.0.0.1",
+			mainSession: createControllableMainSession(calls),
+		});
+		await transport.start();
+		await waitForServer();
+
+		const res = await callRpc(transport.port, "/threads/list");
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { json: Array<Record<string, unknown>> };
+		expect(body.json.map((thread) => thread.instanceId)).toEqual(["main:session-1", "instance-current"]);
+		expect(body.json.some((thread) => thread.instanceId === "instance-old")).toBe(false);
 	});
 
 	it("enriches event-rehydrated threads with durable run fields", async () => {
@@ -194,10 +348,10 @@ describe("HttpServerTransport", () => {
 			timestamp: 150,
 		} as any);
 
-		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads`);
+		const res = await callRpc(transport.port, "/threads/list");
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as Array<Record<string, unknown>>;
-		expect(body[0]).toMatchObject({
+		const body = (await res.json()) as { json: Array<Record<string, unknown>> };
+		expect(body.json[0]).toMatchObject({
 			instanceId: "instance-1",
 			state: "running",
 			sessionId: "session-1",
@@ -207,7 +361,7 @@ describe("HttpServerTransport", () => {
 		});
 	});
 
-	it("serves /api/lion/state endpoint", async () => {
+	it("serves /rpc/lion.state endpoint", async () => {
 		transport = new HttpServerTransport({
 			controller: controller as any,
 			port: 0,
@@ -226,9 +380,10 @@ describe("HttpServerTransport", () => {
 		await transport.start();
 		await waitForServer();
 
-		const res = await fetch(`http://127.0.0.1:${transport.port}/api/lion/state`);
+		const res = await callRpc(transport.port, "/lion/state");
 		expect(res.status).toBe(200);
-		expect(await res.json()).toMatchObject({
+		const body = await res.json();
+		expect(body.json).toMatchObject({
 			active: true,
 			strategy: "simple",
 			phase: "building",
@@ -236,7 +391,7 @@ describe("HttpServerTransport", () => {
 		});
 	});
 
-	it("serves /api/threads/:id endpoint with 404 for unknown", async () => {
+	it("serves /rpc/threads.get with 404 for unknown", async () => {
 		transport = new HttpServerTransport({
 			controller: controller as any,
 			port: 0,
@@ -245,7 +400,7 @@ describe("HttpServerTransport", () => {
 		await transport.start();
 		await waitForServer();
 
-		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads/nonexistent`);
+		const res = await callRpc(transport.port, "/threads/get", { threadId: "nonexistent" });
 		expect(res.status).toBe(404);
 	});
 
@@ -275,14 +430,14 @@ describe("HttpServerTransport", () => {
 		transport.emit(createdEvent);
 		transport.emit(progressEvent);
 
-		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads/instance-1/events`);
+		const res = await callRpc(transport.port, "/threads/events", { threadId: "instance-1" });
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as Array<Record<string, unknown>>;
-		expect(body).toHaveLength(2);
-		expect(body.map((event) => event.type)).toEqual(["instance.created", "progress.update"]);
+		const body = (await res.json()) as { json: Array<Record<string, unknown>> };
+		expect(body.json).toHaveLength(2);
+		expect(body.json.map((event) => event.type)).toEqual(["instance.created", "progress.update"]);
 	});
 
-	it("serves /api/threads/:id for projected-only completed runs", async () => {
+	it("serves /rpc/threads.get for projected-only completed runs", async () => {
 		const runStore = new SubAgentRunStore(tmpDir);
 		await runStore.start({
 			sessionId: "session-1",
@@ -311,10 +466,10 @@ describe("HttpServerTransport", () => {
 		await transport.start();
 		await waitForServer();
 
-		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads/instance-1`);
+		const res = await callRpc(transport.port, "/threads/get", { threadId: "instance-1" });
 		expect(res.status).toBe(200);
 		const body = await res.json();
-		expect(body).toMatchObject({
+		expect(body.json).toMatchObject({
 			instanceId: "instance-1",
 			state: "completed",
 			sessionId: "session-1",
@@ -322,7 +477,7 @@ describe("HttpServerTransport", () => {
 		});
 	});
 
-	it("serves /api/threads/:id/run with stored subagent input and output", async () => {
+	it("serves /rpc/threads.run with stored subagent input and output", async () => {
 		transport = new HttpServerTransport({
 			controller: controller as any,
 			port: 0,
@@ -374,10 +529,10 @@ describe("HttpServerTransport", () => {
 			timestamp: Date.now(),
 		} as any);
 
-		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads/instance-1/run`);
+		const res = await callRpc(transport.port, "/threads/run", { threadId: "instance-1" });
 		expect(res.status).toBe(200);
 		const body = await res.json();
-		expect(body).toMatchObject({
+		expect(body.json).toMatchObject({
 			sessionId: "session-1",
 			taskId: "task-1",
 			prompt: "Input brief",
@@ -387,7 +542,7 @@ describe("HttpServerTransport", () => {
 		});
 	});
 
-	it("serves /api/threads/:id/run for projected-only completed runs", async () => {
+	it("serves /rpc/threads.run for projected-only completed runs", async () => {
 		const runStore = new SubAgentRunStore(tmpDir);
 		await runStore.start({
 			sessionId: "session-1",
@@ -415,10 +570,10 @@ describe("HttpServerTransport", () => {
 		await transport.start();
 		await waitForServer();
 
-		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads/instance-1/run`);
+		const res = await callRpc(transport.port, "/threads/run", { threadId: "instance-1" });
 		expect(res.status).toBe(200);
 		const body = await res.json();
-		expect(body).toMatchObject({
+		expect(body.json).toMatchObject({
 			sessionId: "session-1",
 			taskId: "task-1",
 			status: "completed",
@@ -426,7 +581,7 @@ describe("HttpServerTransport", () => {
 		});
 	});
 
-	it("serves /api/events SSE endpoint with correct headers", async () => {
+	it("serves /events SSE endpoint with correct headers", async () => {
 		transport = new HttpServerTransport({
 			controller: controller as any,
 			port: 0,
@@ -436,8 +591,6 @@ describe("HttpServerTransport", () => {
 		await waitForServer();
 		const port = transport.port;
 
-		// Connect TCP socket and send GET /events, then emit an event so the
-		// ReadableStream has data to flush.
 		const socket = connect(port, "127.0.0.1", () => {
 			socket.write("GET /events HTTP/1.1\r\nHost: localhost\r\n\r\n");
 		});
@@ -470,7 +623,6 @@ describe("HttpServerTransport", () => {
 			},
 		);
 
-		// Yield to let the middleware add the SSE client, then emit data
 		await new Promise((r) => setTimeout(r, 50));
 		transport.emit({
 			type: "instance.created",
@@ -486,7 +638,7 @@ describe("HttpServerTransport", () => {
 		expect(result.headers["cache-control"]).toBe("no-cache");
 	});
 
-	it("CORS headers present on API endpoints", async () => {
+	it("CORS headers present on ORPC endpoints", async () => {
 		transport = new HttpServerTransport({
 			controller: controller as any,
 			port: 0,
@@ -495,7 +647,7 @@ describe("HttpServerTransport", () => {
 		await transport.start();
 		await waitForServer();
 
-		const res = await fetch(`http://127.0.0.1:${transport.port}/api/threads`);
+		const res = await callRpc(transport.port, "/threads/list");
 		expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
 	});
 
@@ -576,6 +728,6 @@ describe("HttpServerTransport", () => {
 
 		await transport.stop();
 
-		await expect(fetch(`http://127.0.0.1:${port}/api/threads`)).rejects.toThrow();
+		await expect(callRpc(port, "/threads/list")).rejects.toThrow();
 	});
 });

@@ -6,6 +6,11 @@
 
 // Config
 
+export type { SubagentsApiContext } from "./api/context.js";
+export type { SubagentsContract } from "./api/contract.js";
+export { subagentsContract } from "./api/contract.js";
+export { createSubagentsRouter } from "./api/router.js";
+export type { SubagentsInputs, SubagentsOutputs } from "./api/types.js";
 export {
 	findConfigPath,
 	loadConfig,
@@ -45,16 +50,13 @@ export {
 } from "./instructions/index.js";
 export type { InstructionBuilder, InstructionContext } from "./instructions/types.js";
 export { registerLionCommands } from "./lion/commands.js";
-export type { LionCore, LionRun, LionRunStatus, LionSubagentRole, PersistedLionCoreState } from "./lion/core.js";
+export type { LionCore, LionRun, LionRunStatus, LionSubagentRole } from "./lion/core.js";
 export {
-	buildPersistedLionCore,
 	createLionCore,
 	finishRun,
-	LION_CORE_ENTRY_TYPE,
 	markAwaitingOrchestrator,
 	recordReviewVerdict,
 	recordSubagentResult,
-	restoreLionCore,
 	setRunStatus,
 	snapshot,
 	startRun,
@@ -63,7 +65,6 @@ export { LionEvents, LionRuntimeEventBus } from "./lion/events/index.js";
 // Lion orchestration
 export { lionExtension } from "./lion/index.js";
 export { MainSessionBridge } from "./lion/main-session.js";
-export { LionPersistence } from "./lion/persistence.js";
 export {
 	buildCorrectionPrompt,
 	buildExecutorPrompt,
@@ -72,6 +73,7 @@ export {
 	buildReviewerPrompt,
 } from "./lion/prompts/index.js";
 export { LionRuntime } from "./lion/runtime.js";
+export { readLionState, writeLionState } from "./lion/state-store.js";
 export type { LionToolResponse } from "./lion/tools.js";
 export { registerLionTools } from "./lion/tools.js";
 export type {
@@ -91,7 +93,6 @@ export type {
 	LionTaskStatus,
 	LionTaskStrategy,
 	LionTasksResult,
-	PersistedLionState,
 } from "./lion/types.js";
 export {
 	buildLionSubagentWidgetLines,

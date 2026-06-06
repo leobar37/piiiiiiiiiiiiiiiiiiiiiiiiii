@@ -64,7 +64,7 @@ const LionTasksParams = Type.Object({
 				title: Type.String({ description: "Short title identifying this task" }),
 				prompt: Type.String({
 					description:
-						"Compact XML delegation brief for the subagent. Include role, plan path, task id, task file path, scope, objective, constraints, output contract, and validation. Prefer references to files over pasted plan content or long command lists.",
+						"Compact structured delegation brief for the subagent. Include role, plan path, task id, task file path, scope, objective, constraints, output contract, and validation. Prefer references to files over pasted plan content or long command lists.",
 				}),
 				capabilities: Type.Optional(
 					Type.Object({
@@ -312,7 +312,7 @@ export function registerLionTools(runtime: LionRuntime): void {
 		description:
 			"Phase-aware Lion subagent orchestration. In planning it may run analyzer/planner delegations only; in build it may execute active plan tasks or explicit executor/reviewer delegations.",
 		promptSnippet:
-			"Delegate subagent work via lion_tasks. Use explicit tasks array with definition (analyzer, planner, reviewer, validator, executor), title, and XML prompt. Use source: active_plan_next_task (executor only) during build mode to run the next plan task. Strategies: parallel, sequential, chain. Do not pass both source and tasks.",
+			"Delegate subagent work via lion_tasks. Use explicit tasks array with definition (analyzer, planner, reviewer, validator, executor), title, and structured prompt. Use source: active_plan_next_task (executor only) during build mode to run the next plan task. Strategies: parallel, sequential, chain. Do not pass both source and tasks.",
 		parameters: LionTasksParams,
 		async execute(toolCallId, params, _signal, _onUpdate, ctx) {
 			const result = await runner.run(ctx, params, {

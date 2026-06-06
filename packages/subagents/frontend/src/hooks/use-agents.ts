@@ -1,9 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchAgents } from "../api.ts";
+import { api } from "../api/client.ts";
 
 export function useAgents() {
-	return useQuery({
-		queryKey: ["agents"],
-		queryFn: fetchAgents,
-	});
+	return useQuery(api.threads.list.queryOptions());
 }

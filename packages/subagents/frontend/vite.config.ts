@@ -1,17 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import path from "node:path";
 
 export default defineConfig(({ command }) => ({
 	plugins: [react(), tailwindcss()],
 	resolve: {
 		alias: {
 			"/src/main.tsx": command === "serve" ? "/src/dev-main.tsx" : "/src/main.tsx",
+			"@subagents/contract": path.resolve(__dirname, "../src/api/contract.ts"),
 		},
 	},
 	server: {
 		proxy: {
-			"/api": "http://127.0.0.1:9393",
+			"/rpc": "http://127.0.0.1:9393",
 			"/events": "http://127.0.0.1:9393",
 		},
 	},

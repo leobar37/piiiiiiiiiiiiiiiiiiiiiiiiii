@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { buildCodeReviewTodo, collectCodeReviewGitContext } from "./code-review.js";
+import { buildCodeReviewTodo, buildPlanCodeReviewTodo, collectCodeReviewGitContext } from "./code-review.js";
 import { loadLionPlan, resolvePlanPath } from "./plans/index.js";
 import { buildPlanReviewPrompt } from "./prompts/index.js";
 import { createReviewPlanFromTodo, loadReviewPlan } from "./review-plan.js";
@@ -18,7 +18,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 
 			if (!input) {
 				runtime.activatePlanning();
-				runtime.persist("activate");
+				runtime.persist();
 				runtime.ui.updateStatus(ctx, runtime.state);
 				// Ensure a persistent subagent controller exists from activation
 				runtime.ensureController(ctx);
@@ -68,7 +68,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 			const planPath = resolvePlanPath(ctx.cwd, input);
 			if (!planPath) {
 				runtime.activatePlanning();
-				runtime.persist("activate");
+				runtime.persist();
 				runtime.ui.updateStatus(ctx, runtime.state);
 				// Ensure a persistent subagent controller exists from activation
 				runtime.ensureController(ctx);
@@ -102,7 +102,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 
 			const plan = loadLionPlan(planPath);
 			runtime.activatePlan(plan);
-			runtime.persist("activate");
+			runtime.persist();
 			// Ensure a persistent subagent controller exists from activation
 			runtime.ensureController(ctx);
 			runtime.attachMainSession(ctx);
@@ -157,7 +157,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 			runtime.emit({ type: "lion.activate.start", timestamp: Date.now(), runId, input });
 			runtime.logState("command_lion_simple", { runId, input });
 			runtime.activateSimple();
-			runtime.persist("activate");
+			runtime.persist();
 			runtime.ensureController(ctx);
 			runtime.attachMainSession(ctx);
 			runtime.ui.updateStatus(ctx, runtime.state);
@@ -224,7 +224,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 				checklistFile: reviewPlan.checklistFile,
 				tasks: reviewPlan.tasks,
 			});
-			runtime.persist("activate");
+			runtime.persist();
 			runtime.ensureController(ctx);
 			runtime.attachMainSession(ctx);
 			runtime.ui.updateStatus(ctx, runtime.state);
@@ -274,6 +274,94 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 			}
 
 			runtime.ui.showMessage(`Lion code review strategy active.\n\n${reviewPlan.rootPath}`);
+		},
+	});
+
+	pi.registerCommand("lion-review", {
+		description: "Create a durable code review plan for the active Lion plan implementation",
+		handler: async (args, ctx) => {
+			const activePlanPath = runtime.state.activePlanPath;
+			if (!activePlanPath || runtime.state.strategy !== "plan") {
+				runtime.ui.showMessage("Lion review requires an active Lion plan. Run /lion-activate <plan> first.");
+				return;
+			}
+
+			const runId = createRunId();
+			const focus = args.trim();
+			const cwd = ctx.cwd ?? ctx.sessionManager.getCwd();
+			const plan = loadLionPlan(activePlanPath);
+			runtime.logState("command_lion_review", { runId, focus, cwd, planPath: plan.rootPath });
+
+			const git = await collectCodeReviewGitContext(cwd);
+			const todo = buildPlanCodeReviewTodo({ plan, focus, git });
+			const reviewPlan = createReviewPlanFromTodo(cwd, { slug: `review-${plan.slug}`, todo });
+			runtime.activateReview({
+				kind: "structured",
+				slug: reviewPlan.slug,
+				rootPath: reviewPlan.rootPath,
+				contextFile: reviewPlan.contextFile,
+				indexFile: reviewPlan.indexFile,
+				checklistFile: reviewPlan.checklistFile,
+				tasks: reviewPlan.tasks,
+			});
+			runtime.persist();
+			runtime.ensureController(ctx);
+			runtime.attachMainSession(ctx);
+			runtime.ui.updateStatus(ctx, runtime.state);
+			runtime.emit({
+				type: "lion.activate.complete",
+				timestamp: Date.now(),
+				runId,
+				strategy: runtime.state.strategy,
+				phase: runtime.state.phase,
+				planSlug: reviewPlan.slug,
+				planPath: reviewPlan.rootPath,
+			});
+
+			const content = [
+				"Lion plan review pipeline created.",
+				`Source plan: ${plan.slug}`,
+				`Source plan path: ${plan.rootPath}`,
+				focus ? `Focus: ${focus}` : "",
+				"",
+				todo.summary,
+				"",
+				`Durable review plan created: ${reviewPlan.rootPath}`,
+				"This review is based on the active Lion plan and implementation evidence from git.",
+				"Execute it as a read-only review pipeline: start the next review checklist task, run the returned lionTasksParams with lion_tasks, then record evidence.",
+				"",
+				'Next step: use lion_checklist_start_next with kind "review" and this review path.',
+				reviewPlan.rootPath,
+			]
+				.filter((line) => line !== "")
+				.join("\n");
+
+			const message = {
+				customType: "lion-orchestrator-feedback",
+				content,
+				display: false,
+				details: {
+					runId,
+					phase: runtime.state.phase,
+					strategy: runtime.state.strategy,
+					sourcePlanSlug: plan.slug,
+					sourcePlanPath: plan.rootPath,
+					planSlug: reviewPlan.slug,
+					planPath: reviewPlan.rootPath,
+					nextTools: ["lion_checklist_start_next", "lion_tasks"],
+					nextToolsRequired: ["lion_checklist_start_next"],
+					reviewTodo: todo,
+					reviewPlan,
+				},
+			};
+
+			if (ctx.isIdle()) {
+				pi.sendMessage(message, { triggerTurn: true });
+			} else {
+				pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
+			}
+
+			runtime.ui.showMessage(`Lion plan review pipeline created.\n\n${reviewPlan.rootPath}`);
 		},
 	});
 
@@ -403,7 +491,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 			const runId = createRunId();
 			runtime.logState("command_lion_build", { runId, planPath: activePlanPath, strategy: runtime.state.strategy });
 			runtime.setPhase("building");
-			runtime.persist("mode");
+			runtime.persist();
 			runtime.ui.updateStatus(ctx, runtime.state);
 
 			const content = isPlanMode
@@ -467,7 +555,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 			try {
 				if (!runtime.state.active) {
 					runtime.activatePlanning();
-					runtime.persist("activate");
+					runtime.persist();
 					runtime.ui.updateStatus(ctx, runtime.state);
 				}
 				runtime.ensureController(ctx);

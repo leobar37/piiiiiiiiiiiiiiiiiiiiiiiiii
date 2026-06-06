@@ -3,6 +3,7 @@ import { basename, dirname, extname } from "node:path";
 import { promisify } from "node:util";
 import { getInternalSkillPath } from "../internal-skills.js";
 import type { RunTasksParams } from "./task-runner.js";
+import type { LionPlan } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const REVIEW_CONCURRENCY = 3;
@@ -183,6 +184,106 @@ export function buildCodeReviewTodo(input: { scope: string; git: CodeReviewGitCo
 			priorityFiles,
 			commitFiles,
 			relatedCandidates,
+			tasks,
+		),
+	};
+}
+
+export function buildPlanCodeReviewTodo(input: {
+	plan: LionPlan;
+	focus: string;
+	git: CodeReviewGitContext;
+}): CodeReviewTodo {
+	const focus = input.focus.trim();
+	const dirtyFiles = unique([...parseStatusFiles(input.git.statusShort), ...splitLines(input.git.diffNameOnly)]);
+	const recentCommitFiles = splitLines(input.git.recentDiffNameOnly);
+	const selectedStrategy: CodeReviewTodo["selectedStrategy"] =
+		dirtyFiles.length > 0 ? "dirty" : recentCommitFiles.length > 0 ? "recent_commits" : "prompt_scope";
+	const implementationFiles = selectedStrategy === "recent_commits" ? recentCommitFiles : dirtyFiles;
+	const planTaskFiles = input.plan.tasks.map((task) => `${input.plan.rootPath}/${task.file}`);
+	const reviewScope = `Lion plan ${input.plan.slug}${focus ? `: ${focus}` : ""}`;
+	const codeReviewSkillPath = getInternalSkillPath("code-review");
+	const diffStat = input.git.diffStat.trim() || "(no diff stat available)";
+	const recentDiffStat = input.git.recentDiffStat.trim() || "(no recent commit diff stat available)";
+	const recentCommitLog = input.git.recentCommitLog.trim() || "(no recent commits available)";
+	const tasks: NonNullable<RunTasksParams["tasks"]> = [
+		{
+			definition: "analyzer",
+			title: "Map plan implementation surface",
+			prompt: buildDelegation({
+				role: "analyzer",
+				objective:
+					"Map the active Lion plan, executed task scope, implementation changes, tests, and likely regression surfaces before review starts.",
+				scope: unique([input.plan.rootPath, ...planTaskFiles, ...implementationFiles]),
+				context: [
+					`Review source: active Lion plan ${input.plan.slug}`,
+					`Plan path: ${input.plan.rootPath}`,
+					`Focus: ${focus || "(none)"}`,
+					`Selected strategy: ${selectedStrategy}`,
+					"Plan tasks:",
+					formatList(input.plan.tasks.map((task) => `${task.id}: ${task.title} (${task.file})`)),
+					"Implementation files from git:",
+					formatList(implementationFiles),
+					"Diff stat:",
+					selectedStrategy === "recent_commits" ? recentDiffStat : diffStat,
+					"Recent commits:",
+					recentCommitLog,
+				],
+				output:
+					"Return plan intent, implemented surface, files inspected, likely risk areas, validation targets, missing evidence, and recommended reviewer focus. Do not edit files.",
+			}),
+			capabilities: { canEdit: false, canWrite: false, canExecute: false },
+			tools: ["read", "glob", "grep"],
+			disabledTools: ["edit", "write", "multi-edit", "bash"],
+			skillPaths: [codeReviewSkillPath],
+		},
+		{
+			definition: "reviewer",
+			title: "Review plan implementation for regressions",
+			prompt: buildDelegation({
+				role: "reviewer",
+				objective:
+					"Review the implementation produced for the active Lion plan. Verify that plan requirements were satisfied without introducing correctness, data loss, API contract, security, test, or behavior regressions.",
+				scope: unique([...implementationFiles, input.plan.rootPath, ...planTaskFiles]),
+				context: [
+					`Review source: active Lion plan ${input.plan.slug}`,
+					`Plan path: ${input.plan.rootPath}`,
+					`Focus: ${focus || "(none)"}`,
+					`Selected strategy: ${selectedStrategy}`,
+					"Plan tasks:",
+					formatList(input.plan.tasks.map((task) => `${task.id}: ${task.title} (${task.file})`)),
+					"Implementation files from git:",
+					formatList(implementationFiles),
+					"Diff stat:",
+					selectedStrategy === "recent_commits" ? recentDiffStat : diffStat,
+					"Recent commits:",
+					recentCommitLog,
+				],
+				output:
+					"Findings first, ordered by severity. For each finding, include file references, plan/task expectation, evidence checked, false-positive check, and required fix. If no blocking issues are found, say so clearly with residual risks.",
+			}),
+			capabilities: { canEdit: false, canWrite: false, canExecute: true },
+			tools: ["read", "glob", "grep", "bash"],
+			disabledTools: ["edit", "write", "multi-edit"],
+			skillPaths: [codeReviewSkillPath],
+		},
+	];
+
+	return {
+		scope: reviewScope,
+		userPrompt: focus,
+		selectedStrategy,
+		priorityFiles: selectedStrategy === "recent_commits" ? [] : implementationFiles,
+		recentCommitFiles: selectedStrategy === "recent_commits" ? implementationFiles : [],
+		relatedCandidates: unique([input.plan.rootPath, ...planTaskFiles]),
+		tasks,
+		summary: formatReviewTodoSummary(
+			reviewScope,
+			focus,
+			selectedStrategy,
+			selectedStrategy === "recent_commits" ? [] : implementationFiles,
+			selectedStrategy === "recent_commits" ? implementationFiles : [],
+			unique([input.plan.rootPath, ...planTaskFiles]),
 			tasks,
 		),
 	};
