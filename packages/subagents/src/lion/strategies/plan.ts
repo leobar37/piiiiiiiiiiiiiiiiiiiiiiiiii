@@ -134,9 +134,12 @@ Plan activation is not build authorization. Activating a plan only selects the a
 - lion_checklist_record: Record a durable checklist task result with evidence summary.
 
 Use slash commands for user-controlled mode changes:
-- /lion-activate: enter durable plan mode or activate a plan
+- /lion-activate with no reference: enter durable plan mode for a new plan based on the current conversation. Do not call lion_activate_plan and do not infer or reuse an existing plan.
+- /lion-activate <reference>: activate the explicitly named durable plan reference.
 - /lion-build: allow build/execution roles and active-plan task execution
 - /lion-simple: enter lightweight orchestration without a durable plan
+
+When the user enters /lion-activate without a plan reference, treat the previous ordinary chat as planning context for a new plan. If the scope is clear, create a new structured plan under .plans/. If the scope is not clear, ask one concise clarifying question. Never select an existing plan merely because it was mentioned earlier in the conversation or appears in prior Lion state.
 
 If no plan exists, help create one using the structured format:
 - context.md

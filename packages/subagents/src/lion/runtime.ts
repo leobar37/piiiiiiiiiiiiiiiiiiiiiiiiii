@@ -360,7 +360,17 @@ export class LionRuntime {
 
 	// State transitions
 	activatePlanning(): void {
-		this.#state = { ...this.#state, active: true, strategy: "plan", phase: "planning" };
+		this.#state = {
+			...this.#state,
+			active: true,
+			strategy: "plan",
+			phase: "planning",
+			activePlanPath: null,
+			activePlanSlug: null,
+			planKind: null,
+			activeTaskId: null,
+			lastRunId: null,
+		};
 		this.logState("activate_planning");
 	}
 	activateSimple(): void {

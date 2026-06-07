@@ -210,6 +210,14 @@ describe("Lion dashboard UI", () => {
 		expect(html).not.toContain("Primary session");
 	});
 
+	it("keeps the subagent trigger in the layout rail", () => {
+		const html = renderToString(<SubagentListPanel activeThreadId={null} agentsOverride={[runningAgent]} />);
+
+		expect(html).toContain("relative z-30 flex h-full w-11");
+		expect(html).toContain("pt-16");
+		expect(html).not.toContain("fixed left-4 top-4");
+	});
+
 	it("marks the active subagent in the persistent list", () => {
 		const html = renderToString(
 			<SubagentListPanel activeThreadId="subagent-running" agentsOverride={[runningAgent, completedAgent]} initiallyOpen />,
@@ -289,5 +297,27 @@ describe("Lion dashboard UI", () => {
 		expect(html).toContain("Hola.");
 		expect(html).not.toContain("ASSISTANT");
 		expect(html.indexOf("Thinking")).toBeLessThan(html.indexOf("Hola."));
+	});
+
+	it("renders assistant tools outside the text bubble", () => {
+		const message: ChatMessage = {
+			id: "assistant-tools",
+			instanceId: "main:session-1",
+			role: "assistant",
+			blocks: [
+				{ type: "text", text: "Running checks." },
+				{ type: "toolCall", id: "tool-1", name: "bash", arguments: { command: "bun run check" } },
+				{ type: "toolResult", toolCallId: "tool-1", toolName: "bash", content: "ok", isError: false },
+			],
+			timestamp: 100,
+		};
+
+		const html = renderToString(<MessageItem message={message} />);
+
+		expect(html).toContain("Running checks.");
+		expect(html).toContain("bash");
+		expect(html).toContain("Result");
+		expect(html.indexOf("Running checks.")).toBeLessThan(html.indexOf("bash"));
+		expect(html).toContain("pl-2");
 	});
 });

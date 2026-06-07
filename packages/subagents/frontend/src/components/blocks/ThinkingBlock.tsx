@@ -14,11 +14,9 @@ export function ThinkingBlock({ thinking, redacted, isStreaming }: ThinkingBlock
 
 	if (redacted) {
 		return (
-			<div className="my-3 px-4 py-3 bg-bg-elevated border border-border-subtle rounded-lg">
-				<div className="flex items-center gap-2 text-xs text-text-muted italic">
-					<Link className="h-3.5 w-3.5" aria-hidden="true" />
-					Thinking content redacted
-				</div>
+			<div className="my-1 inline-flex max-w-full items-center gap-1.5 rounded border border-border-subtle bg-bg-surface/50 px-2 py-1 text-[11px] leading-4 text-text-muted">
+				<Link className="h-3 w-3 shrink-0" aria-hidden="true" />
+				Thinking content redacted
 			</div>
 		);
 	}
@@ -26,20 +24,19 @@ export function ThinkingBlock({ thinking, redacted, isStreaming }: ThinkingBlock
 	if (!thinking.trim()) return null;
 
 	return (
-		<div className="my-3 bg-bg-elevated border border-border-subtle rounded-lg overflow-hidden">
+		<div className="my-1 w-fit max-w-full overflow-hidden rounded border border-border-subtle bg-bg-surface/45">
 			<button
+				type="button"
 				onClick={toggle}
-				className={`w-full flex items-center justify-between px-4 py-3 text-sm text-text-secondary hover:text-text-primary transition-colors cursor-pointer select-none ${isStreaming ? "animate-pulse-opacity" : ""}`}
+				className={`flex max-w-full cursor-pointer select-none items-center gap-2 px-2 py-1 text-[11px] leading-4 text-text-muted transition-colors hover:text-text-secondary ${isStreaming ? "animate-pulse-opacity" : ""}`}
 			>
-				<div className="flex items-center gap-2">
-					<Sparkles className="h-3.5 w-3.5 text-text-tertiary" aria-hidden="true" />
-					<span className="font-medium">Thinking</span>
-					{isStreaming && <span className="text-text-muted">...</span>}
-				</div>
-				<ChevronDown className={`h-4 w-4 text-text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
+				<Sparkles className="h-3 w-3 shrink-0 text-text-tertiary" aria-hidden="true" />
+				<span className="font-medium">Thinking</span>
+				{isStreaming && <span>...</span>}
+				<ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
 			</button>
 			{isExpanded && (
-				<div className="px-4 pb-3 text-xs text-text-secondary whitespace-pre-wrap font-mono leading-relaxed">
+				<div className="max-h-40 max-w-2xl overflow-auto border-t border-border-subtle px-2 py-1.5 font-mono text-[11px] leading-snug text-text-secondary whitespace-pre-wrap">
 					{thinking}
 				</div>
 			)}

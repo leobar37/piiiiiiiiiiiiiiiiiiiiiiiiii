@@ -5,6 +5,7 @@ import { loadLionPlan, resolvePlanPath } from "./plans/index.js";
 import { buildPlanReviewPrompt } from "./prompts/index.js";
 import { createReviewPlanFromTodo, loadReviewPlan } from "./review-plan.js";
 import type { LionRuntime } from "./runtime.js";
+import { TaskRunner } from "./task-runner.js";
 import { createRunId, formatPlanSummary } from "./utils.js";
 
 export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): void {
@@ -30,24 +31,18 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 					strategy: runtime.state.strategy,
 					phase: runtime.state.phase,
 				});
-				const content = runtime.state.activePlanSlug
-					? [
-							"Lion planning mode active.",
-							`Plan: ${runtime.state.activePlanSlug}`,
-							"Use lion_tasks with analyzer or planner delegations for non-trivial work.",
-							"Do not implement application code directly.",
-						].join("\n")
-					: [
-							"Lion planning mode active.",
-							"No plan selected. I can help create or refine a structured plan, but I will not implement application code directly.",
-							"Use lion_tasks with analyzer or planner delegations for non-trivial work.",
-						].join("\n");
+				const content = [
+					"Lion planning mode active.",
+					"No plan selected. Treat this as a request to create a new structured plan from the current conversation.",
+					"Do not activate an existing plan unless the user names a plan reference.",
+					"Use lion_tasks with analyzer or planner delegations for non-trivial work.",
+				].join("\n");
 				const message = {
 					customType: "lion-orchestrator-feedback" as const,
 					content,
 					display: false,
 					details: {
-						planSlug: runtime.state.activePlanSlug,
+						planSlug: null,
 						phase: runtime.state.phase,
 						nextTools: ["lion_tasks"],
 					},
@@ -58,9 +53,7 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 					pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
 				}
 				runtime.ui.showMessage(
-					runtime.state.activePlanSlug
-						? `Lion planning mode active\n\n${runtime.state.activePlanSlug}`
-						: "Lion planning mode active\n\nNo plan selected. I can help create or refine a structured plan, but I will not implement application code directly.",
+					"Lion planning mode active\n\nNo plan selected. Create a new structured plan from the current conversation.",
 				);
 				return;
 			}
@@ -534,7 +527,9 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 				},
 			};
 
-			if (ctx.isIdle()) {
+			if (isPlanMode) {
+				pi.sendMessage(message, { triggerTurn: false });
+			} else if (ctx.isIdle()) {
 				pi.sendMessage(message, { triggerTurn: true });
 			} else {
 				pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
@@ -546,6 +541,14 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 					? `Lion review execution mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`
 					: "Lion execution mode activated. Delegate with lion_tasks.";
 			runtime.ui.showMessage(displayMessage);
+
+			if (isPlanMode) {
+				const runner = new TaskRunner(runtime);
+				await runner.runActivePlanBuild(ctx, {
+					threadId: runtime.mainSession.getThread()?.instanceId ?? `main:${ctx.sessionManager.getSessionId()}`,
+					toolCallId: `lion-build-${runId}`,
+				});
+			}
 		},
 	});
 

@@ -9,6 +9,7 @@
 
 import { StringEnum } from "@earendil-works/pi-ai";
 import { compact, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { readLionState } from "@local/pi-subagents";
 import { Type } from "typebox";
 import { GoalContextTracker } from "./context-store.js";
 import {
@@ -29,7 +30,6 @@ import { goalResponse, goalSummary, validateObjective } from "./utils.js";
 const STATE_TYPE = "goal-v2";
 const UI_MESSAGE_TYPE = "goal-v2-ui";
 const CONTINUATION_MESSAGE_TYPE = "goal-v2-continuation";
-const LION_STATE_TYPE = "lion-state";
 const GOAL_TOOL_NAMES = ["get_goal", "create_goal", "update_goal", "record_goal_progress"];
 
 const CreateGoalParams = Type.Object({
@@ -77,15 +77,9 @@ export default function goalV2Extension(pi: ExtensionAPI) {
 	}
 
 	function isLionBuilding(ctx: ExtensionContext): boolean {
-		let latest: { version?: unknown; active?: unknown; phase?: unknown; updatedAt?: unknown } | undefined;
-		for (const entry of ctx.sessionManager.getBranch()) {
-			if (entry.type !== "custom" || entry.customType !== LION_STATE_TYPE) continue;
-			const data = entry.data as { version?: unknown; active?: unknown; phase?: unknown; updatedAt?: unknown };
-			if (!latest || Number(data.updatedAt ?? 0) >= Number(latest.updatedAt ?? 0)) {
-				latest = data;
-			}
-		}
-		return latest?.version === 2 && latest.active === true && latest.phase === "building";
+		const cwd = ctx.cwd ?? ctx.sessionManager.getCwd();
+		const saved = readLionState(cwd, ctx);
+		return saved?.state.active === true && saved.state.phase === "building";
 	}
 
 	function syncGoalTools(ctx: ExtensionContext): void {

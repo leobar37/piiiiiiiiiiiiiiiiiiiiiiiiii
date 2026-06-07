@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
@@ -117,6 +117,49 @@ async function testGoalToolsStayInactiveDuringLionBuild(): Promise<void> {
 	);
 }
 
+async function testGoalToolsStayInactiveDuringFileBackedLionBuild(): Promise<void> {
+	const cwd = mkdtempSync(join(tmpdir(), "goal-v2-lion-build-"));
+	try {
+		const pi = fakePi();
+		goalV2Extension(pi.api);
+		writeFileBackedLionState(cwd, "building");
+		const ctx = fakeCtx(pi, cwd);
+
+		await pi.commands.get("goal")?.handler("ship the feature", ctx);
+
+		assert.deepEqual(pi.activeTools, ["read", "bash"]);
+		assert.equal(
+			pi.messages.some((message) => message.content.customType === "goal-v2-continuation"),
+			false,
+		);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+}
+
+async function testGoalToolsActivateDuringFileBackedLionPlanning(): Promise<void> {
+	const cwd = mkdtempSync(join(tmpdir(), "goal-v2-lion-planning-"));
+	try {
+		const pi = fakePi();
+		goalV2Extension(pi.api);
+		writeFileBackedLionState(cwd, "planning");
+		const ctx = fakeCtx(pi, cwd);
+
+		await pi.commands.get("goal")?.handler("ship the feature", ctx);
+
+		assert.deepEqual(pi.activeTools.sort(), [
+			"bash",
+			"create_goal",
+			"get_goal",
+			"read",
+			"record_goal_progress",
+			"update_goal",
+		]);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+}
+
 async function testGoalToolCallBlockedWhenInactive(): Promise<void> {
 	const pi = fakePi();
 	goalV2Extension(pi.api);
@@ -136,6 +179,8 @@ testCoreTracksPhaseAndBlockedStatus();
 await testContextPersistsStructuredProgress();
 await testGoalToolsActivateOnlyAfterGoalCommand();
 await testGoalToolsStayInactiveDuringLionBuild();
+await testGoalToolsStayInactiveDuringFileBackedLionBuild();
+await testGoalToolsActivateDuringFileBackedLionPlanning();
 await testGoalToolCallBlockedWhenInactive();
 
 type Handler = (
@@ -212,13 +257,43 @@ function fakePi() {
 	};
 }
 
-function fakeCtx(pi: ReturnType<typeof fakePi>): ExtensionContext {
+function writeFileBackedLionState(cwd: string, phase: "planning" | "building"): void {
+	const statePath = join(cwd, ".pi", "lion", "state.json");
+	mkdirSync(join(cwd, ".pi", "lion"), { recursive: true });
+	writeFileSync(
+		statePath,
+		`${JSON.stringify(
+			{
+				version: 3,
+				state: {
+					version: 2,
+					active: true,
+					strategy: "plan",
+					phase,
+					activePlanPath: "/tmp/test-plan",
+					activePlanSlug: "test-plan",
+					planKind: "structured",
+					activeTaskId: null,
+					maxAttempts: 3,
+					lastRunId: null,
+				},
+				core: { activeRun: null, runHistory: [] },
+				updatedAt: Date.now(),
+			},
+			null,
+			2,
+		)}\n`,
+	);
+}
+
+function fakeCtx(pi: ReturnType<typeof fakePi>, cwd = mkdtempSync(join(tmpdir(), "goal-v2-cwd-"))): ExtensionContext {
 	return {
 		sessionManager: {
 			getBranch: () => pi.entries,
-			getCwd: () => mkdtempSync(join(tmpdir(), "goal-v2-cwd-")),
+			getCwd: () => cwd,
 			getSessionId: () => "session-1",
 		},
+		cwd,
 		hasPendingMessages: () => false,
 		isIdle: () => true,
 		hasUI: false,

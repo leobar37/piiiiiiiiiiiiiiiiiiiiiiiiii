@@ -214,6 +214,9 @@ function testBuildPlanningSystemPrompt(): void {
 	assert.ok(prompt.includes("Do not delegate the raw user prompt just to understand it"));
 	assert.ok(prompt.includes("use any relevant loaded skill"));
 	assert.ok(prompt.includes("Executor delegations must reference the active plan and task file"));
+	assert.ok(prompt.includes("/lion-activate with no reference"));
+	assert.ok(prompt.includes("Do not call lion_activate_plan and do not infer or reuse an existing plan"));
+	assert.ok(prompt.includes("previous ordinary chat as planning context for a new plan"));
 }
 
 function testHasPlanReferenceSupportsStructuredBriefs(): void {
@@ -904,6 +907,82 @@ async function testTaskRunnerMarksDelegationLimitAsRetryable(): Promise<void> {
 		assert.equal(loadLionPlan(dir).tasks[0].status, "retryable");
 		assert.equal(runtime.state.activeTaskId, null);
 		assert.ok(pi.messages.some((message) => message.content.content.includes("Retry the current task")));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+async function testLionBuildCommandRunsActivePlanToCompletion(): Promise<void> {
+	const dir = createStructuredPlanDirWithDependentChecklist();
+	const pi = fakePiWithCommands();
+	const executedTasks: string[] = [];
+	try {
+		const runtime = new LionRuntime(pi as any, dir);
+		runtime.activatePlan(loadLionPlan(dir));
+		runtime.activeController = {
+			createInstance(task: DelegationTask) {
+				executedTasks.push(task.description ?? "");
+				return {
+					instanceId: `inst-${task.id}`,
+					getState: () => delegationResult(task, "completed", "bun run check passed").finalState,
+					start: async () => delegationResult(task, "completed", "bun run check passed"),
+				};
+			},
+			getInstances: () => [],
+			removeInstance: () => {},
+			getEventBus: () => ({ subscribe: () => () => {} }),
+		} as any;
+		registerLionCommands(pi as any, runtime);
+
+		await pi.commands.get("lion-build")!.handler("", fakeCtx({ cwd: dir }) as any);
+
+		const updated = loadLionPlan(dir);
+		assert.deepEqual(
+			updated.tasks.map((item) => item.status),
+			["complete", "complete"],
+		);
+		assert.deepEqual(executedTasks, ["T-001: Task 1", "T-002: Task 2"]);
+		assert.equal(runtime.state.phase, "building");
+		assert.equal(pi.messages[0].options.triggerTurn, false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+async function testLionBuildCommandStopsOnRetryableTask(): Promise<void> {
+	const dir = createStructuredPlanDirWithDependentChecklist();
+	const pi = fakePiWithCommands();
+	const executedTasks: string[] = [];
+	try {
+		const runtime = new LionRuntime(pi as any, dir);
+		runtime.activatePlan(loadLionPlan(dir));
+		runtime.activeController = {
+			createInstance(task: DelegationTask) {
+				executedTasks.push(task.description ?? "");
+				return {
+					instanceId: `inst-${task.id}`,
+					getState: () => delegationResult(task, "completed", "summary without structured result").finalState,
+					start: async () => ({
+						...delegationResult(task, "completed", "summary without structured result"),
+						structuredResult: false,
+					}),
+				};
+			},
+			getInstances: () => [],
+			removeInstance: () => {},
+			getEventBus: () => ({ subscribe: () => () => {} }),
+		} as any;
+		registerLionCommands(pi as any, runtime);
+
+		await pi.commands.get("lion-build")!.handler("", fakeCtx({ cwd: dir }) as any);
+
+		const updated = loadLionPlan(dir);
+		assert.deepEqual(
+			updated.tasks.map((item) => item.status),
+			["retryable", "pending"],
+		);
+		assert.deepEqual(executedTasks, ["T-001: Task 1"]);
+		assert.equal(runtime.state.activeTaskId, null);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -1873,6 +1952,47 @@ function testRuntimeActivateSimple(): void {
 	assert.equal(runtime.state.planKind, null);
 }
 
+function testRuntimeActivatePlanningClearsPreviousPlan(): void {
+	const runtime = new LionRuntime(fakePi() as any, TEST_CWD);
+	runtime.activatePlan(plan);
+	runtime.setPhase("building");
+	runtime.setActiveTask("T-001");
+	runtime.setLastRun("run-1");
+
+	runtime.activatePlanning();
+
+	assert.equal(runtime.state.active, true);
+	assert.equal(runtime.state.strategy, "plan");
+	assert.equal(runtime.state.phase, "planning");
+	assert.equal(runtime.state.activePlanPath, null);
+	assert.equal(runtime.state.activePlanSlug, null);
+	assert.equal(runtime.state.planKind, null);
+	assert.equal(runtime.state.activeTaskId, null);
+	assert.equal(runtime.state.lastRunId, null);
+}
+
+async function testLionActivateCommandWithoutReferenceStartsFreshPlanning(): Promise<void> {
+	const pi = fakePiWithCommands();
+	const runtime = new LionRuntime(pi as any, TEST_CWD);
+	runtime.activatePlan(plan);
+	registerLionCommands(pi as any, runtime);
+
+	await pi.commands.get("lion-activate")!.handler("", fakeCtx({}) as any);
+
+	assert.equal(runtime.state.active, true);
+	assert.equal(runtime.state.strategy, "plan");
+	assert.equal(runtime.state.phase, "planning");
+	assert.equal(runtime.state.activePlanSlug, null);
+	assert.equal(runtime.state.activePlanPath, null);
+	const feedback = pi.messages.find((message) => message.content.customType === "lion-orchestrator-feedback");
+	assert.ok(feedback);
+	assert.ok(feedback.content.content.includes("create a new structured plan"));
+	assert.ok(
+		feedback.content.content.includes("Do not activate an existing plan unless the user names a plan reference"),
+	);
+	assert.equal(feedback.content.details.planSlug, null);
+}
+
 async function testLionSimpleCommandActivatesSimpleStrategy(): Promise<void> {
 	const pi = fakePiWithCommands();
 	const runtime = new LionRuntime(pi as any, TEST_CWD);
@@ -2392,6 +2512,7 @@ function fakeCtx(opts: {
 		modelRegistry: {
 			getApiKeyAndHeaders: () => Promise.resolve({ ok: true, apiKey: "test", headers: {} }),
 		},
+		waitForIdle: () => Promise.resolve(),
 	};
 }
 
@@ -2590,6 +2711,14 @@ const tests = [
 		name: "testTaskRunnerMarksDelegationLimitAsRetryable",
 		fn: testTaskRunnerMarksDelegationLimitAsRetryable,
 	},
+	{
+		name: "testLionBuildCommandRunsActivePlanToCompletion",
+		fn: testLionBuildCommandRunsActivePlanToCompletion,
+	},
+	{
+		name: "testLionBuildCommandStopsOnRetryableTask",
+		fn: testLionBuildCommandStopsOnRetryableTask,
+	},
 	{ name: "testStructuredPlanNextTaskRespectsDependencies", fn: testStructuredPlanNextTaskRespectsDependencies },
 	{ name: "testStructuredPlanRecordTaskResultPersistsSummary", fn: testStructuredPlanRecordTaskResultPersistsSummary },
 	{ name: "testLionTaskEvidenceRequiresValidation", fn: testLionTaskEvidenceRequiresValidation },
@@ -2660,6 +2789,11 @@ const tests = [
 	{ name: "testRuntimeEnsureControllerReturnsSame", fn: testRuntimeEnsureControllerReturnsSame },
 	{ name: "testRuntimeSetMode", fn: testRuntimeSetMode },
 	{ name: "testRuntimeActivateSimple", fn: testRuntimeActivateSimple },
+	{ name: "testRuntimeActivatePlanningClearsPreviousPlan", fn: testRuntimeActivatePlanningClearsPreviousPlan },
+	{
+		name: "testLionActivateCommandWithoutReferenceStartsFreshPlanning",
+		fn: testLionActivateCommandWithoutReferenceStartsFreshPlanning,
+	},
 	{ name: "testLionSimpleCommandActivatesSimpleStrategy", fn: testLionSimpleCommandActivatesSimpleStrategy },
 	{ name: "testRuntimeCompactionInstructionsUseStrategy", fn: testRuntimeCompactionInstructionsUseStrategy },
 	{ name: "testRuntimeSetActiveTask", fn: testRuntimeSetActiveTask },

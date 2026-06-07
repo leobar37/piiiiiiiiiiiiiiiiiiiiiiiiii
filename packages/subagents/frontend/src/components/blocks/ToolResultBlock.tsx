@@ -1,5 +1,6 @@
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { useState } from "react";
+import { CheckCircle2, ChevronDown, XCircle } from "lucide-react";
 import { ChecklistProgressBlock } from "../ChecklistProgressBlock.tsx";
 import type { LionChecklistSnapshot } from "../../types.ts";
 
@@ -47,34 +48,26 @@ export function ToolResultBlock({ toolName, content, isError }: ToolResultBlockP
 			<button
 				type="button"
 				onClick={() => setIsExpanded((value) => !value)}
-				className={`inline-flex max-w-full items-center gap-1.5 rounded border px-1.5 py-0.5 text-[11px] leading-4 transition ${
+				className={`inline-flex max-w-full items-center gap-1.5 rounded border bg-bg-base/70 px-2 py-1 text-[11px] leading-4 transition ${
 					isError
-						? "border-error/30 bg-bg text-error hover:border-error/50"
-						: "border-success/20 bg-bg text-success hover:border-success/40"
+						? "border-error/25 text-error hover:border-error/45"
+						: "border-success/20 text-success hover:border-success/40"
 				}`}
 			>
 				{isError ? (
-					<svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-					</svg>
+					<XCircle className="h-3 w-3 shrink-0" aria-hidden="true" />
 				) : (
-					<svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-					</svg>
+					<CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden="true" />
 				)}
 				<span className="shrink-0 font-medium">{isError ? "Error" : "Result"}</span>
 				<span className="truncate text-text-secondary">{summary}</span>
-				<svg
+				<ChevronDown
 					className={`h-3 w-3 shrink-0 text-text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`}
-					fill="none"
-					stroke="currentColor"
-					viewBox="0 0 24 24"
-				>
-					<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-				</svg>
+					aria-hidden="true"
+				/>
 			</button>
 			{isExpanded ? (
-				<div className={`mt-1 max-w-full rounded border bg-bg px-2 py-1 ${isError ? "border-error/20" : "border-success/20"}`}>
+				<div className={`mt-1 max-w-full rounded border bg-bg-base/70 px-2 py-1 ${isError ? "border-error/20" : "border-success/20"}`}>
 					{renderAsPre ? (
 						<pre className="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-text-secondary">
 							{formatted}

@@ -266,7 +266,12 @@ export class HttpServerTransport implements SubAgentTransport {
 		try {
 			const path = join(this.staticDir, filename);
 			const content = readFileSync(path);
-			return new Response(content, { headers: { "Content-Type": contentType } });
+			return new Response(content, {
+				headers: {
+					"Content-Type": contentType,
+					"Cache-Control": "no-store",
+				},
+			});
 		} catch {
 			return new Response("Not Found", { status: 404 });
 		}

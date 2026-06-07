@@ -49,6 +49,31 @@ export class TaskRunner {
 
 	constructor(private runtime: LionRuntime) {}
 
+	async runActivePlanBuild(ctx: ExtensionContext, parent: RunTasksParent): Promise<LionToolResponse[]> {
+		const responses: LionToolResponse[] = [];
+		for (;;) {
+			let response: LionToolResponse;
+			try {
+				response = await this.run(
+					ctx,
+					{ source: "active_plan_next_task", role: "executor", strategy: "sequential" },
+					parent,
+				);
+			} catch (err: unknown) {
+				if (err instanceof Error && err.message === "No executable task is available in the active Lion plan.") {
+					return responses;
+				}
+				throw err;
+			}
+
+			responses.push(response);
+			const shouldContinue =
+				response.tasks?.length &&
+				response.tasks.every((task) => task.status === "completed" && task.verificationStatus === "verified");
+			if (!shouldContinue) return responses;
+		}
+	}
+
 	async run(ctx: ExtensionContext, params: RunTasksParams, parent: RunTasksParent): Promise<LionToolResponse> {
 		const { runtime } = this;
 		const activePlanPath = runtime.state.activePlanPath;

@@ -15,7 +15,10 @@ export function MessageItem({ message }: MessageItemProps) {
 	const isTool = message.role === "tool";
 	const copyText = useMemo(() => messageToText(message), [message]);
 	const thinkingBlocks = isAssistant ? message.blocks.filter(isThinkingBlock) : [];
-	const visibleBlocks = isAssistant ? message.blocks.filter((block) => !isThinkingBlock(block)) : message.blocks;
+	const toolBlocks = isAssistant ? message.blocks.filter(isToolBlock) : [];
+	const visibleBlocks = isAssistant
+		? message.blocks.filter((block) => !isThinkingBlock(block) && !isToolBlock(block))
+		: message.blocks;
 
 	const handleCopy = useCallback(() => {
 		if (!copyText.trim()) return;
@@ -43,7 +46,7 @@ export function MessageItem({ message }: MessageItemProps) {
 		<div className={`group flex ${isUser ? "justify-end" : "justify-start"}`}>
 			<div className={`max-w-[85%] min-w-0 select-text space-y-2 ${isUser ? "items-end" : "items-start"}`}>
 				{thinkingBlocks.length > 0 ? (
-					<div className="min-w-0">
+					<div className="min-w-0 space-y-1">
 						{thinkingBlocks.map((block, index) => (
 							<BlockRenderer key={`thinking-${index}`} block={block} currentThreadId={message.instanceId} />
 						))}
@@ -71,6 +74,13 @@ export function MessageItem({ message }: MessageItemProps) {
 						</div>
 					</div>
 				) : null}
+				{toolBlocks.length > 0 ? (
+					<div className="min-w-0 space-y-1 pl-2">
+						{toolBlocks.map((block, index) => (
+							<BlockRenderer key={`tool-${index}`} block={block} currentThreadId={message.instanceId} />
+						))}
+					</div>
+				) : null}
 			</div>
 		</div>
 	);
@@ -78,6 +88,10 @@ export function MessageItem({ message }: MessageItemProps) {
 
 function isThinkingBlock(block: MessageBlock): block is Extract<MessageBlock, { type: "thinking" }> {
 	return block.type === "thinking";
+}
+
+function isToolBlock(block: MessageBlock): block is Extract<MessageBlock, { type: "toolCall" | "toolResult" }> {
+	return block.type === "toolCall" || block.type === "toolResult";
 }
 
 async function copyToClipboard(text: string): Promise<void> {

@@ -796,6 +796,7 @@ describe("HttpServerTransport", () => {
 
 		const res = await fetch(`http://127.0.0.1:${transport.port}/`);
 		expect(res.status).toBe(200);
+		expect(res.headers.get("Cache-Control")).toBe("no-store");
 		const text = await res.text();
 		expect(text).toContain("Hello");
 	});

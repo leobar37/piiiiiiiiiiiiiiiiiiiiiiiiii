@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { Users, X } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import type { Transition } from "framer-motion";
+import { Activity, AlertCircle, CheckCircle2, Clock3, ListFilter, Loader2, Timer, Users, Wrench, X } from "lucide-react";
 import { navigateToThread } from "../navigation.ts";
 import { useSubAgentStore } from "../store/use-subagent-store.ts";
 import type { SubAgentInstanceState, SubAgentState } from "../types.ts";
-import { StatusBadge } from "./StatusBadge.tsx";
 
 type SubagentFilter = "all" | "running" | "failed" | "completed";
 
@@ -20,107 +21,168 @@ const FILTERS: Array<{ id: SubagentFilter; label: string }> = [
 	{ id: "completed", label: "Completed" },
 ];
 
+const panelMotion = {
+	hidden: { x: -28, opacity: 0 },
+	visible: { x: 0, opacity: 1 },
+	exit: { x: -18, opacity: 0 },
+};
+
+const listMotion = {
+	hidden: { opacity: 0 },
+	visible: {
+		opacity: 1,
+		transition: {
+			staggerChildren: 0.035,
+			delayChildren: 0.04,
+		},
+	},
+};
+
+const itemMotion = {
+	hidden: { opacity: 0, y: 6 },
+	visible: { opacity: 1, y: 0 },
+};
+
+const quickEase = [0.22, 1, 0.36, 1] as const;
+
 export function SubagentListPanel({ activeThreadId, agentsOverride, initiallyOpen = false }: SubagentListPanelProps) {
 	const [open, setOpen] = useState(initiallyOpen);
 	const [filter, setFilter] = useState<SubagentFilter>("all");
+	const reduceMotion = useReducedMotion();
 	const storeAgents = useSubAgentStore((s) => s.agents);
 	const agents = agentsOverride ?? storeAgents;
 	const groups = useMemo(() => groupSubagents(agents, filter), [agents, filter]);
 	const total = useMemo(() => agents.filter((agent) => agent.kind === "subagent").length, [agents]);
+	const counts = useMemo(() => countSubagents(agents), [agents]);
 	const visibleCount = groups.reduce((sum, group) => sum + group.threads.length, 0);
+	const motionTransition: Transition = reduceMotion ? { duration: 0 } : { duration: 0.18, ease: quickEase };
 
 	if (total === 0) return null;
 
 	const panel = (
-		<aside
-			className="flex h-full w-[320px] max-w-[calc(100vw-2rem)] shrink-0 flex-col border-r border-border-subtle bg-bg-elevated shadow-2xl"
+		<motion.aside
+			variants={panelMotion}
+			initial={reduceMotion ? false : "hidden"}
+			animate="visible"
+			exit="exit"
+			transition={motionTransition}
+			className="flex h-full w-[340px] max-w-[calc(100vw-1.25rem)] shrink-0 flex-col border-r border-border-default bg-bg-elevated shadow-2xl"
 		>
-			<div className="flex min-h-12 items-center justify-between gap-2 border-b border-border-subtle px-3">
-				<div className="min-w-0">
-					<div className="text-sm font-medium text-text-primary">Subagents</div>
-					<div className="text-xs text-text-tertiary">{total} total</div>
-				</div>
-				<button
-					type="button"
-					onClick={() => setOpen(false)}
-					className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border-subtle text-text-secondary transition hover:border-border-hover hover:text-text-primary"
-					aria-label="Close subagent widget"
-				>
-					<X size={16} />
-				</button>
-			</div>
-
-			<div className="border-b border-border-subtle p-3">
-				<div className="grid grid-cols-2 gap-1 rounded border border-border-subtle bg-bg p-1">
-					{FILTERS.map((item) => (
-						<button
-							key={item.id}
-							type="button"
-							onClick={() => setFilter(item.id)}
-							className={`rounded px-2 py-1 text-xs transition ${
-								filter === item.id
-									? "bg-bg-active text-text-primary"
-									: "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-							}`}
-						>
-							{item.label}
-						</button>
-					))}
+			<div className="border-b border-border-subtle px-4 py-3">
+				<div className="flex items-center justify-between gap-3">
+					<div className="min-w-0">
+						<div className="flex items-center gap-2">
+							<div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent-muted text-accent">
+								<Users size={15} aria-hidden="true" />
+							</div>
+							<div className="text-sm font-semibold text-text-primary">Subagents</div>
+						</div>
+						<div className="mt-1 text-xs text-text-tertiary">
+							{counts.running} running · {counts.completed} completed · {counts.failed} failed
+						</div>
+					</div>
+					<button
+						type="button"
+						onClick={() => setOpen(false)}
+						className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border-subtle text-text-secondary transition hover:border-border-hover hover:bg-bg-hover hover:text-text-primary"
+						aria-label="Close subagent widget"
+					>
+						<X size={16} aria-hidden="true" />
+					</button>
 				</div>
 			</div>
 
-			<div className="min-h-0 flex-1 overflow-y-auto p-2">
+			<div className="border-b border-border-subtle px-4 py-3">
+				<div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-text-tertiary">
+					<ListFilter size={12} aria-hidden="true" />
+					Filter
+				</div>
+				<div className="grid grid-cols-2 gap-1.5">
+					{FILTERS.map((item) => {
+						const count = counts[item.id];
+						return (
+							<button
+								key={item.id}
+								type="button"
+								onClick={() => setFilter(item.id)}
+								className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-xs transition duration-150 active:scale-[0.98] ${
+									filter === item.id
+										? "border-accent/60 bg-accent-muted text-text-primary"
+										: "border-border-subtle bg-bg text-text-secondary hover:border-border-hover hover:bg-bg-hover hover:text-text-primary"
+								}`}
+							>
+								<span>{item.label}</span>
+								<span className="rounded bg-bg-surface px-1.5 py-0.5 text-[11px] text-text-tertiary">{count}</span>
+							</button>
+						);
+					})}
+				</div>
+			</div>
+
+			<div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
 				{visibleCount === 0 ? (
-					<div className="px-3 py-6 text-center text-xs text-text-muted">No matching subagents</div>
+					<EmptyFilterState filter={filter} />
 				) : (
-					<div className="space-y-3">
+					<motion.div variants={listMotion} initial={reduceMotion ? false : "hidden"} animate="visible" className="space-y-4">
 						{groups.map((group) => (
-							<section key={group.runId} className="space-y-1">
-								<div className="px-2 text-[11px] uppercase tracking-wide text-text-tertiary">
-									{group.label}
-								</div>
+							<motion.section key={group.runId} variants={itemMotion} className="space-y-2">
+								<RunGroupHeader group={group} />
 								{group.threads.map((thread) => (
 									<SubagentListItem
 										key={thread.instanceId}
 										thread={thread}
 										active={thread.instanceId === activeThreadId}
+										reduceMotion={reduceMotion}
 										onSelect={() => {
 											navigateToThread(thread.instanceId);
 											setOpen(false);
 										}}
 									/>
 								))}
-							</section>
+							</motion.section>
 						))}
-					</div>
+					</motion.div>
 				)}
 			</div>
-		</aside>
+		</motion.aside>
 	);
 
 	return (
 		<>
-			<button
-				type="button"
-				onClick={() => setOpen(true)}
-				className="fixed left-4 top-4 z-40 inline-flex items-center gap-2 rounded border border-border-subtle bg-bg-elevated px-3 py-2 text-xs text-text-secondary shadow-lg transition hover:border-border-hover hover:text-text-primary"
-				aria-label="Open subagent widget"
-				aria-expanded={open}
-			>
-				<Users size={15} />
-				<span>{total}</span>
-			</button>
-			{open ? (
-				<div className="fixed inset-0 z-50 flex">
-					{panel}
-					<button
-						type="button"
-						className="flex-1 bg-black/40"
-						aria-label="Close subagent widget"
-						onClick={() => setOpen(false)}
-					/>
-				</div>
-			) : null}
+			<div className="relative z-30 flex h-full w-11 shrink-0 items-start justify-center border-r border-border-subtle bg-bg-elevated pt-16">
+				<button
+					type="button"
+					onClick={() => setOpen(true)}
+					className="group relative flex h-8 w-8 items-center justify-center rounded-md border border-border-subtle bg-bg text-text-secondary transition duration-150 hover:border-border-hover hover:bg-bg-hover hover:text-text-primary active:scale-95"
+					aria-label="Open subagent widget"
+					aria-expanded={open}
+				>
+					<Users size={15} aria-hidden="true" />
+					<span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded bg-bg-surface px-1 text-[10px] font-medium text-text-secondary ring-1 ring-border-subtle">
+						{total}
+					</span>
+					{counts.running > 0 ? (
+						<span className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-accent ring-2 ring-bg-elevated" />
+					) : null}
+				</button>
+			</div>
+			<AnimatePresence>
+				{open ? (
+					<motion.div className="fixed inset-0 z-50 flex" initial={reduceMotion ? false : "hidden"} animate="visible" exit="exit">
+						{panel}
+						<motion.button
+							type="button"
+							className="flex-1 bg-black/45"
+							aria-label="Close subagent widget"
+							onClick={() => setOpen(false)}
+							initial={{ opacity: 0 }}
+							animate={{ opacity: 1 }}
+							exit={{ opacity: 0 }}
+							transition={{ duration: reduceMotion ? 0 : 0.14 }}
+						/>
+					</motion.div>
+				) : null}
+			</AnimatePresence>
 		</>
 	);
 }
@@ -128,40 +190,99 @@ export function SubagentListPanel({ activeThreadId, agentsOverride, initiallyOpe
 interface SubagentListItemProps {
 	thread: SubAgentInstanceState;
 	active: boolean;
+	reduceMotion: boolean | null;
 	onSelect: () => void;
 }
 
-function SubagentListItem({ thread, active, onSelect }: SubagentListItemProps) {
+function SubagentListItem({ thread, active, reduceMotion, onSelect }: SubagentListItemProps) {
+	const status = getStatusConfig(thread.state);
+	const title = thread.description || thread.definitionName;
 	return (
-		<button
+		<motion.button
 			type="button"
 			onClick={onSelect}
-			className={`w-full rounded-md border px-3 py-2 text-left transition ${
+			layout
+			whileHover={reduceMotion ? undefined : { y: -1 }}
+			whileTap={reduceMotion ? undefined : { scale: 0.99 }}
+			transition={{ duration: reduceMotion ? 0 : 0.14, ease: quickEase }}
+			className={`group w-full rounded-md border px-3 py-3 text-left transition-colors duration-150 ${
 				active
-					? "border-accent bg-accent-muted"
-					: "border-transparent bg-bg hover:border-border-subtle hover:bg-bg-hover"
+					? "border-accent/70 bg-accent-muted shadow-sm"
+					: "border-border-subtle bg-bg/80 hover:border-border-hover hover:bg-bg-hover"
 			}`}
 			aria-current={active ? "page" : undefined}
 		>
-			<div className="flex items-center justify-between gap-2">
-				<div className="min-w-0 flex items-center gap-2">
-					<StatusBadge state={thread.state} pulse={thread.state === "running"} />
+			<div className="flex items-start justify-between gap-3">
+				<div className="min-w-0">
+					<div className="flex items-center gap-2">
+						<span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${status.bg} ${status.color}`}>
+							<status.icon size={14} aria-hidden="true" />
+						</span>
+						<span className={`text-xs font-medium ${status.color}`}>{status.label}</span>
+					</div>
+					<div className="mt-2 truncate text-sm font-semibold text-text-primary" title={title}>
+						{title}
+					</div>
 				</div>
-				<span className="shrink-0 text-[11px] text-text-tertiary">{thread.definitionName}</span>
+				<span className="shrink-0 rounded-md border border-border-subtle bg-bg-surface px-2 py-1 text-[11px] text-text-tertiary">
+					{thread.definitionName}
+				</span>
 			</div>
-			<div className="mt-2 truncate text-sm font-medium text-text-primary">
-				{thread.description || thread.definitionName}
+
+			<div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-text-muted">
+				<Metric icon={Activity} label={`${thread.turnCount} turns`} />
+				<Metric icon={Wrench} label={`${thread.toolCount} tools`} />
+				<Metric icon={Timer} label={thread.startTime ? formatDuration(thread.durationMs) : "queued"} />
 			</div>
-			<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
-				<span>{thread.turnCount} turns</span>
-				<span>{thread.toolCount} tools</span>
-				{thread.startTime ? <span>{formatDuration(thread.durationMs)}</span> : null}
-			</div>
+
 			{thread.currentTool ? (
-				<div className="mt-1 truncate text-xs text-accent">Running: {thread.currentTool}</div>
+				<div className="mt-3 flex items-center gap-2 rounded-md border border-accent/20 bg-accent-muted px-2 py-1.5 text-xs text-accent">
+					<Loader2 size={13} className="animate-spin" aria-hidden="true" />
+					<span className="truncate">Using {thread.currentTool}</span>
+				</div>
 			) : null}
-			{thread.error ? <div className="mt-1 truncate text-xs text-error">{thread.error}</div> : null}
-		</button>
+			{thread.error ? (
+				<div className="mt-3 truncate rounded-md border border-error/25 bg-bg-surface px-2 py-1.5 text-xs text-error" title={thread.error}>
+					{thread.error}
+				</div>
+			) : null}
+		</motion.button>
+	);
+}
+
+function RunGroupHeader({ group }: { group: SubagentGroup }) {
+	return (
+		<div className="flex items-center justify-between gap-3 px-1">
+			<div className="min-w-0">
+				<div className="truncate text-[11px] font-medium uppercase tracking-wide text-text-tertiary" title={group.runId}>
+					{formatRunLabel(group)}
+				</div>
+			</div>
+			<span className="shrink-0 rounded bg-bg-surface px-1.5 py-0.5 text-[11px] text-text-tertiary">
+				{group.threads.length}
+			</span>
+		</div>
+	);
+}
+
+function EmptyFilterState({ filter }: { filter: SubagentFilter }) {
+	return (
+		<div className="rounded-md border border-border-subtle bg-bg px-4 py-8 text-center">
+			<div className="mx-auto flex h-9 w-9 items-center justify-center rounded-md bg-bg-surface text-text-tertiary">
+				<ListFilter size={16} aria-hidden="true" />
+			</div>
+			<div className="mt-3 text-sm font-medium text-text-primary">No {filter} subagents</div>
+			<div className="mt-1 text-xs text-text-muted">Try another filter.</div>
+		</div>
+	);
+}
+
+function Metric({ icon: Icon, label }: { icon: typeof Activity; label: string }) {
+	return (
+		<div className="flex min-w-0 items-center gap-1.5 rounded-md bg-bg-surface px-2 py-1.5">
+			<Icon size={12} className="shrink-0 text-text-tertiary" aria-hidden="true" />
+			<span className="truncate">{label}</span>
+		</div>
 	);
 }
 
@@ -200,6 +321,38 @@ export function groupSubagents(agents: SubAgentInstanceState[], filter: Subagent
 			),
 		}))
 		.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+}
+
+function countSubagents(agents: SubAgentInstanceState[]): Record<SubagentFilter, number> {
+	const subagents = agents.filter((agent) => agent.kind === "subagent");
+	return {
+		all: subagents.length,
+		running: subagents.filter((agent) => matchesFilter(agent.state, "running")).length,
+		failed: subagents.filter((agent) => matchesFilter(agent.state, "failed")).length,
+		completed: subagents.filter((agent) => matchesFilter(agent.state, "completed")).length,
+	};
+}
+
+function getStatusConfig(state: SubAgentState): { label: string; color: string; bg: string; icon: typeof Activity } {
+	if (state === "running" || state === "starting" || state === "queued" || state === "completing") {
+		return { label: "Running", color: "text-accent", bg: "bg-accent-muted", icon: Loader2 };
+	}
+	if (state === "completed") {
+		return { label: "Completed", color: "text-success", bg: "bg-success/10", icon: CheckCircle2 };
+	}
+	if (state === "failed" || state === "timed_out" || state === "cancelled") {
+		return { label: "Failed", color: "text-error", bg: "bg-error/10", icon: AlertCircle };
+	}
+	if (state === "blocked" || state === "paused") {
+		return { label: state === "blocked" ? "Blocked" : "Paused", color: "text-warning", bg: "bg-warning/10", icon: Clock3 };
+	}
+	return { label: "Created", color: "text-text-muted", bg: "bg-bg-surface", icon: Clock3 };
+}
+
+function formatRunLabel(group: SubagentGroup): string {
+	if (group.runId === "ungrouped") return "Ungrouped";
+	const suffix = group.runId.split("-").slice(-1)[0] ?? group.runId;
+	return `Run ${suffix}`;
 }
 
 function matchesFilter(state: SubAgentState, filter: SubagentFilter): boolean {
