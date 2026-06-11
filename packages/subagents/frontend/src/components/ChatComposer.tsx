@@ -1,11 +1,14 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Check, ChevronDown, SendHorizontal, Terminal } from "lucide-react";
+import { Check, ChevronDown, SendHorizontal, Square, Terminal } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useThreadCommands } from "../hooks/use-thread-commands.ts";
 import { useSelectThreadModel, useThreadModels } from "../hooks/use-thread-models.ts";
 import { type ComposerMode, useSendThreadMessage } from "../hooks/use-send-thread-message.ts";
+import { useAbortThreadMessage } from "../hooks/use-abort-thread-message.ts";
+import { useSessionMessagesStore } from "../store/session-messages.ts";
 import type { DashboardModel, SubAgentInstanceState } from "../types.ts";
+import { LionModeSelector } from "./LionModeSelector.tsx";
 
 interface ChatComposerProps {
 	instanceId: string;
@@ -35,7 +38,11 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 	const shouldReduceMotion = useReducedMotion();
 	const sendMessage = useSendThreadMessage();
+	const abortMessage = useAbortThreadMessage();
 	const selectModel = useSelectThreadModel();
+	const isStreaming = useSessionMessagesStore((state) =>
+		state.streamingByInstance.get(instanceId) ?? false,
+	);
 	const { data: commands = [] } = useThreadCommands(instanceId);
 	const { data: models = [] } = useThreadModels(instanceId);
 	const query = extractCommandQuery(message);
@@ -44,7 +51,8 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 		() => resolveCurrentModel(models, thread?.modelProvider, thread?.modelId),
 		[models, thread?.modelId, thread?.modelProvider],
 	);
-	const actionError = sendMessage.error ?? selectModel.error;
+	const abortError = abortMessage.error;
+	const actionError = abortError ?? sendMessage.error ?? selectModel.error;
 	const filteredCommands = useMemo(() => {
 		const normalized = query.toLowerCase();
 		if (!normalized) return commands.slice(0, 10);
@@ -59,7 +67,13 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 	const trimmed = message.trim();
 	const canSend = Boolean(thread && trimmed && !sendMessage.isPending);
 	const isSelectingModel = selectModel.isPending;
-	const statusText = sendMessage.isPending ? "Sending" : isSelectingModel ? "Selecting model" : null;
+	const statusText = abortMessage.isPending
+		? "Stopping..."
+		: sendMessage.isPending
+			? "Sending..."
+			: isSelectingModel
+				? "Selecting model"
+				: null;
 
 	function resizeTextarea(target: HTMLTextAreaElement) {
 		target.style.height = "0px";
@@ -77,6 +91,11 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 			return;
 		}
 		if (event.key === "Escape") {
+			if (isStreaming) {
+				event.preventDefault();
+				void handleAbort();
+				return;
+			}
 			setCommandsOpen(false);
 			return;
 		}
@@ -96,6 +115,15 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 			await sendMessage.mutateAsync({ threadId: instanceId, message: outbound, mode });
 		} catch {
 			setMessage(outbound);
+		}
+	}
+
+	async function handleAbort() {
+		if (!isStreaming) return;
+		try {
+			await abortMessage.mutateAsync({ threadId: instanceId });
+		} catch (err) {
+			console.error("Failed to abort:", err);
 		}
 	}
 
@@ -165,6 +193,7 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 							isOpen={modelsOpen}
 							onClick={() => setModelsOpen((open) => !open)}
 						/>
+						<LionModeSelector />
 						<ModeTabs mode={mode} onChange={setMode} shouldReduceMotion={shouldReduceMotion} />
 					</div>
 
@@ -199,15 +228,27 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 						</AnimatePresence>
 						<motion.button
 							type="button"
-							onClick={() => void submit()}
-							disabled={!canSend}
-							whileTap={shouldReduceMotion || !canSend ? undefined : { scale: 0.94 }}
-							whileHover={shouldReduceMotion || !canSend ? undefined : { scale: 1.04 }}
-							className="flex h-9 w-9 items-center justify-center rounded-full bg-text-primary text-bg-base transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-text-muted disabled:text-bg-surface"
-							title="Send"
-							aria-label="Send"
+							onClick={() => void (isStreaming ? handleAbort() : submit())}
+							disabled={!isStreaming && !canSend}
+							whileTap={
+								shouldReduceMotion || (!isStreaming && !canSend) ? undefined : { scale: 0.94 }
+							}
+							whileHover={
+								shouldReduceMotion || (!isStreaming && !canSend) ? undefined : { scale: 1.04 }
+							}
+							className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+								isStreaming
+									? "bg-error text-bg-base hover:bg-error-hover"
+									: "bg-text-primary text-bg-base hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-text-muted disabled:text-bg-surface"
+							}`}
+							title={isStreaming ? "Stop" : "Send"}
+							aria-label={isStreaming ? "Stop" : "Send"}
 						>
-							<SendHorizontal className="h-4 w-4" aria-hidden="true" />
+							{isStreaming ? (
+								<Square className="h-4 w-4" aria-hidden="true" />
+							) : (
+								<SendHorizontal className="h-4 w-4" aria-hidden="true" />
+							)}
 						</motion.button>
 					</div>
 				</div>

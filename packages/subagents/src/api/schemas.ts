@@ -77,6 +77,18 @@ export const DashboardLionStateSchema = z.object({
 	lastRunId: z.string().nullable(),
 });
 
+export const LionStrategyNameSchema = z.enum(["plan", "simple", "review", "none"]);
+
+export const LionSetStrategyInputSchema = z.object({
+	strategy: LionStrategyNameSchema,
+});
+
+export const LionSetStrategyResultSchema = z.object({
+	strategy: LionStrategyNameSchema,
+	previousStrategy: LionStrategyNameSchema,
+	acceptedAt: z.number(),
+});
+
 export const LionChecklistProgressSchema = z.object({
 	completed: z.number(),
 	total: z.number(),
@@ -194,6 +206,10 @@ export const ThreadPromptResultSchema = z.object({
 	mode: ThreadPromptModeSchema,
 	status: z.literal("sent"),
 	acceptedAt: z.number(),
+});
+
+export const ThreadAbortInputSchema = z.object({
+	threadId: z.string(),
 });
 
 export const ThreadModelResultSchema = z.object({

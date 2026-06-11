@@ -81,6 +81,9 @@ export function MessageItem({ message }: MessageItemProps) {
 						))}
 					</div>
 				) : null}
+				{message.stopReason === "aborted" && (
+					<span className="text-xs text-error italic">Request aborted</span>
+				)}
 			</div>
 		</div>
 	);

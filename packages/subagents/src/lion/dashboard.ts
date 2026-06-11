@@ -46,6 +46,7 @@ class LionDashboardServer implements LionDashboard {
 			controller,
 			mainSession: this.runtime.mainSession,
 			lionState: () => this.runtime.state,
+			setLionStrategy: async (strategy) => this.runtime.setStrategy(strategy),
 		});
 
 		// Wire the transport into the controller's event bus so events flow to the dashboard

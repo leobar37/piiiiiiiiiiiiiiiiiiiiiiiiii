@@ -1,5 +1,6 @@
 import type { SubAgentController } from "../controller.js";
 import type { LionChecklistService } from "../lion/checklist-service.js";
+import type { LionStrategyName } from "../lion/types.js";
 import type { SubAgentRunStore } from "../run-store.js";
 import type { DashboardStateManager } from "../transport/state-manager.js";
 import type { DashboardLionState, DashboardSessionSource } from "../transport/types.js";
@@ -13,6 +14,7 @@ export interface SubagentsApiContext {
 	stateManager: DashboardStateManager;
 	mainSession?: DashboardSessionSource;
 	lionState?: () => DashboardLionState;
+	setLionStrategy?(strategy: LionStrategyName): Promise<void> | void;
 	checklistService: LionChecklistService;
 	sessionCache: DashboardThreadSessionCache;
 	logStore: DashboardSessionLogStore;

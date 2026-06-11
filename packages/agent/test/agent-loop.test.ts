@@ -1348,4 +1348,68 @@ describe("agentLoopContinue with AgentMessage", () => {
 		expect(messages.length).toBe(1);
 		expect(messages[0].role).toBe("assistant");
 	});
+
+	it("should generate and preserve a stable messageId across streaming events", async () => {
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const partial = createAssistantMessage([{ type: "thinking", thinking: "" }]);
+				stream.push({ type: "start", partial });
+				stream.push({
+					type: "thinking_delta",
+					contentIndex: 0,
+					delta: "thinking...",
+					partial: createAssistantMessage([{ type: "thinking", thinking: "thinking..." }]),
+				});
+				const final = createAssistantMessage([
+					{ type: "thinking", thinking: "thinking..." },
+					{ type: "text", text: "done" },
+				]);
+				stream.push({ type: "done", reason: "stop", message: final });
+			});
+			return stream;
+		};
+
+		const stream = agentLoop([createUserMessage("hello")], context, config, undefined, streamFn);
+
+		const events: AgentEvent[] = [];
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const startEvent = events.find(
+			(e): e is Extract<AgentEvent, { type: "message_start" }> =>
+				e.type === "message_start" && e.message.role === "assistant",
+		);
+		const updateEvent = events.find(
+			(e): e is Extract<AgentEvent, { type: "message_update" }> => e.type === "message_update",
+		);
+		const endEvent = events.find(
+			(e): e is Extract<AgentEvent, { type: "message_end" }> =>
+				e.type === "message_end" && e.message.role === "assistant",
+		);
+
+		expect(startEvent).toBeDefined();
+		expect(updateEvent).toBeDefined();
+		expect(endEvent).toBeDefined();
+
+		const startId = (startEvent!.message as AssistantMessage).messageId;
+		const updateId = (updateEvent!.message as AssistantMessage).messageId;
+		const endId = (endEvent!.message as AssistantMessage).messageId;
+
+		expect(startId).toBeDefined();
+		expect(startId).toBe(updateId);
+		expect(startId).toBe(endId);
+	});
 });

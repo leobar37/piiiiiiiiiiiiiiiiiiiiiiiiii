@@ -176,4 +176,6 @@ export interface ChatMessage {
 	streaming?: boolean;
 	partial?: boolean;
 	optimistic?: boolean;
+	stopReason?: string;
+	errorMessage?: string;
 }

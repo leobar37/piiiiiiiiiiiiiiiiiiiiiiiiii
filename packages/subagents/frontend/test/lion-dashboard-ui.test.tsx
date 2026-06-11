@@ -165,14 +165,21 @@ describe("Lion dashboard UI", () => {
 	it("formats simple mode state", () => {
 		const html = renderToString(<LionModeBadge state={createLionState({ strategy: "simple", phase: "building" })} />);
 
-		expect(html).toContain("Simple mode");
+		expect(html).toContain("Simple");
 		expect(html).toContain("Building");
+	});
+
+	it("hides badge when strategy is none", () => {
+		const html = renderToString(<LionModeBadge state={createLionState({ strategy: "none", active: true })} />);
+
+		expect(html).not.toContain("Lion");
+		expect(html).not.toContain("Normal");
 	});
 
 	it("formats plan mode state with the active plan", () => {
 		const html = renderToString(<LionModeBadge state={createLionState({ activePlanSlug: "dashboard-plan" })} />);
 
-		expect(html).toContain("Plan mode");
+		expect(html).toContain("Plan");
 		expect(html).toContain("Planning");
 		expect(html).toContain("dashboard-plan");
 	});
@@ -180,7 +187,7 @@ describe("Lion dashboard UI", () => {
 	it("hides Lion mode state when Lion is inactive", () => {
 		const html = renderToString(<LionModeBadge state={createLionState({ active: false })} />);
 
-		expect(html).not.toContain("Plan mode");
+		expect(html).not.toContain("Plan");
 		expect(html).not.toContain("Lion inactive");
 	});
 
@@ -197,7 +204,7 @@ describe("Lion dashboard UI", () => {
 			/>,
 		);
 
-		expect(html).not.toContain("Plan mode");
+		expect(html).not.toContain("Plan");
 	});
 
 	it("renders only subagents in the persistent list", () => {

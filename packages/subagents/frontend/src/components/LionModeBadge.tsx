@@ -6,9 +6,9 @@ interface LionModeBadgeProps {
 
 const STRATEGY_LABELS: Record<LionDashboardState["strategy"], string> = {
 	none: "Lion",
-	simple: "Simple mode",
-	review: "Review mode",
-	plan: "Plan mode",
+	simple: "Simple",
+	review: "Review",
+	plan: "Plan",
 };
 
 const PHASE_LABELS: Record<LionDashboardState["phase"], string> = {
@@ -19,9 +19,7 @@ const PHASE_LABELS: Record<LionDashboardState["phase"], string> = {
 export function formatLionModeLabel(state?: LionDashboardState): string | null {
 	if (!state || !isLionUiActive(state)) return null;
 	const { strategy, phase, activeTaskId, activePlanSlug } = state;
-	if (strategy === "none") {
-		return STRATEGY_LABELS.none;
-	}
+	if (strategy === "none") return null;
 	const mode = STRATEGY_LABELS[strategy];
 	const phaseLabel = PHASE_LABELS[phase];
 	const detail = strategy === "simple" ? null : activeTaskId ?? activePlanSlug;
@@ -30,7 +28,8 @@ export function formatLionModeLabel(state?: LionDashboardState): string | null {
 
 export function isLionUiActive(state?: LionDashboardState): boolean {
 	if (!state?.active) return false;
-	if (state.strategy === "simple" || state.strategy === "none") return true;
+	if (state.strategy === "none") return false;
+	if (state.strategy === "simple") return true;
 	return Boolean(state.activePlanPath ?? state.activePlanSlug ?? state.activeTaskId ?? state.lastRunId);
 }
 

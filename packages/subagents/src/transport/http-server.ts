@@ -7,6 +7,7 @@ import { DashboardThreadSessionCache } from "../api/session-control.js";
 import { DashboardSessionLogStore } from "../api/session-log-store.js";
 import type { SubAgentController } from "../controller.js";
 import { LionChecklistService } from "../lion/checklist-service.js";
+import type { LionStrategyName } from "../lion/types.js";
 import { SubAgentRunStore } from "../run-store.js";
 import { DashboardStateManager } from "./state-manager.js";
 import type { DashboardLionState, DashboardSessionSource, SubAgentTransport, SubAgentTransportEvent } from "./types.js";
@@ -22,6 +23,7 @@ export interface HttpServerTransportOptions {
 	staticDir?: string;
 	mainSession?: DashboardSessionSource;
 	lionState?: () => DashboardLionState;
+	setLionStrategy?(strategy: LionStrategyName): Promise<void> | void;
 }
 
 function isDashboardMode(): boolean {
@@ -96,6 +98,7 @@ export class HttpServerTransport implements SubAgentTransport {
 			stateManager: this.stateManager,
 			mainSession: options.mainSession,
 			lionState: options.lionState,
+			setLionStrategy: options.setLionStrategy,
 			checklistService: this.checklistService,
 			sessionCache: this.sessionCache,
 			logStore: this.logStore,

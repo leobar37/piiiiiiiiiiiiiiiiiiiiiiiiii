@@ -11,8 +11,11 @@ import {
 	DashboardModelSchema,
 	DashboardThreadStateSchema,
 	LionChecklistSnapshotSchema,
+	LionSetStrategyInputSchema,
+	LionSetStrategyResultSchema,
 	SubAgentEventSchema,
 	SubAgentRunRecordSchema,
+	ThreadAbortInputSchema,
 	ThreadIdInputSchema,
 	ThreadModelInputSchema,
 	ThreadModelResultSchema,
@@ -47,6 +50,8 @@ export const subagentsContract = oc.router({
 
 		prompt: oc.input(ThreadPromptInputSchema).output(ThreadPromptResultSchema),
 
+		abort: oc.input(ThreadAbortInputSchema).output(ThreadIdInputSchema),
+
 		commands: oc.input(ThreadIdInputSchema).output(z.array(DashboardCommandSchema)),
 
 		models: oc.input(ThreadIdInputSchema).output(z.array(DashboardModelSchema)),
@@ -56,6 +61,8 @@ export const subagentsContract = oc.router({
 
 	lion: {
 		state: oc.output(DashboardLionStateSchema),
+
+		setStrategy: oc.input(LionSetStrategyInputSchema).output(LionSetStrategyResultSchema),
 
 		checklist: oc.input(ChecklistInputSchema).output(LionChecklistSnapshotSchema),
 	},

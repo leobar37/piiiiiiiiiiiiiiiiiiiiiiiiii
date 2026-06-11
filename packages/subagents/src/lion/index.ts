@@ -65,11 +65,14 @@ export function lionExtension(pi: ExtensionAPI): void {
 		restore(ctx);
 		runtime.attachMainSession(ctx);
 
-		// Auto-activate Lion in web mode
-		if (shouldAutoActivate() && !runtime.state.active) {
-			runtime.activateSimple();
-			runtime.ensureController(ctx);
-			runtime.attachMainSession(ctx);
+		// In web mode the dashboard should be available, but the user chooses
+		// the Lion strategy through the UI selector. Only activate Lion here
+		// if the persisted state is already active (e.g. restored plan session).
+		if (shouldAutoActivate()) {
+			if (!runtime.state.active) {
+				runtime.ensureController(ctx);
+				runtime.attachMainSession(ctx);
+			}
 			await ensureDashboard();
 		} else if (runtime.state.active) {
 			await ensureDashboard();

@@ -3,6 +3,7 @@
  * Transforms to Message[] only at the LLM call boundary.
  */
 
+import { randomUUID } from "node:crypto";
 import {
 	type AssistantMessage,
 	type Context,
@@ -309,11 +310,14 @@ async function streamAssistantResponse(
 
 	let partialMessage: AssistantMessage | null = null;
 	let addedPartial = false;
+	let messageId: string | undefined;
 
 	for await (const event of response) {
 		switch (event.type) {
 			case "start":
 				partialMessage = event.partial;
+				messageId = partialMessage.messageId ?? randomUUID();
+				partialMessage = { ...partialMessage, messageId };
 				context.messages.push(partialMessage);
 				addedPartial = true;
 				await emit({ type: "message_start", message: { ...partialMessage } });
@@ -330,6 +334,10 @@ async function streamAssistantResponse(
 			case "toolcall_end":
 				if (partialMessage) {
 					partialMessage = event.partial;
+					// Ensure the stable messageId persists across all streaming events
+					if (messageId && !partialMessage.messageId) {
+						partialMessage = { ...partialMessage, messageId };
+					}
 					context.messages[context.messages.length - 1] = partialMessage;
 					await emit({
 						type: "message_update",
@@ -343,12 +351,17 @@ async function streamAssistantResponse(
 			case "error": {
 				const finalMessage = await response.result();
 				if (addedPartial) {
+					// Ensure the stable messageId from streaming is preserved on the final message
+					if (messageId && !finalMessage.messageId) {
+						(finalMessage as AssistantMessage).messageId = messageId;
+					}
 					context.messages[context.messages.length - 1] = finalMessage;
 				} else {
 					context.messages.push(finalMessage);
 				}
 				if (!addedPartial) {
-					await emit({ type: "message_start", message: { ...finalMessage } });
+					messageId = finalMessage.messageId ?? randomUUID();
+					await emit({ type: "message_start", message: { ...finalMessage, messageId } });
 				}
 				await emit({ type: "message_end", message: finalMessage });
 				return finalMessage;
@@ -358,10 +371,15 @@ async function streamAssistantResponse(
 
 	const finalMessage = await response.result();
 	if (addedPartial) {
+		// Ensure the stable messageId from streaming is preserved on the final message
+		if (messageId && !finalMessage.messageId) {
+			(finalMessage as AssistantMessage).messageId = messageId;
+		}
 		context.messages[context.messages.length - 1] = finalMessage;
 	} else {
 		context.messages.push(finalMessage);
-		await emit({ type: "message_start", message: { ...finalMessage } });
+		messageId = finalMessage.messageId ?? randomUUID();
+		await emit({ type: "message_start", message: { ...finalMessage, messageId } });
 	}
 	await emit({ type: "message_end", message: finalMessage });
 	return finalMessage;

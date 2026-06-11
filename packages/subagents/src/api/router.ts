@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { implement, ORPCError } from "@orpc/server";
-import type { LionChecklistKind } from "../lion/types.js";
+import type { LionChecklistKind, LionStrategyName } from "../lion/types.js";
 import type { VirtualInstance } from "../transport/state-manager.js";
 import type { DashboardLionState, DashboardThreadState } from "../transport/types.js";
 import type { SubAgentRunRecord, SubAgentState } from "../types.js";
@@ -573,6 +573,11 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 				}
 			}),
 
+			abort: impl.threads.abort.handler(async ({ input }) => {
+				await ctx.controller.abortInstance(input.threadId);
+				return { threadId: input.threadId };
+			}),
+
 			commands: impl.threads.commands.handler(async ({ input }) => {
 				return listThreadCommands(ctx, input.threadId);
 			}),
@@ -613,6 +618,25 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 		lion: {
 			state: impl.lion.state.handler(async () => {
 				return ctx.lionState?.() ?? DEFAULT_LION_STATE;
+			}),
+
+			setStrategy: impl.lion.setStrategy.handler(async ({ input }) => {
+				const previousStrategy = (ctx.lionState?.().strategy ?? "none") as LionStrategyName;
+				const strategy = input.strategy;
+				if (!ctx.setLionStrategy) {
+					throw new ORPCError("SERVICE_UNAVAILABLE", { message: "Lion strategy control is not available" });
+				}
+				try {
+					await ctx.setLionStrategy(strategy);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					throw new ORPCError("BAD_REQUEST", { message });
+				}
+				return {
+					strategy,
+					previousStrategy,
+					acceptedAt: Date.now(),
+				};
 			}),
 
 			checklist: impl.lion.checklist.handler(async ({ input }) => {
