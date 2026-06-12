@@ -1,21 +1,41 @@
-import { Bot, Plus, Search } from "lucide-react";
-import type { CanvasSession } from "../electron.js";
+import { Bot, PanelLeft, PanelLeftClose, Plus, Search, Trash2 } from "lucide-react";
+import type { CanvasSession } from "../canvas/types.js";
 
 interface SessionSidebarProps {
+	isOpen?: boolean;
+	onToggle?: () => void;
 	sessions: CanvasSession[];
-	activeSessionId: string | null;
 	focusedSessionId: string | null;
 	onFocusSession: (sessionId: string) => void;
 	onCreateSession: () => void;
+	onRemoveSession: (sessionId: string) => void;
 }
 
 export function SessionSidebar({
+	isOpen = true,
+	onToggle,
 	sessions,
-	activeSessionId,
 	focusedSessionId,
 	onFocusSession,
 	onCreateSession,
+	onRemoveSession,
 }: SessionSidebarProps) {
+	if (!isOpen) {
+		return (
+			<div className="flex h-full w-11 shrink-0 flex-col items-center border-r border-border-subtle bg-bg-elevated py-3">
+				<button
+					type="button"
+					onClick={onToggle}
+					className="flex h-8 w-8 items-center justify-center rounded-md border border-border-subtle text-text-secondary transition hover:border-border-hover hover:bg-bg-hover hover:text-text-primary"
+					title="Open sessions sidebar"
+					aria-label="Open sessions sidebar"
+				>
+					<PanelLeft size={16} aria-hidden="true" />
+				</button>
+			</div>
+		);
+	}
+
 	return (
 		<aside className="flex h-full w-72 shrink-0 flex-col border-r border-border-subtle bg-bg-elevated">
 			<div className="border-b border-border-subtle px-4 py-3">
@@ -24,14 +44,25 @@ export function SessionSidebar({
 						<div className="text-sm font-semibold text-text-primary">Sessions</div>
 						<div className="mt-0.5 text-xs text-text-tertiary">Focus agents on the canvas</div>
 					</div>
-					<button
-						type="button"
-						onClick={() => void onCreateSession()}
-						className="flex h-8 w-8 items-center justify-center rounded-md border border-border-subtle text-text-secondary transition hover:border-border-hover hover:bg-bg-hover hover:text-text-primary"
-						title="Add session"
-					>
-						<Plus size={15} aria-hidden="true" />
-					</button>
+					<div className="flex items-center gap-1">
+						<button
+							type="button"
+							onClick={onCreateSession}
+							className="flex h-8 w-8 items-center justify-center rounded-md border border-border-subtle text-text-secondary transition hover:border-border-hover hover:bg-bg-hover hover:text-text-primary"
+							title="Add session"
+						>
+							<Plus size={15} aria-hidden="true" />
+						</button>
+						<button
+							type="button"
+							onClick={onToggle}
+							className="flex h-8 w-8 items-center justify-center rounded-md text-text-secondary transition hover:bg-bg-hover hover:text-text-primary"
+							title="Close sessions sidebar"
+							aria-label="Close sessions sidebar"
+						>
+							<PanelLeftClose size={16} aria-hidden="true" />
+						</button>
+					</div>
 				</div>
 			</div>
 
@@ -48,13 +79,13 @@ export function SessionSidebar({
 				) : (
 					<div className="space-y-1">
 						{sessions.map((session) => {
-							const selected = session.id === focusedSessionId || session.id === activeSessionId;
+							const selected = session.id === focusedSessionId;
 							return (
 								<button
 									key={session.id}
 									type="button"
 									onClick={() => onFocusSession(session.id)}
-									className={`w-full rounded-md border px-3 py-2.5 text-left transition ${
+									className={`group w-full rounded-md border px-3 py-2.5 text-left transition ${
 										selected
 											? "border-accent/60 bg-accent-muted"
 											: "border-transparent hover:border-border-subtle hover:bg-bg-hover"
@@ -70,6 +101,17 @@ export function SessionSidebar({
 												{new Date(session.createdAt).toLocaleTimeString()}
 											</div>
 										</div>
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												onRemoveSession(session.id);
+											}}
+											className="opacity-0 group-hover:opacity-100 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-tertiary transition hover:bg-error/10 hover:text-error"
+											title="Remove session"
+										>
+											<Trash2 size={13} aria-hidden="true" />
+										</button>
 									</div>
 								</button>
 							);

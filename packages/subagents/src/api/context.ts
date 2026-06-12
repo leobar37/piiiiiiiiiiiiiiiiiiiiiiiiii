@@ -7,6 +7,7 @@ import type { DashboardLionState, DashboardSessionSource } from "../transport/ty
 import type { SubAgentEvent } from "../types.js";
 import type { DashboardThreadSessionCache } from "./session-control.js";
 import type { DashboardSessionLogStore } from "./session-log-store.js";
+import type { StandaloneSessionManager } from "./standalone-sessions.js";
 
 export interface SubagentsApiContext {
 	controller: SubAgentController;
@@ -20,4 +21,5 @@ export interface SubagentsApiContext {
 	logStore: DashboardSessionLogStore;
 	emitEvent(event: SubAgentEvent): void;
 	cwd: string;
+	standaloneSessions: StandaloneSessionManager;
 }

@@ -24,6 +24,9 @@ function createMockController(cwd: string) {
 		getInstances: () => [],
 		getInstance: () => undefined,
 		getInstanceById: () => undefined,
+		getModelRegistry: () => undefined,
+		getSettingsManager: () => undefined,
+		getAuthStorage: () => undefined,
 	};
 }
 

@@ -12,9 +12,11 @@
 - Added durable `.reviews/` code review plans backed by the internal Lion checklist tools.
 - Added internal Lion checklist tools and dashboard progress UI for durable `.plans/` and `.reviews/` checklists.
 - Added Lion `review` strategy so `/lion-code-review` creates an active durable `.reviews/` plan with read-only checklist execution and false-positive validation.
+- Added `threads.create` oRPC endpoint and `StandaloneSessionManager` to create real, persistent agent sessions directly from the dashboard, independent of Lion runs.
 
 ### Changed
 
+- Migrated the dashboard frontend from the custom hash-based router to TanStack Start with file-based routing and SPA mode. Removed `App.tsx`, `main.tsx`, `dev-main.tsx`, and `render-app.tsx` in favor of `router.tsx`, `client.tsx`, and `src/routes`.
 - Changed `LionStrategyName` from `"plan" | "simple" | "review"` to `"plan" | "simple" | "review" | "none"` across backend types, frontend types, API schemas, and transport types.
 - Changed `createInitialLionState()` to default `strategy` to `"none"` instead of `"plan"`.
 - Changed `NoneLionStrategy.buildMainPrompt` to return an empty string so inactive Lion does not inject orchestration instructions into the system prompt.

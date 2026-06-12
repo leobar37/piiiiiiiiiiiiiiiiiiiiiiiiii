@@ -52,6 +52,16 @@ export const ThreadPromptInputSchema = z
 		path: ["message"],
 	});
 
+export const ThreadCreateInputSchema = z.object({
+	name: z.string().trim().min(1).optional(),
+});
+
+export const ThreadCreateResultSchema = z.object({
+	threadId: z.string(),
+	name: z.string(),
+	createdAt: z.number(),
+});
+
 export const ThreadModelInputSchema = z.object({
 	threadId: z.string(),
 	provider: z.string().trim().min(1),

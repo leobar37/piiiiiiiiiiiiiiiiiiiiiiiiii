@@ -1,10 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { AuthStorage, ModelRegistry, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { SubagentsApiContext } from "../api/context.js";
 import { createSubagentsRouter } from "../api/router.js";
 import { DashboardThreadSessionCache } from "../api/session-control.js";
 import { DashboardSessionLogStore } from "../api/session-log-store.js";
+import { StandaloneSessionManager } from "../api/standalone-sessions.js";
 import type { SubAgentController } from "../controller.js";
 import { LionChecklistService } from "../lion/checklist-service.js";
 import type { LionStrategyName } from "../lion/types.js";
@@ -52,9 +54,11 @@ function resolveStaticDir(options: HttpServerTransportOptions): string {
 	if (options.staticDir) return options.staticDir;
 	const baseDir = import.meta.dirname ?? ".";
 	const candidates = [
-		// dist/index.js -> packages/subagents/frontend/dist
+		// TanStack Start outputs the static shell under dist/client
+		join(baseDir, "..", "frontend", "dist", "client"),
+		join(baseDir, "..", "..", "frontend", "dist", "client"),
+		// Fallback to legacy flat dist layout
 		join(baseDir, "..", "frontend", "dist"),
-		// src/transport/http-server.ts -> packages/subagents/frontend/dist
 		join(baseDir, "..", "..", "frontend", "dist"),
 	];
 	return candidates.find((candidate) => existsSync(join(candidate, "index.html"))) ?? candidates[0];
@@ -85,6 +89,7 @@ export class HttpServerTransport implements SubAgentTransport {
 	private logStore: DashboardSessionLogStore;
 	private orpcHandler: RPCHandler<SubagentsApiContext>;
 	private orpcContext: SubagentsApiContext;
+	private standaloneSessions: StandaloneSessionManager;
 
 	constructor(private options: HttpServerTransportOptions) {
 		this.staticDir = resolveStaticDir(options);
@@ -93,6 +98,13 @@ export class HttpServerTransport implements SubAgentTransport {
 		this.stateManager = new DashboardStateManager(options.controller.getCwd(), this.runStore);
 		this.sessionCache = new DashboardThreadSessionCache((event) => this.emit(event));
 		this.logStore = new DashboardSessionLogStore(options.controller.getCwd());
+		this.standaloneSessions = new StandaloneSessionManager(
+			options.controller.getCwd(),
+			options.controller.getModelRegistry() ?? ModelRegistry.create(AuthStorage.create()),
+			options.controller.getSettingsManager() ?? SettingsManager.create(options.controller.getCwd()),
+			options.controller.getAuthStorage(),
+			(event) => this.emit(event),
+		);
 		this.orpcContext = {
 			controller: options.controller,
 			runStore: this.runStore,
@@ -105,6 +117,7 @@ export class HttpServerTransport implements SubAgentTransport {
 			logStore: this.logStore,
 			emitEvent: (event) => this.emit(event),
 			cwd: options.controller.getCwd(),
+			standaloneSessions: this.standaloneSessions,
 		};
 		const router = createSubagentsRouter(this.orpcContext);
 		this.orpcHandler = new RPCHandler(router);

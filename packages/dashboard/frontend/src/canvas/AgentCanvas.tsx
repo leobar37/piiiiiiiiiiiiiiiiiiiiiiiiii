@@ -8,6 +8,7 @@ import {
 	type NodeChange,
 	useEdgesState,
 	useNodesState,
+	useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Plus, ScanSearch } from "lucide-react";
@@ -18,11 +19,11 @@ import type { AgentCanvasNode, CanvasSession } from "./types.js";
 interface AgentCanvasProps {
 	sessions: CanvasSession[];
 	backendUrl: string;
-	activeSessionId: string | null;
 	focusedSessionId: string | null;
 	onFocusSession: (sessionId: string) => void;
 	onOpenSession: (sessionId: string) => void;
 	onCreateSession: () => void;
+	onRemoveSession: (sessionId: string) => void;
 }
 
 const nodeTypes = {
@@ -56,16 +57,30 @@ function savePositions(nodes: AgentCanvasNode[]): void {
 export function AgentCanvas({
 	sessions,
 	backendUrl,
-	activeSessionId,
 	focusedSessionId,
 	onFocusSession,
-	onOpenSession,
 	onCreateSession,
+	onRemoveSession,
 }: AgentCanvasProps) {
 	const [creating, setCreating] = useState(false);
+	const { fitView } = useReactFlow<AgentCanvasNode>();
+
+	const handleOpenNode = useCallback(
+		(nodeId: string) => {
+			onFocusSession(nodeId);
+			void fitView({
+				nodes: [{ id: nodeId }],
+				duration: 350,
+				padding: 0.22,
+				includeHiddenNodes: false,
+			});
+		},
+		[onFocusSession, fitView],
+	);
+
 	const initialNodes = useMemo(
-		() => createSessionNodes(sessions, activeSessionId, focusedSessionId, backendUrl, onFocusSession, onOpenSession),
-		[sessions, activeSessionId, focusedSessionId, backendUrl, onFocusSession, onOpenSession],
+		() => createSessionNodes(sessions, focusedSessionId, focusedSessionId, backendUrl, onFocusSession, handleOpenNode),
+		[sessions, focusedSessionId, backendUrl, onFocusSession, handleOpenNode],
 	);
 	const positionedInitialNodes = useMemo(() => {
 		const savedPositions = loadSavedPositions();
@@ -105,6 +120,13 @@ export function AgentCanvas({
 			onFocusSession(node.id);
 		},
 		[onFocusSession],
+	);
+
+	const handleNodeDoubleClick = useCallback<NodeMouseHandler<AgentCanvasNode>>(
+		(_, node) => {
+			handleOpenNode(node.id);
+		},
+		[handleOpenNode],
 	);
 
 	const handleCreateSession = () => {
@@ -155,6 +177,7 @@ export function AgentCanvas({
 				onNodesChange={handleNodesChange}
 				onEdgesChange={onEdgesChange}
 				onNodeClick={handleNodeClick}
+				onNodeDoubleClick={handleNodeDoubleClick}
 				fitView
 				fitViewOptions={{ padding: 0.24 }}
 				minZoom={0.35}
