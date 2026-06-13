@@ -437,6 +437,13 @@ export interface AnthropicMessagesCompat {
 	 * Default: true.
 	 */
 	supportsCacheControlOnTools?: boolean;
+	/**
+	 * Whether the provider counts input tokens plus requested max_tokens against
+	 * the same context window. When true, callers should reserve output space
+	 * before sending large requests.
+	 * Default: false.
+	 */
+	countsMaxTokensAgainstContextWindow?: boolean;
 }
 
 /**

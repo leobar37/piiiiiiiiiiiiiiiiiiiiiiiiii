@@ -163,10 +163,12 @@ export type AnthropicThinkingDisplay = "summarized" | "omitted";
 
 const FINE_GRAINED_TOOL_STREAMING_BETA = "fine-grained-tool-streaming-2025-05-14";
 const INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14";
+const COMBINED_CONTEXT_SAFETY_MARGIN_TOKENS = 4096;
 
 function getAnthropicCompat(model: Model<"anthropic-messages">): Required<AnthropicMessagesCompat> {
 	// Auto-detect session affinity and cache control support from provider
 	const isFireworks = model.provider === "fireworks";
+	const isKimiCoding = model.provider === "kimi-coding";
 	const isCloudflareAiGatewayAnthropic =
 		model.provider === "cloudflare-ai-gateway" && model.baseUrl.includes("anthropic");
 	return {
@@ -175,6 +177,7 @@ function getAnthropicCompat(model: Model<"anthropic-messages">): Required<Anthro
 		sendSessionAffinityHeaders:
 			model.compat?.sendSessionAffinityHeaders ?? !!(isFireworks || isCloudflareAiGatewayAnthropic),
 		supportsCacheControlOnTools: model.compat?.supportsCacheControlOnTools ?? !isFireworks,
+		countsMaxTokensAgainstContextWindow: model.compat?.countsMaxTokensAgainstContextWindow ?? isKimiCoding,
 	};
 }
 
@@ -492,6 +495,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 			if (nextParams !== undefined) {
 				params = nextParams as MessageCreateParamsStreaming;
 			}
+			params = clampMaxTokensForCombinedContextLimit(model, params);
 			const requestOptions = {
 				...(options?.signal ? { signal: options.signal } : {}),
 				...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
@@ -889,7 +893,7 @@ function buildParams(
 	options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
 	const { cacheControl } = getCacheControl(model, options?.cacheRetention);
-	const params: MessageCreateParamsStreaming = {
+	let params: MessageCreateParamsStreaming = {
 		model: model.id,
 		messages: convertMessages(context.messages, model, isOAuthToken, cacheControl),
 		max_tokens: options?.maxTokens || (model.maxTokens / 3) | 0,
@@ -985,7 +989,71 @@ function buildParams(
 		}
 	}
 
+	params = clampMaxTokensForCombinedContextLimit(model, params);
+
 	return params;
+}
+
+function clampMaxTokensForCombinedContextLimit(
+	model: Model<"anthropic-messages">,
+	params: MessageCreateParamsStreaming,
+): MessageCreateParamsStreaming {
+	const compat = getAnthropicCompat(model);
+	if (!compat.countsMaxTokensAgainstContextWindow || model.contextWindow <= 0) {
+		return params;
+	}
+
+	const requestedMaxTokens = params.max_tokens;
+	if (requestedMaxTokens <= 0) {
+		return params;
+	}
+
+	const estimatedInputTokens = estimateAnthropicInputTokens(params);
+	const availableMaxTokens = model.contextWindow - estimatedInputTokens - COMBINED_CONTEXT_SAFETY_MARGIN_TOKENS;
+	if (availableMaxTokens >= requestedMaxTokens) {
+		return params;
+	}
+	if (availableMaxTokens < 1) {
+		throw new Error(
+			`Context length exceeded: estimated input tokens (${estimatedInputTokens}) plus requested output budget exceed model context window (${model.contextWindow}).`,
+		);
+	}
+
+	const nextMaxTokens = Math.min(requestedMaxTokens, availableMaxTokens);
+	const nextParams: MessageCreateParamsStreaming = { ...params, max_tokens: nextMaxTokens };
+	adjustThinkingBudgetForMaxTokens(nextParams);
+	return nextParams;
+}
+
+function estimateAnthropicInputTokens(params: MessageCreateParamsStreaming): number {
+	const inputPayload = {
+		messages: params.messages,
+		system: params.system,
+		tools: params.tools,
+		tool_choice: params.tool_choice,
+		metadata: params.metadata,
+		thinking: params.thinking,
+	};
+	return Math.ceil(JSON.stringify(inputPayload).length / 4);
+}
+
+function adjustThinkingBudgetForMaxTokens(params: MessageCreateParamsStreaming): void {
+	const thinking = params.thinking;
+	if (!thinking || typeof thinking !== "object" || !("type" in thinking) || thinking.type !== "enabled") {
+		return;
+	}
+
+	const minOutputTokens = 1024;
+	const maxThinkingBudget = params.max_tokens - minOutputTokens;
+	if (maxThinkingBudget <= 0) {
+		delete params.thinking;
+		return;
+	}
+
+	params.thinking = {
+		...thinking,
+		budget_tokens: Math.min(thinking.budget_tokens, maxThinkingBudget),
+	};
 }
 
 // Normalize tool call IDs to match Anthropic's required pattern and length
