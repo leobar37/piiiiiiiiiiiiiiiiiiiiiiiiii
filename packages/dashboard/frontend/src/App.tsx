@@ -118,13 +118,31 @@ function normalizeCwd(path: string): string {
 	return path.replace(/\/+$/, "");
 }
 
+function matchesSessionSearch(session: CanvasSession, projects: CanvasProject[], query: string): boolean {
+	const normalizedQuery = query.trim().toLowerCase();
+	if (!normalizedQuery) return true;
+
+	const project = projects.find((item) => item.id === session.projectId);
+	const values = [
+		session.name,
+		session.id,
+		session.threadId ?? "",
+		session.cwd ?? "",
+		project?.name ?? "",
+		project?.defaultCwd ?? "",
+	];
+	return values.some((value) => value.toLowerCase().includes(normalizedQuery));
+}
+
 function AppContent({ backendUrl }: { backendUrl: string }) {
+	const isElectronDarwin = window.__PI_ELECTRON__?.platform === "darwin";
 	const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null);
 	const [sessions, setSessions] = useState<CanvasSession[]>(() => loadSavedSessions());
 	const [projects, setProjects] = useState<CanvasProject[]>(() => loadSavedProjects());
 	const [selectedProjectId, setSelectedProjectId] = useState<string | null>(() => loadSelectedProjectId());
 	const [leftOpen, setLeftOpen] = useState(() => loadSidebarOpen(LEFT_SIDEBAR_OPEN_KEY, true));
 	const [rightOpen, setRightOpen] = useState(() => loadSidebarOpen(RIGHT_SIDEBAR_OPEN_KEY, true));
+	const [sessionSearch, setSessionSearch] = useState("");
 	const [createError, setCreateError] = useState<string | null>(null);
 	const [projectError, setProjectError] = useState<string | null>(null);
 	const client = useMemo(() => createSubagentsClient(backendUrl), [backendUrl]);
@@ -308,20 +326,24 @@ function AppContent({ backendUrl }: { backendUrl: string }) {
 	}, []);
 
 	const focusedSession = sessions.find((session) => session.id === focusedSessionId);
-	const visibleSessions = selectedProjectId ? sessions.filter((session) => session.projectId === selectedProjectId) : sessions;
+	const projectSessions = selectedProjectId ? sessions.filter((session) => session.projectId === selectedProjectId) : sessions;
+	const visibleSessions = projectSessions.filter((session) => matchesSessionSearch(session, projects, sessionSearch));
 	const canCreateSession = selectedProjectId ? projects.some((project) => project.id === selectedProjectId) : false;
 
 	return (
-		<div className="flex h-screen overflow-hidden bg-bg-base text-text-primary">
+		<div className={`relative flex h-screen overflow-hidden bg-bg-base text-text-primary ${isElectronDarwin ? "pt-window-drag" : ""}`}>
+			{isElectronDarwin ? <div className="electron-window-drag-region" aria-hidden="true" /> : null}
 			<SessionSidebar
 				isOpen={leftOpen}
 				onToggle={() => setLeftOpen((open) => !open)}
 				projects={projects}
 				sessions={sessions}
 				visibleSessions={visibleSessions}
+				sessionSearch={sessionSearch}
 				selectedProjectId={selectedProjectId}
 				focusedSessionId={focusedSessionId}
 				projectError={projectError}
+				onSessionSearchChange={setSessionSearch}
 				onSelectProject={selectProject}
 				onCreateProject={createProject}
 				onFocusSession={focusSession}

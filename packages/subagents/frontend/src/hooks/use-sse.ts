@@ -303,11 +303,13 @@ export function syncMessageQuery(instanceId: string): void {
 function buildCreatedThread(event: SubAgentEvent): SubAgentInstanceState {
 	const taskId = typeof event.taskId === "string" ? event.taskId : "unknown";
 	const definitionName = typeof event.definitionName === "string" ? event.definitionName : "subagent";
+	const cwd = typeof event.cwd === "string" ? event.cwd : "";
 	const now = Date.now();
 	return {
 		instanceId: event.instanceId ?? "unknown",
 		taskId,
 		definitionName,
+		cwd,
 		kind: event.kind === "main" ? "main" : "subagent",
 		parentThreadId: typeof event.parentThreadId === "string" ? event.parentThreadId : undefined,
 		parentToolCallId: typeof event.parentToolCallId === "string" ? event.parentToolCallId : undefined,

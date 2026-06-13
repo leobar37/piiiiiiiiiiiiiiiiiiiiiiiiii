@@ -668,6 +668,7 @@ describe("HttpServerTransport", () => {
 			instanceId: "instance-1",
 			taskId: "task-1",
 			definitionName: "executor",
+			cwd: "/tmp/project",
 			timestamp: 100,
 		};
 		const progressEvent: SubAgentEvent = {
@@ -880,6 +881,7 @@ describe("HttpServerTransport", () => {
 			instanceId: "test",
 			taskId: "test",
 			definitionName: "test",
+			cwd: "/tmp/project",
 			timestamp: Date.now(),
 		} as any);
 
@@ -959,6 +961,7 @@ describe("HttpServerTransport", () => {
 			instanceId: "sse-test",
 			taskId: "task-1",
 			definitionName: "dev",
+			cwd: "/tmp/project",
 			timestamp: Date.now(),
 		} as any);
 

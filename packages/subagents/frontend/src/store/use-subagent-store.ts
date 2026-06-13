@@ -76,6 +76,7 @@ export const useSubAgentStore = create<SubAgentStore>((set) => ({
 					instanceId: string;
 					taskId: string;
 					definitionName: string;
+					cwd?: string;
 					kind?: SubAgentInstanceState["kind"];
 					parentThreadId?: string;
 					parentToolCallId?: string;
@@ -87,6 +88,7 @@ export const useSubAgentStore = create<SubAgentStore>((set) => ({
 						instanceId: ce.instanceId,
 						taskId: ce.taskId,
 						definitionName: ce.definitionName,
+						cwd: ce.cwd ?? "",
 						kind: ce.kind ?? "subagent",
 						parentThreadId: ce.parentThreadId,
 						parentToolCallId: ce.parentToolCallId,

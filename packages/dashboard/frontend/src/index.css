@@ -91,6 +91,60 @@
 	animation: fade-in 0.2s ease-out both;
 }
 
+.pt-window-drag {
+	padding-top: 32px;
+}
+
+.electron-window-drag-region {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 50;
+	height: 32px;
+	-webkit-app-region: drag;
+}
+
+button,
+input,
+textarea,
+select,
+a,
+iframe,
+.react-flow {
+	-webkit-app-region: no-drag;
+}
+
+.agent-node-resizing,
+.agent-node-resizing * {
+	cursor: nwse-resize !important;
+}
+
+.agent-node-resizing iframe {
+	pointer-events: none;
+}
+
+.agent-node-resize-grip {
+	right: -10px !important;
+	bottom: -10px !important;
+	width: 28px !important;
+	height: 28px !important;
+	border: 0 !important;
+	background: transparent !important;
+	z-index: 30 !important;
+}
+
+.agent-node-resize-grip-inner {
+	position: absolute;
+	right: 7px;
+	bottom: 7px;
+	width: 14px;
+	height: 14px;
+	border-right: 2px solid var(--color-accent-hover);
+	border-bottom: 2px solid var(--color-accent-hover);
+	opacity: 0.9;
+}
+
 .agent-canvas .react-flow__pane {
 	cursor: grab;
 }

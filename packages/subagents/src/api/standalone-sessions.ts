@@ -75,6 +75,7 @@ export class StandaloneSessionManager {
 			instanceId,
 			taskId: instanceId,
 			definitionName: "standalone",
+			cwd: info.state.cwd,
 			timestamp: Date.now(),
 		});
 

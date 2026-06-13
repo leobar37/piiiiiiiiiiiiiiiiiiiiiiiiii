@@ -16,7 +16,8 @@
     "build:frontend": "cd frontend && bun run build",
     "build:all": "bun run build && bun run build:frontend",
     "build:electron": "vite build -c electron/vite.config.ts",
-    "electron:dev": "bun run build:frontend && bun run build && bun run build:electron && electron electron/dist/main.cjs",
+    "electron:start": "electron electron/dist/main.cjs",
+    "electron:dev": "bun run scripts/electron-dev.ts",
     "electron:build": "bun run build:all && (cd ../extensions && bun run build) && (cd ../coding-agent && bun run build:binary) && bun run build:electron",
     "electron:pack": "bun run electron:build && electron-builder",
     "test": "vitest --run"

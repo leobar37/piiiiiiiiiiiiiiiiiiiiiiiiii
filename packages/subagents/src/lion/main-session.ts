@@ -81,6 +81,7 @@ export class MainSessionBridge implements DashboardSessionSource {
 				instanceId: threadId,
 				taskId: "main",
 				definitionName: "main-agent",
+				cwd: ctx.sessionManager.getCwd(),
 				timestamp: now,
 			});
 		}

@@ -12,6 +12,7 @@ const mainThreadId = "main:mock-session";
 const lionTasksToolCallId = "main-tool-lion-tasks";
 const lionChecklistToolCallId = "main-tool-lion-checklist";
 const lionRunId = "mock-run-1";
+const mockCwd = "/mock/project";
 
 export const MOCK_LION_STATE: LionDashboardState = {
 	active: true,
@@ -129,6 +130,7 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		instanceId: mainThreadId,
 		taskId: "main",
 		definitionName: "main-agent",
+		cwd: mockCwd,
 		kind: "main",
 		description: "Primary Pi session",
 		state: "running",
@@ -150,6 +152,7 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		instanceId: "subagent-task-1-abc123",
 		taskId: "task-1",
 		definitionName: "executor",
+		cwd: mockCwd,
 		kind: "subagent",
 		parentThreadId: mainThreadId,
 		parentToolCallId: lionTasksToolCallId,
@@ -177,6 +180,7 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		instanceId: "subagent-task-2-def456",
 		taskId: "task-2",
 		definitionName: "analyzer",
+		cwd: mockCwd,
 		kind: "subagent",
 		parentThreadId: mainThreadId,
 		parentToolCallId: lionTasksToolCallId,
@@ -204,6 +208,7 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		instanceId: "subagent-task-3-ghi789",
 		taskId: "task-3",
 		definitionName: "reviewer",
+		cwd: mockCwd,
 		kind: "subagent",
 		parentThreadId: mainThreadId,
 		parentToolCallId: lionTasksToolCallId,
@@ -231,6 +236,7 @@ export const MOCK_AGENTS: SubAgentInstanceState[] = [
 		instanceId: "subagent-task-4-jkl012",
 		taskId: "task-4",
 		definitionName: "planner",
+		cwd: mockCwd,
 		kind: "subagent",
 		parentThreadId: mainThreadId,
 		parentToolCallId: lionTasksToolCallId,
@@ -262,6 +268,7 @@ export const MOCK_EVENTS: SubAgentEvent[] = [
 		instanceId: mainThreadId,
 		taskId: "main",
 		definitionName: "main-agent",
+		cwd: mockCwd,
 		kind: "main",
 		timestamp: now - 90000,
 	},
@@ -326,6 +333,7 @@ export const MOCK_EVENTS: SubAgentEvent[] = [
 		instanceId: "subagent-task-1-abc123",
 		taskId: "task-1",
 		definitionName: "executor",
+		cwd: mockCwd,
 		timestamp: now - 50000,
 	},
 	{
@@ -450,6 +458,7 @@ export const MOCK_EVENTS: SubAgentEvent[] = [
 		instanceId: "subagent-task-2-def456",
 		taskId: "task-2",
 		definitionName: "analyzer",
+		cwd: mockCwd,
 		timestamp: now - 125000,
 	},
 	{
@@ -538,6 +547,7 @@ export const MOCK_EVENTS: SubAgentEvent[] = [
 		instanceId: "subagent-task-3-ghi789",
 		taskId: "task-3",
 		definitionName: "reviewer",
+		cwd: mockCwd,
 		timestamp: now - 65000,
 	},
 	{

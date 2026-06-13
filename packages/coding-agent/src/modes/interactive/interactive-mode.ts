@@ -2607,12 +2607,24 @@ export class InteractiveMode {
 			// Normal message submission
 			// First, move any pending bash components to chat
 			this.flushPendingBashComponents();
+			this.editor.setText("");
 
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
+			} else {
+				await this.submitPromptDirectly(text);
 			}
 			this.editor.addToHistory?.(text);
 		};
+	}
+
+	private async submitPromptDirectly(text: string): Promise<void> {
+		try {
+			await this.session.prompt(text);
+		} catch (error: unknown) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			this.showError(errorMessage);
+		}
 	}
 
 	private subscribeToAgent(): void {

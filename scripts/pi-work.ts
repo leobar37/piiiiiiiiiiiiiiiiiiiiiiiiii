@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
  * pi-work: run this fork of pi in TUI mode from any directory,
- * using local packages but respecting globally installed extensions.
- * Unlike pi-dev, this does NOT load local extensions from packages/extensions,
- * avoiding conflicts with global extensions (e.g. @capyup/pi-goal, @juicesharp/rpiv-todo).
+ * using local packages and the local goal-v2 extension.
+ * Global extensions are disabled to avoid tool name conflicts
+ * (e.g. @capyup/pi-goal, @juicesharp/rpiv-todo).
  */
 
 import { realpathSync } from "node:fs";
@@ -54,10 +54,10 @@ console.log("[pi-work] Starting Pi TUI (local packages, global extensions)");
 // Build only the subagents backend (no frontend, since TUI mode doesn't need it).
 await buildSubagentsBackend();
 
-// Load only the local goal-v2 extension explicitly (-e), while keeping
-// global extension discovery enabled (no --no-extensions). This gives us the
-// stable local goal implementation plus all other global extensions.
-const bunArgs = ["run", CLI_ENTRY, "-e", GOAL_EXT_ENTRY, ...args];
+// Load only the local goal-v2 extension explicitly (-e), and disable
+// global extension discovery (--no-extensions) to avoid tool name conflicts
+// with globally installed extensions (e.g. @capyup/pi-goal).
+const bunArgs = ["run", CLI_ENTRY, "--no-extensions", "-e", GOAL_EXT_ENTRY, ...args];
 
 const proc = Bun.spawn(["bun", ...bunArgs], {
 	stdio: ["inherit", "inherit", "inherit"],

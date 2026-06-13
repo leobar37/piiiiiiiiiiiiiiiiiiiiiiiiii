@@ -18,6 +18,7 @@ const HEALTHCHECK_TIMEOUT_MS = 30000;
 const HEALTHCHECK_INTERVAL_MS = 200;
 const KILL_TIMEOUT_MS = 3000;
 const MAX_STDOUT_BUFFER_SIZE = 8192;
+const DEV_RENDERER_URL = process.env.PI_DASHBOARD_RENDERER_URL;
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -188,17 +189,37 @@ async function waitForBackend(url: string, timeoutMs: number, intervalMs: number
 	throw new Error(`Backend at ${url} did not become ready within ${timeoutMs}ms`);
 }
 
+async function waitForUrl(url: string, timeoutMs: number, intervalMs: number): Promise<void> {
+	const start = Date.now();
+	while (Date.now() - start < timeoutMs) {
+		try {
+			const res = await fetch(url, { method: "HEAD" });
+			if (res.ok) {
+				return;
+			}
+		} catch {
+			// not ready yet
+		}
+		await new Promise((r) => setTimeout(r, intervalMs));
+	}
+	throw new Error(`${url} did not become ready within ${timeoutMs}ms`);
+}
+
 /**
  * Create the main BrowserWindow.
  */
-function createWindow(): void {
+async function createWindow(): Promise<void> {
 	const indexPath = join(__dirname, "..", "..", "frontend", "dist", "index.html");
+	const rendererUrl = DEV_RENDERER_URL ?? `file://${indexPath}`;
 
 	mainWindow = new BrowserWindow({
 		width: 1400,
 		height: 900,
 		minWidth: 800,
 		minHeight: 600,
+		backgroundColor: "#0d0d12",
+		titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+		trafficLightPosition: process.platform === "darwin" ? { x: 16, y: 18 } : undefined,
 		webPreferences: {
 			preload: join(__dirname, "preload.cjs"),
 			contextIsolation: true,
@@ -207,7 +228,26 @@ function createWindow(): void {
 		show: false,
 	});
 
-	mainWindow.loadURL(`file://${indexPath}`);
+	let windowShown = false;
+	const showMainWindow = () => {
+		if (!mainWindow || windowShown) return;
+		windowShown = true;
+		mainWindow.show();
+		if (process.platform === "darwin") {
+			app.dock.show();
+		}
+		mainWindow.focus();
+		console.log("[electron] Window shown and focused");
+	};
+
+	mainWindow.once("ready-to-show", showMainWindow);
+	mainWindow.webContents.once("did-finish-load", showMainWindow);
+
+	if (DEV_RENDERER_URL) {
+		await waitForUrl(DEV_RENDERER_URL, HEALTHCHECK_TIMEOUT_MS, HEALTHCHECK_INTERVAL_MS);
+	}
+
+	await mainWindow.loadURL(rendererUrl);
 
 	// Forward renderer console messages to the main process log so we can
 	// diagnose iframe/subagents frontend issues without needing DevTools.
@@ -219,16 +259,6 @@ function createWindow(): void {
 	// Open DevTools automatically during development so errors in the renderer
 	// and inside the subagent iframes are visible immediately.
 	mainWindow.webContents.openDevTools({ mode: "detach" });
-
-	mainWindow.once("ready-to-show", () => {
-		if (!mainWindow) return;
-		mainWindow.show();
-		if (process.platform === "darwin") {
-			app.dock.show();
-		}
-		mainWindow.focus();
-		console.log("[electron] Window shown and focused");
-	});
 
 	mainWindow.on("closed", () => {
 		mainWindow = null;
@@ -243,29 +273,30 @@ ipcMain.handle("choose-project-directory", async () => {
 	return result.canceled ? null : result.filePaths[0] ?? null;
 });
 
-// Single instance lock
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-	console.error("[electron] Another Pi Dashboard instance is already running. Exiting.");
-	app.quit();
-	process.exit(0);
-}
-
-app.on("second-instance", () => {
-	console.log("[electron] Second instance detected; focusing existing window");
-	if (mainWindow) {
-		if (mainWindow.isMinimized()) {
-			mainWindow.restore();
-		}
-		if (!mainWindow.isVisible()) {
-			mainWindow.show();
-		}
-		if (process.platform === "darwin") {
-			app.dock.show();
-		}
-		mainWindow.focus();
+if (!DEV_RENDERER_URL) {
+	const gotLock = app.requestSingleInstanceLock();
+	if (!gotLock) {
+		console.error("[electron] Another Pi Dashboard instance is already running. Exiting.");
+		app.quit();
+		process.exit(0);
 	}
-});
+
+	app.on("second-instance", () => {
+		console.log("[electron] Second instance detected; focusing existing window");
+		if (mainWindow) {
+			if (mainWindow.isMinimized()) {
+				mainWindow.restore();
+			}
+			if (!mainWindow.isVisible()) {
+				mainWindow.show();
+			}
+			if (process.platform === "darwin") {
+				app.dock.show();
+			}
+			mainWindow.focus();
+		}
+	});
+}
 
 // App lifecycle
 app.whenReady().then(async () => {
@@ -276,7 +307,7 @@ app.whenReady().then(async () => {
 		console.log(`[electron] Backend URL resolved: ${url}`);
 		await waitForBackend(url, HEALTHCHECK_TIMEOUT_MS, HEALTHCHECK_INTERVAL_MS);
 		console.log("[electron] Backend is ready; creating window");
-		createWindow();
+		await createWindow();
 	} catch (err) {
 		console.error("[electron] Failed to start dashboard:", err);
 		app.quit();
@@ -295,6 +326,6 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
 	if (mainWindow === null) {
-		createWindow();
+		void createWindow();
 	}
 });

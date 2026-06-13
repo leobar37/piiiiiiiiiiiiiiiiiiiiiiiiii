@@ -58,13 +58,13 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 	const actionError = abortError ?? sendMessage.error ?? selectModel.error;
 	const filteredCommands = useMemo(() => {
 		const normalized = query.toLowerCase();
-		if (!normalized) return commands.slice(0, 10);
+		if (!normalized) return commands.slice(0, 7);
 		return commands
 			.filter((command) => {
 				const haystack = `${command.name} ${command.description ?? ""}`.toLowerCase();
 				return haystack.includes(normalized);
 			})
-			.slice(0, 10);
+			.slice(0, 7);
 	}, [commands, query]);
 
 	const trimmed = message.trim();
@@ -190,9 +190,7 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 	return (
 		<div className="border-t border-border-subtle bg-bg-base px-4 py-3">
 			<motion.div
-				className={`relative mx-auto flex max-w-5xl flex-col rounded-xl border bg-bg-surface shadow-md transition-colors ${
-					isFocused ? "border-border-hover" : "border-border-default"
-				}`}
+				className="relative mx-auto flex max-w-5xl flex-col gap-2"
 				animate={shouldReduceMotion ? undefined : { y: isFocused ? -1 : 0, scale: isFocused ? 1.002 : 1 }}
 				transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
 			>
@@ -225,11 +223,13 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 					onBlur={() => setIsFocused(false)}
 					onKeyDown={handleKeyDown}
 					onPaste={(event) => void handlePaste(event)}
-					className="min-h-11 resize-none bg-transparent px-4 py-3 text-sm leading-normal text-text-primary outline-none placeholder:text-text-tertiary"
+					className={`min-h-11 resize-none rounded-lg border bg-bg-surface px-4 py-3 text-sm leading-normal text-text-primary outline-none transition placeholder:text-text-tertiary ${
+						isFocused ? "border-border-hover" : "border-border-default"
+					}`}
 				/>
 
 				{attachments.length > 0 ? (
-					<div className="flex min-w-0 flex-wrap gap-2 px-3 pb-3">
+					<div className="flex min-w-0 flex-wrap gap-2">
 						{attachments.map((attachment, index) => (
 							<div
 								key={`${attachment.name ?? attachment.mimeType}-${index}`}
@@ -254,7 +254,7 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 					</div>
 				) : null}
 
-				<div className="flex items-center justify-between gap-3 px-3 pb-3">
+				<div className="flex items-center justify-between gap-3">
 					<div className="flex min-w-0 items-center gap-2">
 						<input
 							ref={fileInputRef}
@@ -484,11 +484,11 @@ interface CommandPaletteProps {
 function CommandPalette({ commands, onSelect, shouldReduceMotion }: CommandPaletteProps) {
 	return (
 		<motion.div
-			className="absolute bottom-full left-3 mb-2 max-h-72 w-[min(34rem,calc(100vw-3rem))] overflow-y-auto rounded-lg border border-border-default bg-bg-elevated p-1 shadow-md"
-			initial={shouldReduceMotion ? false : { opacity: 0, y: 8, scale: 0.98 }}
+			className="absolute bottom-full left-0 mb-2 max-h-56 w-[min(28rem,calc(100vw-2rem))] overflow-y-auto rounded-md border border-border-default bg-bg-elevated/95 p-0.5 shadow-md backdrop-blur"
+			initial={shouldReduceMotion ? false : { opacity: 0, y: 6, scale: 0.99 }}
 			animate={{ opacity: 1, y: 0, scale: 1 }}
-			exit={shouldReduceMotion ? undefined : { opacity: 0, y: 4, scale: 0.99 }}
-			transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+			exit={shouldReduceMotion ? undefined : { opacity: 0, y: 3, scale: 0.99 }}
+			transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
 		>
 			{commands.map((command, index) => (
 				<motion.button
@@ -496,17 +496,17 @@ function CommandPalette({ commands, onSelect, shouldReduceMotion }: CommandPalet
 					type="button"
 					onMouseDown={(event) => event.preventDefault()}
 					onClick={() => onSelect(command.name)}
-					className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-bg-hover"
+					className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-bg-hover"
 					initial={shouldReduceMotion ? false : { opacity: 0, x: -4 }}
 					animate={{ opacity: 1, x: 0 }}
-					transition={{ duration: 0.14, delay: shouldReduceMotion ? 0 : Math.min(index * 0.015, 0.08) }}
+					transition={{ duration: 0.1, delay: shouldReduceMotion ? 0 : Math.min(index * 0.01, 0.05) }}
 				>
-					<Terminal className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+					<Terminal className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
 					<span className="min-w-0 flex-1">
-						<span className="block truncate text-sm font-medium text-text-primary">/{command.name}</span>
-						{command.description ? <span className="block truncate text-xs text-text-tertiary">{command.description}</span> : null}
+						<span className="block truncate text-xs font-medium text-text-primary">/{command.name}</span>
+						{command.description ? <span className="block truncate text-[11px] text-text-tertiary">{command.description}</span> : null}
 					</span>
-					<span className="shrink-0 rounded border border-border-subtle px-1.5 py-0.5 text-xs text-text-muted">
+					<span className="shrink-0 text-[10px] text-text-muted">
 						{command.source}
 					</span>
 				</motion.button>

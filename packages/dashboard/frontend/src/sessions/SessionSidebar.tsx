@@ -8,9 +8,11 @@ interface SessionSidebarProps {
 	projects: CanvasProject[];
 	sessions: CanvasSession[];
 	visibleSessions: CanvasSession[];
+	sessionSearch: string;
 	selectedProjectId: string | null;
 	focusedSessionId: string | null;
 	projectError: string | null;
+	onSessionSearchChange: (value: string) => void;
 	onSelectProject: (projectId: string | null) => void;
 	onCreateProject: () => void;
 	onFocusSession: (sessionId: string) => void;
@@ -32,9 +34,11 @@ export function SessionSidebar({
 	projects,
 	sessions,
 	visibleSessions,
+	sessionSearch,
 	selectedProjectId,
 	focusedSessionId,
 	projectError,
+	onSessionSearchChange,
 	onSelectProject,
 	onCreateProject,
 	onFocusSession,
@@ -156,15 +160,23 @@ export function SessionSidebar({
 			</div>
 
 			<div className="border-b border-border-subtle px-3 py-3">
-				<div className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg px-2.5 py-2 text-xs text-text-tertiary">
+				<label className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg px-2.5 py-2 text-xs text-text-tertiary transition focus-within:border-border-hover">
 					<Search size={14} aria-hidden="true" />
-					<span>Search coming soon</span>
-				</div>
+					<input
+						type="search"
+						value={sessionSearch}
+						onChange={(event) => onSessionSearchChange(event.target.value)}
+						placeholder="Search sessions"
+						className="min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+					/>
+				</label>
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
 				{visibleSessions.length === 0 ? (
-					<div className="px-3 py-8 text-center text-sm text-text-muted">No sessions created.</div>
+					<div className="px-3 py-8 text-center text-sm text-text-muted">
+						{sessionSearch.trim() ? "No sessions match your search." : "No sessions created."}
+					</div>
 				) : (
 					<div className="space-y-1">
 						{visibleSessions.map((session) => {

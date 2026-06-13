@@ -599,6 +599,10 @@ export class AgentSession {
 
 			this._resolveRetry();
 			await this._checkCompaction(msg);
+		} else if (event.type === "agent_end" && this._retryPromise) {
+			// Agent ended without an assistant message (e.g. error, abort) - resolve retry promise
+			// so waitForRetry() doesn't hang indefinitely
+			this._resolveRetry();
 		}
 	}
 

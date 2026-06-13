@@ -104,6 +104,7 @@ export class SubAgentInstance {
 			instanceId: this.instanceId,
 			taskId: this.taskId,
 			definitionName: this.definitionName,
+			cwd: this.cwd,
 			parentThreadId: this.task.parentThreadId,
 			parentToolCallId: this.task.parentToolCallId,
 			runId: this.task.runId,
