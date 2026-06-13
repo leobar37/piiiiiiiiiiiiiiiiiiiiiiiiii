@@ -34,7 +34,7 @@
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-tui": "*"
+    "@earendil-works/pi-tui": "^0.79.2"
   },
   "build": {
     "appId": "works.earendil.pi-dashboard",

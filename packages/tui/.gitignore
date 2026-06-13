@@ -1,6 +1,0 @@
-dist/
-# Prevent accidental commit of compiler outputs emitted in src/
-src/**/*.js
-src/**/*.js.map
-src/**/*.d.ts
-src/**/*.d.ts.map
