@@ -17,6 +17,7 @@ export interface SubAgentInstanceState {
 	instanceId: string;
 	taskId: string;
 	definitionName: string;
+	cwd: string;
 	kind?: "main" | "subagent";
 	parentThreadId?: string;
 	parentToolCallId?: string;
@@ -42,14 +43,14 @@ export interface SubAgentInstanceState {
 }
 
 export interface SubAgentOrchestrationContext {
-	strategy: "plan" | "simple" | "review";
+	strategy: "plan" | "simple" | "review" | "none";
 	planSlug?: string;
 	planPath?: string;
 }
 
 export interface LionDashboardState {
 	active: boolean;
-	strategy: "plan" | "simple" | "review";
+	strategy: "plan" | "simple" | "review" | "none";
 	phase: "planning" | "building";
 	activePlanPath: string | null;
 	activePlanSlug: string | null;
@@ -95,6 +96,27 @@ export interface LionChecklistSnapshot {
 	updatedAt: string | null;
 }
 
+export type TaskStatus = "pending" | "in_progress" | "blocked" | "completed" | "deleted";
+
+export interface TaskContext {
+	why?: string;
+	files?: string[];
+	doneWhen?: string[];
+	notes?: string;
+}
+
+export interface TaskRecord {
+	id: string;
+	title: string;
+	status: TaskStatus;
+	createdAt: string;
+	updatedAt: string;
+	completedAt?: string;
+	revision: number;
+	assignedToSession?: string;
+	context?: TaskContext;
+}
+
 export interface SubAgentEvent {
 	type: string;
 	timestamp: number;
@@ -137,6 +159,13 @@ export interface DashboardModel {
 	reasoning: boolean;
 }
 
+export interface DashboardImageAttachment {
+	type: "image";
+	data: string;
+	mimeType: string;
+	name?: string;
+}
+
 export type SubAgentEventType =
 	| "lifecycle.change"
 	| "task.start"
@@ -154,7 +183,8 @@ export type SubAgentEventType =
 	| "instance.session"
 	| "session.event"
 	| "session.message.complete"
-	| "session.snapshot";
+	| "session.snapshot"
+	| "task.changed";
 
 // =============================================================================
 // Message blocks — normalized representation of message content
@@ -176,4 +206,6 @@ export interface ChatMessage {
 	streaming?: boolean;
 	partial?: boolean;
 	optimistic?: boolean;
+	stopReason?: string;
+	errorMessage?: string;
 }

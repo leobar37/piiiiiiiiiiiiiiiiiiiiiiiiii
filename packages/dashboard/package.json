@@ -3,10 +3,7 @@
   "version": "0.74.0",
   "description": "Web dashboard for Pi sessions",
   "type": "module",
-  "main": "electron/dist/main.js",
-  "bin": {
-    "pi-web": "dist/cli.js"
-  },
+  "main": "electron/dist/main.cjs",
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -18,18 +15,14 @@
     "watch": "bun run build.ts --watch",
     "build:frontend": "cd frontend && bun run build",
     "build:all": "bun run build && bun run build:frontend",
-    "build:binary": "bun run build.ts --binary",
     "build:electron": "vite build -c electron/vite.config.ts",
-    "electron:dev": "bun run build:frontend && bun run build:binary && bun run build:electron && electron electron/dist/main.js",
-    "electron:build": "bun run build:all && bun run build:binary && bun run build:electron",
+    "electron:dev": "bun run build:frontend && bun run build && bun run build:electron && electron electron/dist/main.cjs",
+    "electron:build": "bun run build:all && (cd ../extensions && bun run build) && (cd ../coding-agent && bun run build:binary) && bun run build:electron",
     "electron:pack": "bun run electron:build && electron-builder",
     "test": "vitest --run"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "workspace:*",
     "@orpc/server": "^1.14.3",
-    "drizzle-orm": "^0.45.2",
-    "uuid": "^14.0.0",
     "zod": "3.24.2"
   },
   "devDependencies": {
@@ -41,7 +34,7 @@
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-tui": "*"
+    "@earendil-works/pi-tui": "^0.79.2"
   },
   "build": {
     "appId": "works.earendil.pi-dashboard",
@@ -55,8 +48,12 @@
     ],
     "extraResources": [
       {
-        "from": "dist/pi-web-binary",
-        "to": "pi-web-binary"
+        "from": "../coding-agent/dist/pi",
+        "to": "pi"
+      },
+      {
+        "from": "../extensions/dist",
+        "to": "extensions"
       }
     ],
     "mac": {

@@ -68,6 +68,9 @@ const COPILOT_STATIC_HEADERS = {
 const KIMI_STATIC_HEADERS = {
 	"User-Agent": "KimiCLI/1.5",
 } as const;
+const KIMI_ANTHROPIC_COMPAT: AnthropicMessagesCompat = {
+	countsMaxTokensAgainstContextWindow: true,
+};
 
 const TOGETHER_BASE_URL = "https://api.together.ai/v1";
 const TOGETHER_BASE_COMPAT: OpenAICompletionsCompat = {
@@ -1007,6 +1010,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					// Kimi For Coding's Anthropic-compatible API - SDK appends /v1/messages
 					baseUrl: "https://api.kimi.com/coding",
 					headers: { ...KIMI_STATIC_HEADERS },
+					compat: KIMI_ANTHROPIC_COMPAT,
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {

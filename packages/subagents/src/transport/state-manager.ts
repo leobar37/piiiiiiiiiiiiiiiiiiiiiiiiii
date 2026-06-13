@@ -167,6 +167,7 @@ export class DashboardStateManager {
 			instanceId: record.instanceId,
 			taskId: record.taskId,
 			definitionName: record.definitionName,
+			cwd: record.cwd,
 			parentThreadId: record.parentThreadId,
 			parentToolCallId: record.parentToolCallId,
 			runId: record.runId,

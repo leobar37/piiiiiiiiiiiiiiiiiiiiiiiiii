@@ -272,6 +272,7 @@ export interface UserMessage {
 	role: "user";
 	content: string | (TextContent | ImageContent)[];
 	timestamp: number; // Unix timestamp in milliseconds
+	messageId?: string; // Stable identifier for deduplication across streaming events
 }
 
 export interface AssistantMessage {
@@ -282,6 +283,7 @@ export interface AssistantMessage {
 	model: string;
 	responseModel?: string; // Concrete `chunk.model` when different from the requested `model` (e.g. OpenRouter `auto` -> `anthropic/...`)
 	responseId?: string; // Provider-specific response/message identifier when the upstream API exposes one
+	messageId?: string; // Stable identifier for deduplication across streaming events
 	diagnostics?: AssistantMessageDiagnostic[]; // Redacted provider/runtime diagnostics for failures and recoveries.
 	usage: Usage;
 	stopReason: StopReason;
@@ -435,6 +437,13 @@ export interface AnthropicMessagesCompat {
 	 * Default: true.
 	 */
 	supportsCacheControlOnTools?: boolean;
+	/**
+	 * Whether the provider counts input tokens plus requested max_tokens against
+	 * the same context window. When true, callers should reserve output space
+	 * before sending large requests.
+	 * Default: false.
+	 */
+	countsMaxTokensAgainstContextWindow?: boolean;
 }
 
 /**

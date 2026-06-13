@@ -249,13 +249,11 @@ function formatSubagent(
 
 function buildPlanNextStep(state: LionState): string {
 	if (state.phase === "building") {
-		if (state.activeTaskId) {
-			return `inspect active task ${state.activeTaskId}, verify the latest lion_tasks result, then retry or continue with source: "active_plan_next_task"`;
-		}
-		return 'use lion_tasks with source: "active_plan_next_task" for the next ready task, then apply the completion gate';
+		return state.activeTaskId
+			? `inspect active task ${state.activeTaskId}, verify the latest lion_tasks result, then retry or continue with source: "active_plan_next_task"`
+			: 'use lion_tasks with source: "active_plan_next_task" for the next ready task, then apply the completion gate';
 	}
-	if (state.activePlanSlug) {
-		return "continue planning or validation; use /lion-build before executor work";
-	}
-	return "select or create a durable plan before build work";
+	return state.activePlanSlug
+		? "continue planning or validation; use /lion-build before executor work"
+		: "select or create a durable plan before build work";
 }

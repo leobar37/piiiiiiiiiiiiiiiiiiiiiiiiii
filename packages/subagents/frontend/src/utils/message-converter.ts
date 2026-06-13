@@ -35,12 +35,14 @@ interface BackendUserMessage {
 	role: "user";
 	content: string | (BackendTextContent | BackendImageContent)[];
 	timestamp: number;
+	messageId?: string;
 }
 
 interface BackendAssistantMessage {
 	role: "assistant";
 	content: (BackendTextContent | BackendThinkingContent | BackendToolCall)[];
 	timestamp: number;
+	messageId?: string;
 }
 
 interface BackendToolResultMessage {
@@ -166,6 +168,8 @@ export function convertAgentMessages(instanceId: string, messages: Array<Record<
 					role: "assistant",
 					blocks: contentToBlocks(am.content),
 					timestamp,
+					stopReason: (msg as Record<string, unknown>).stopReason as string | undefined,
+					errorMessage: (msg as Record<string, unknown>).errorMessage as string | undefined,
 				});
 				break;
 			}

@@ -9,10 +9,22 @@ import {
 	DashboardLogQuerySchema,
 	DashboardLogSessionSummarySchema,
 	DashboardModelSchema,
+	DashboardTaskSchema,
 	DashboardThreadStateSchema,
 	LionChecklistSnapshotSchema,
+	LionSetStrategyInputSchema,
+	LionSetStrategyResultSchema,
 	SubAgentEventSchema,
 	SubAgentRunRecordSchema,
+	TaskBlockInputSchema,
+	TaskCreateInputSchema,
+	TaskIdInputSchema,
+	TaskListInputSchema,
+	TaskMutationResultSchema,
+	TaskUpdateInputSchema,
+	ThreadAbortInputSchema,
+	ThreadCreateInputSchema,
+	ThreadCreateResultSchema,
 	ThreadIdInputSchema,
 	ThreadModelInputSchema,
 	ThreadModelResultSchema,
@@ -29,6 +41,8 @@ import {
 export const subagentsContract = oc.router({
 	threads: {
 		list: oc.output(z.array(DashboardThreadStateSchema)),
+
+		create: oc.input(ThreadCreateInputSchema).output(ThreadCreateResultSchema),
 
 		get: oc.input(ThreadIdInputSchema).output(DashboardThreadStateSchema),
 
@@ -47,6 +61,8 @@ export const subagentsContract = oc.router({
 
 		prompt: oc.input(ThreadPromptInputSchema).output(ThreadPromptResultSchema),
 
+		abort: oc.input(ThreadAbortInputSchema).output(ThreadIdInputSchema),
+
 		commands: oc.input(ThreadIdInputSchema).output(z.array(DashboardCommandSchema)),
 
 		models: oc.input(ThreadIdInputSchema).output(z.array(DashboardModelSchema)),
@@ -57,7 +73,29 @@ export const subagentsContract = oc.router({
 	lion: {
 		state: oc.output(DashboardLionStateSchema),
 
+		setStrategy: oc.input(LionSetStrategyInputSchema).output(LionSetStrategyResultSchema),
+
 		checklist: oc.input(ChecklistInputSchema).output(LionChecklistSnapshotSchema),
+	},
+
+	tasks: {
+		list: oc.input(TaskListInputSchema).output(z.array(DashboardTaskSchema)),
+
+		get: oc.input(TaskIdInputSchema).output(DashboardTaskSchema.nullable()),
+
+		create: oc.input(TaskCreateInputSchema).output(TaskMutationResultSchema),
+
+		update: oc.input(TaskUpdateInputSchema).output(TaskMutationResultSchema),
+
+		complete: oc
+			.input(TaskUpdateInputSchema.pick({ id: true, actorSessionId: true, expectedRevision: true }))
+			.output(TaskMutationResultSchema),
+
+		block: oc.input(TaskBlockInputSchema).output(TaskMutationResultSchema),
+
+		delete: oc
+			.input(TaskUpdateInputSchema.pick({ id: true, actorSessionId: true, expectedRevision: true }))
+			.output(TaskMutationResultSchema),
 	},
 
 	logs: {

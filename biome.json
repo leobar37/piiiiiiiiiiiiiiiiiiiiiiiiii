@@ -34,6 +34,7 @@
 			"!**/test-sessions.ts",
 			"!**/models.generated.ts",
 			"!packages/web-ui/src/app.css",
+			"!packages/subagents/frontend/src/routeTree.gen.ts",
 			"!packages/mom/data/**/*",
 			"!!**/node_modules"
 		]

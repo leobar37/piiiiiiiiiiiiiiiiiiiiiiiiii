@@ -1,7 +1,9 @@
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { implement, ORPCError } from "@orpc/server";
-import type { LionChecklistKind } from "../lion/types.js";
+import type { LionChecklistKind, LionStrategyName } from "../lion/types.js";
+import { isTaskStoreError } from "../tasks/store.js";
+import type { TaskRecord, TaskStoreError, TaskStoreResult } from "../tasks/types.js";
 import type { VirtualInstance } from "../transport/state-manager.js";
 import type { DashboardLionState, DashboardThreadState } from "../transport/types.js";
 import type { SubAgentRunRecord, SubAgentState } from "../types.js";
@@ -11,6 +13,7 @@ import {
 	formatDashboardModels,
 	getAgentSessionCommands,
 	sendToAgentSession,
+	type ThreadPromptImage,
 	type ThreadPromptMode,
 } from "./session-control.js";
 import type { DashboardLogLevel } from "./session-log-store.js";
@@ -18,7 +21,7 @@ import type { SubagentsOutputs } from "./types.js";
 
 const DEFAULT_LION_STATE: DashboardLionState = {
 	active: false,
-	strategy: "plan",
+	strategy: "none",
 	phase: "planning",
 	activePlanPath: null,
 	activePlanSlug: null,
@@ -33,6 +36,7 @@ function projectRunRecord(record: SubAgentRunRecord): DashboardThreadState {
 		instanceId: record.instanceId,
 		taskId: record.taskId,
 		definitionName: record.definitionName,
+		cwd: record.cwd,
 		parentThreadId: record.parentThreadId,
 		parentToolCallId: record.parentToolCallId,
 		runId: record.runId,
@@ -122,6 +126,14 @@ async function tryOpenSession(
 	return null;
 }
 
+function isStandaloneSession(threadId: string): boolean {
+	return threadId.startsWith("standalone-");
+}
+
+async function getStandaloneThreads(ctx: SubagentsApiContext): Promise<DashboardThreadState[]> {
+	return ctx.standaloneSessions.list().map((info) => info.state);
+}
+
 async function getSubagentThreads(ctx: SubagentsApiContext): Promise<DashboardThreadState[]> {
 	const currentMainThreadId = ctx.mainSession?.getThread()?.instanceId;
 	const controllerStates = ctx.controller.getInstanceStates();
@@ -205,6 +217,23 @@ function errorData(error: unknown): Record<string, unknown> {
 	};
 }
 
+function taskOrThrow(result: TaskStoreResult<TaskRecord>): { task: TaskRecord } {
+	if (!isTaskStoreError(result)) return { task: result };
+	throw new ORPCError(mapTaskErrorCode(result.error), { message: result.error.message });
+}
+
+function mapTaskErrorCode(error: TaskStoreError): "BAD_REQUEST" | "NOT_FOUND" | "SERVICE_UNAVAILABLE" {
+	switch (error.code) {
+		case "not_found":
+			return "NOT_FOUND";
+		case "lock_failed":
+		case "storage_error":
+			return "SERVICE_UNAVAILABLE";
+		default:
+			return "BAD_REQUEST";
+	}
+}
+
 async function getVirtualSessionFile(
 	ctx: SubagentsApiContext,
 	threadId: string,
@@ -220,13 +249,14 @@ async function sendThreadMessage(
 	threadId: string,
 	message: string,
 	mode: ThreadPromptMode,
+	images?: ThreadPromptImage[],
 ): Promise<void> {
 	const main = ctx.mainSession?.getThread();
 	if (main?.instanceId === threadId) {
 		if (!ctx.mainSession?.sendMessage) {
 			throw new ORPCError("SERVICE_UNAVAILABLE", { message: "Main session is not controllable" });
 		}
-		await ctx.mainSession.sendMessage(threadId, message, mode);
+		await ctx.mainSession.sendMessage(threadId, message, mode, images);
 		return;
 	}
 
@@ -237,11 +267,11 @@ async function sendThreadMessage(
 			throw new ORPCError("SERVICE_UNAVAILABLE", { message: "Session not ready" });
 		}
 		if (mode === "follow_up") {
-			await ctx.controller.instanceFollowUp(state.taskId, message);
+			await ctx.controller.instanceFollowUp(state.taskId, message, images);
 		} else if (mode === "steer") {
-			await ctx.controller.steerInstance(state.taskId, message);
+			await ctx.controller.steerInstance(state.taskId, message, images);
 		} else {
-			await ctx.controller.promptInstance(state.taskId, message);
+			await ctx.controller.promptInstance(state.taskId, message, { images });
 		}
 		return;
 	}
@@ -250,12 +280,20 @@ async function sendThreadMessage(
 	if (resumable) {
 		try {
 			const cached = await ctx.sessionCache.getOrCreate(resumable.record, resumable.sessionFile);
-			await sendToAgentSession(cached.session, message, mode);
+			await sendToAgentSession(cached.session, message, mode, images);
 			return;
 		} catch (error) {
 			throw new ORPCError("SERVICE_UNAVAILABLE", {
 				message: error instanceof Error ? error.message : "Session not resumable",
 			});
+		}
+	}
+
+	if (isStandaloneSession(threadId)) {
+		const info = ctx.standaloneSessions.get(threadId);
+		if (info) {
+			await ctx.standaloneSessions.prompt(threadId, message, mode, images);
+			return;
 		}
 	}
 
@@ -268,7 +306,7 @@ async function listThreadCommands(
 ): Promise<SubagentsOutputs["threads"]["commands"]> {
 	const main = ctx.mainSession?.getThread();
 	if (main?.instanceId === threadId) {
-		return ctx.mainSession?.getCommands?.(threadId) ?? [];
+		return (await ctx.mainSession?.getCommands?.(threadId)) ?? [];
 	}
 
 	const instance = ctx.controller.getInstanceById(threadId);
@@ -292,6 +330,13 @@ async function listThreadCommands(
 			throw new ORPCError("SERVICE_UNAVAILABLE", {
 				message: error instanceof Error ? error.message : "Session not resumable",
 			});
+		}
+	}
+
+	if (isStandaloneSession(threadId)) {
+		const info = ctx.standaloneSessions.get(threadId);
+		if (info) {
+			return ctx.standaloneSessions.getCommands(threadId);
 		}
 	}
 
@@ -328,6 +373,13 @@ async function listThreadModels(
 			throw new ORPCError("SERVICE_UNAVAILABLE", {
 				message: error instanceof Error ? error.message : "Session not resumable",
 			});
+		}
+	}
+
+	if (isStandaloneSession(threadId)) {
+		const info = ctx.standaloneSessions.get(threadId);
+		if (info) {
+			return formatDashboardModels(await ctx.standaloneSessions.getAvailableModels(threadId));
 		}
 	}
 
@@ -404,6 +456,64 @@ async function selectThreadModel(
 		}
 	}
 
+	if (isStandaloneSession(threadId)) {
+		const info = ctx.standaloneSessions.get(threadId);
+		if (info) {
+			const model = await ctx.standaloneSessions.setModel(threadId, provider, modelId);
+			if (!model) {
+				throw new ORPCError("BAD_REQUEST", { message: "Model is unavailable or not authenticated" });
+			}
+			return { threadId, provider, modelId, status: "selected" as const, selectedAt: Date.now() };
+		}
+	}
+
+	throw new ORPCError("NOT_FOUND", { message: "Thread not found" });
+}
+
+async function abortThread(ctx: SubagentsApiContext, threadId: string): Promise<void> {
+	const main = ctx.mainSession?.getThread();
+	if (main?.instanceId === threadId) {
+		if (!ctx.mainSession?.abort) {
+			throw new ORPCError("SERVICE_UNAVAILABLE", { message: "Main session is not controllable" });
+		}
+		await ctx.mainSession.abort(threadId);
+		return;
+	}
+
+	const instance = ctx.controller.getInstanceById(threadId);
+	if (instance) {
+		const state = instance.getState();
+		await ctx.controller.abortInstance(state.taskId);
+		return;
+	}
+
+	const cached = ctx.sessionCache.get(threadId);
+	if (cached) {
+		await cached.session.abort();
+		return;
+	}
+
+	const resumable = await getVirtualSessionFile(ctx, threadId);
+	if (resumable) {
+		try {
+			const session = await ctx.sessionCache.getOrCreate(resumable.record, resumable.sessionFile);
+			await session.session.abort();
+			return;
+		} catch (error) {
+			throw new ORPCError("SERVICE_UNAVAILABLE", {
+				message: error instanceof Error ? error.message : "Session not resumable",
+			});
+		}
+	}
+
+	if (isStandaloneSession(threadId)) {
+		const info = ctx.standaloneSessions.get(threadId);
+		if (info) {
+			await ctx.standaloneSessions.abort(threadId);
+			return;
+		}
+	}
+
 	throw new ORPCError("NOT_FOUND", { message: "Thread not found" });
 }
 
@@ -415,8 +525,22 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 			list: impl.threads.list.handler(async () => {
 				const main = ctx.mainSession?.getThread();
 				const subagents = await getSubagentThreads(ctx);
-				const threads = main ? [main, ...subagents] : subagents;
+				const standalones = await getStandaloneThreads(ctx);
+				const threads = main ? [main, ...standalones, ...subagents] : [...standalones, ...subagents];
 				return threads;
+			}),
+
+			create: impl.threads.create.handler(async ({ input }) => {
+				const info = await ctx.standaloneSessions.create({
+					cwd: input.cwd ?? ctx.cwd,
+					name: input.name,
+				});
+				return {
+					threadId: info.instanceId,
+					name: info.name,
+					createdAt: info.createdAt,
+					cwd: info.state.cwd,
+				};
 			}),
 
 			get: impl.threads.get.handler(async ({ input }) => {
@@ -424,6 +548,10 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 				const main = ctx.mainSession?.getThread();
 				if (main?.instanceId === threadId) {
 					return main;
+				}
+				const standalone = ctx.standaloneSessions.get(threadId);
+				if (standalone) {
+					return standalone.state;
 				}
 				const state = ctx.stateManager.getInstance(threadId);
 				if (!state) {
@@ -445,6 +573,14 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 					return {
 						sessionId: main.sessionId!,
 						messages: mainMessages as SubagentsOutputs["threads"]["messages"],
+					};
+				}
+
+				const standalone = ctx.standaloneSessions.get(threadId);
+				if (standalone) {
+					return {
+						sessionId: standalone.sessionId,
+						messages: standalone.session.messages as SubagentsOutputs["threads"]["messages"],
 					};
 				}
 
@@ -484,6 +620,11 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 					return mainMessages as SubagentsOutputs["threads"]["messages"];
 				}
 
+				const standalone = ctx.standaloneSessions.get(threadId);
+				if (standalone) {
+					return standalone.session.messages as SubagentsOutputs["threads"]["messages"];
+				}
+
 				const instance = ctx.controller.getInstanceById(threadId);
 				if (instance) {
 					const state = instance.getState();
@@ -510,6 +651,9 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 				const main = ctx.mainSession?.getThread();
 				if (main?.instanceId === threadId) {
 					return ctx.mainSession?.getEvents(threadId) ?? [];
+				}
+				if (isStandaloneSession(threadId)) {
+					return ctx.stateManager.getEvents(threadId);
 				}
 				const events = await ctx.stateManager.getEvents(threadId);
 				return events;
@@ -544,10 +688,10 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 					threadId: input.threadId,
 					type: "thread.prompt.request",
 					source: "dashboard",
-					data: { mode: input.mode, messageLength: input.message.length },
+					data: { mode: input.mode, messageLength: input.message.length, imageCount: input.images?.length ?? 0 },
 				});
 				try {
-					await sendThreadMessage(ctx, input.threadId, input.message, input.mode);
+					await sendThreadMessage(ctx, input.threadId, input.message.trim(), input.mode, input.images);
 					const acceptedAt = Date.now();
 					await logDashboardControl(ctx, {
 						threadId: input.threadId,
@@ -571,6 +715,11 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 					});
 					throw error;
 				}
+			}),
+
+			abort: impl.threads.abort.handler(async ({ input }) => {
+				await abortThread(ctx, input.threadId);
+				return { threadId: input.threadId };
 			}),
 
 			commands: impl.threads.commands.handler(async ({ input }) => {
@@ -615,6 +764,25 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 				return ctx.lionState?.() ?? DEFAULT_LION_STATE;
 			}),
 
+			setStrategy: impl.lion.setStrategy.handler(async ({ input }) => {
+				const previousStrategy = (ctx.lionState?.().strategy ?? "none") as LionStrategyName;
+				const strategy = input.strategy;
+				if (!ctx.setLionStrategy) {
+					throw new ORPCError("SERVICE_UNAVAILABLE", { message: "Lion strategy control is not available" });
+				}
+				try {
+					await ctx.setLionStrategy(strategy);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					throw new ORPCError("BAD_REQUEST", { message });
+				}
+				return {
+					strategy,
+					previousStrategy,
+					acceptedAt: Date.now(),
+				};
+			}),
+
 			checklist: impl.lion.checklist.handler(async ({ input }) => {
 				const kind = input.kind;
 				if (kind !== "plan" && kind !== "review") {
@@ -634,6 +802,42 @@ export function createSubagentsRouter(ctx: SubagentsApiContext) {
 						message: error instanceof Error ? error.message : String(error),
 					});
 				}
+			}),
+		},
+
+		tasks: {
+			list: impl.tasks.list.handler(async ({ input }) => {
+				return ctx.taskService.list(input);
+			}),
+
+			get: impl.tasks.get.handler(async ({ input }) => {
+				return ctx.taskService.get(input.id);
+			}),
+
+			create: impl.tasks.create.handler(async ({ input }) => {
+				const { actorSessionId, ...taskInput } = input;
+				return taskOrThrow(await ctx.taskService.create(taskInput, actorSessionId));
+			}),
+
+			update: impl.tasks.update.handler(async ({ input }) => {
+				const { actorSessionId, ...taskInput } = input;
+				return taskOrThrow(await ctx.taskService.update(taskInput, actorSessionId));
+			}),
+
+			complete: impl.tasks.complete.handler(async ({ input }) => {
+				return taskOrThrow(await ctx.taskService.complete(input.id, input.expectedRevision, input.actorSessionId));
+			}),
+
+			block: impl.tasks.block.handler(async ({ input }) => {
+				return taskOrThrow(
+					await ctx.taskService.block(input.id, input.reason, input.expectedRevision, input.actorSessionId),
+				);
+			}),
+
+			delete: impl.tasks.delete.handler(async ({ input }) => {
+				return taskOrThrow(
+					await ctx.taskService.softDelete(input.id, input.expectedRevision, input.actorSessionId),
+				);
 			}),
 		},
 

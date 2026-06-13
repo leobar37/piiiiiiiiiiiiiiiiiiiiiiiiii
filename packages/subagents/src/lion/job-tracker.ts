@@ -156,6 +156,7 @@ export class SubagentJobManager {
 
 	recordSubagentUiEvent(event: SubAgentEvent): void {
 		if (!("taskId" in event)) return;
+		if (!event.instanceId) return;
 		this.#recordJobEvent(event);
 		const existing = this.#subagentUi.get(event.taskId);
 		if (!existing) return;

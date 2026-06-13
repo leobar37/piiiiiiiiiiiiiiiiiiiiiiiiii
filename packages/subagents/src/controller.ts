@@ -127,6 +127,18 @@ export class SubAgentController {
 		return this.cwd;
 	}
 
+	getAuthStorage(): AuthStorage | undefined {
+		return this.authStorage;
+	}
+
+	getModelRegistry(): ModelRegistry | undefined {
+		return this.modelRegistry;
+	}
+
+	getSettingsManager(): SettingsManager | undefined {
+		return this.settingsManager;
+	}
+
 	// =====================================================================
 	// Instance Lifecycle
 	// =====================================================================

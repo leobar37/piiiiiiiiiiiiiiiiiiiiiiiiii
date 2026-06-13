@@ -53,6 +53,19 @@ export const handlers = [
 					activeTaskId: null,
 				});
 			}
+			if (mode === "none") {
+				return orpcJson({
+					...MOCK_LION_STATE,
+					active: false,
+					strategy: "none",
+					phase: "planning",
+					activePlanPath: null,
+					activePlanSlug: null,
+					planKind: null,
+					activeTaskId: null,
+					lastRunId: null,
+				});
+			}
 			return orpcJson(MOCK_LION_STATE);
 		}
 

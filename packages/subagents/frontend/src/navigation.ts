@@ -1,8 +1,9 @@
-export function getHashThreadId(): string | null {
-	const hash = window.location.hash;
-	return hash.startsWith("#/thread/") ? decodeURIComponent(hash.slice("#/thread/".length)) : null;
-}
+import { router } from "./router.tsx";
 
 export function navigateToThread(id: string | null): void {
-	window.location.hash = id ? `#/thread/${encodeURIComponent(id)}` : "#/";
+	if (id) {
+		void router.navigate({ to: "/thread/$threadId", params: { threadId: id } });
+	} else {
+		void router.navigate({ to: "/" });
+	}
 }

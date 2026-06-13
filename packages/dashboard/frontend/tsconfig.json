@@ -11,10 +11,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "paths": {
-      "@local/pi-dashboard": ["../src/contract.ts"]
-    }
+    "isolatedModules": true
   },
   "include": ["src"]
 }

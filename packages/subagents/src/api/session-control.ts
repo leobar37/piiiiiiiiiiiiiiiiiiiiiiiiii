@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
 	type AgentSessionEvent,
@@ -24,6 +24,7 @@ export interface DashboardModel {
 }
 
 export type ThreadPromptMode = "prompt" | "follow_up" | "steer";
+export type ThreadPromptImage = ImageContent & { name?: string };
 
 export interface CachedThreadSession {
 	session: AgentSession;
@@ -77,16 +78,17 @@ export async function sendToAgentSession(
 	session: AgentSession,
 	message: string,
 	mode: ThreadPromptMode,
+	images?: ThreadPromptImage[],
 ): Promise<void> {
 	if (mode === "follow_up") {
-		await session.followUp(message);
+		await session.followUp(message, images);
 		return;
 	}
 	if (mode === "steer") {
-		await session.steer(message);
+		await session.steer(message, images);
 		return;
 	}
-	await session.prompt(message);
+	await session.prompt(message, { images });
 }
 
 export class DashboardThreadSessionCache {

@@ -3,9 +3,7 @@ import {
 	Container,
 	type Focusable,
 	Input,
-	Key,
 	Markdown,
-	matchesKey,
 	type SelectItem,
 	SelectList,
 	Spacer,
@@ -14,193 +12,152 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import { filterTodos, formatTodoId, isTodoClosed, renderAssignmentSuffix } from "./format.js";
-import type { KeybindingMatcher, TodoFrontMatter, TodoMenuAction, TodoOverlayAction, TodoRecord } from "./types.js";
+import { filterTasks, formatContextMarkdown, formatTaskId, isTaskVisible, renderAssignmentSuffix } from "./format.js";
+import { isTaskClosed } from "./task-store.js";
+import type { KeybindingMatcher, TaskRecord, TodoMenuAction, TodoOverlayAction } from "./types.js";
 
-export class TodoSelectorComponent extends Container implements Focusable {
+export class TaskSelectorComponent extends Container implements Focusable {
 	private searchInput: Input;
 	private listContainer: Container;
-	private allTodos: TodoFrontMatter[];
-	private filteredTodos: TodoFrontMatter[];
+	private allTasks: TaskRecord[];
+	private filteredTasks: TaskRecord[];
 	private selectedIndex = 0;
-	private onSelectCallback: (todo: TodoFrontMatter) => void;
-	private onCancelCallback: () => void;
-	private tui: TUI;
-	private theme: Theme;
-	private keybindings: KeybindingMatcher;
 	private headerText: Text;
 	private hintText: Text;
-	private currentSessionId?: string;
-
 	private _focused = false;
+
 	get focused(): boolean {
 		return this._focused;
 	}
+
 	set focused(value: boolean) {
 		this._focused = value;
 		this.searchInput.focused = value;
 	}
 
 	constructor(
-		tui: TUI,
-		theme: Theme,
-		keybindings: KeybindingMatcher,
-		todos: TodoFrontMatter[],
-		onSelect: (todo: TodoFrontMatter) => void,
-		onCancel: () => void,
+		private tui: TUI,
+		private theme: Theme,
+		private keybindings: KeybindingMatcher,
+		tasks: TaskRecord[],
+		private onSelectCallback: (task: TaskRecord) => void,
+		private onCancelCallback: () => void,
 		initialSearchInput?: string,
-		currentSessionId?: string,
-		private onQuickAction?: (todo: TodoFrontMatter, action: "work" | "refine") => void,
+		private currentSessionId?: string,
 	) {
 		super();
-		this.tui = tui;
-		this.theme = theme;
-		this.keybindings = keybindings;
-		this.currentSessionId = currentSessionId;
-		this.allTodos = todos;
-		this.filteredTodos = todos;
-		this.onSelectCallback = onSelect;
-		this.onCancelCallback = onCancel;
-
+		this.allTasks = tasks;
+		this.filteredTasks = tasks;
 		this.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 		this.addChild(new Spacer(1));
-
 		this.headerText = new Text("", 1, 0);
 		this.addChild(this.headerText);
 		this.addChild(new Spacer(1));
-
 		this.searchInput = new Input();
-		if (initialSearchInput) {
-			this.searchInput.setValue(initialSearchInput);
-		}
+		if (initialSearchInput) this.searchInput.setValue(initialSearchInput);
 		this.searchInput.onSubmit = () => {
-			const selected = this.filteredTodos[this.selectedIndex];
+			const selected = this.filteredTasks[this.selectedIndex];
 			if (selected) this.onSelectCallback(selected);
 		};
 		this.addChild(this.searchInput);
-
 		this.addChild(new Spacer(1));
 		this.listContainer = new Container();
 		this.addChild(this.listContainer);
-
 		this.addChild(new Spacer(1));
 		this.hintText = new Text("", 1, 0);
 		this.addChild(this.hintText);
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-
 		this.updateHeader();
 		this.updateHints();
 		this.applyFilter(this.searchInput.getValue());
 	}
 
-	setTodos(todos: TodoFrontMatter[]): void {
-		this.allTodos = todos;
+	setTasks(tasks: TaskRecord[]): void {
+		this.allTasks = tasks;
 		this.updateHeader();
 		this.applyFilter(this.searchInput.getValue());
 		this.tui.requestRender();
 	}
 
-	getSearchValue(): string {
-		return this.searchInput.getValue();
-	}
-
 	private updateHeader(): void {
-		const openCount = this.allTodos.filter((todo) => !isTodoClosed(todo.status)).length;
-		const closedCount = this.allTodos.length - openCount;
-		const title = `Todos (${openCount} open, ${closedCount} closed)`;
-		this.headerText.setText(this.theme.fg("accent", this.theme.bold(title)));
-	}
-
-	private updateHints(): void {
-		this.hintText.setText(
-			this.theme.fg(
-				"dim",
-				"Type to search • ↑↓ select • Enter actions • Ctrl+Shift+W work • Ctrl+Shift+R refine • Esc close",
-			),
+		const visible = this.allTasks.filter(isTaskVisible);
+		const openCount = visible.filter((task) => !isTaskClosed(task.status)).length;
+		const closedCount = visible.length - openCount;
+		this.headerText.setText(
+			this.theme.fg("accent", this.theme.bold(`Tasks (${openCount} open, ${closedCount} closed)`)),
 		);
 	}
 
+	private updateHints(): void {
+		this.hintText.setText(this.theme.fg("dim", "Type to search - up/down select - Enter actions - Esc close"));
+	}
+
 	private applyFilter(query: string): void {
-		this.filteredTodos = filterTodos(this.allTodos, query);
-		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredTodos.length - 1));
+		this.filteredTasks = filterTasks(this.allTasks.filter(isTaskVisible), query);
+		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredTasks.length - 1));
 		this.updateList();
 	}
 
 	private updateList(): void {
 		this.listContainer.clear();
-
-		if (this.filteredTodos.length === 0) {
-			this.listContainer.addChild(new Text(this.theme.fg("muted", "  No matching todos"), 0, 0));
+		if (this.filteredTasks.length === 0) {
+			this.listContainer.addChild(new Text(this.theme.fg("muted", "  No matching tasks"), 0, 0));
 			return;
 		}
-
 		const maxVisible = 10;
 		const startIndex = Math.max(
 			0,
-			Math.min(this.selectedIndex - Math.floor(maxVisible / 2), this.filteredTodos.length - maxVisible),
+			Math.min(this.selectedIndex - Math.floor(maxVisible / 2), this.filteredTasks.length - maxVisible),
 		);
-		const endIndex = Math.min(startIndex + maxVisible, this.filteredTodos.length);
-
+		const endIndex = Math.min(startIndex + maxVisible, this.filteredTasks.length);
 		for (let i = startIndex; i < endIndex; i += 1) {
-			const todo = this.filteredTodos[i];
-			if (!todo) continue;
+			const task = this.filteredTasks[i];
+			if (!task) continue;
 			const isSelected = i === this.selectedIndex;
-			const closed = isTodoClosed(todo.status);
-			const prefix = isSelected ? this.theme.fg("accent", "→ ") : "  ";
+			const closed = isTaskClosed(task.status);
+			const prefix = isSelected ? this.theme.fg("accent", "> ") : "  ";
 			const titleColor = isSelected ? "accent" : closed ? "dim" : "text";
-			const statusColor = closed ? "dim" : "success";
-			const tagText = todo.tags.length ? ` [${todo.tags.join(", ")}]` : "";
-			const assignmentText = renderAssignmentSuffix(this.theme, todo, this.currentSessionId);
+			const statusColor = closed ? "dim" : task.status === "blocked" ? "warning" : "success";
+			const assignmentText = renderAssignmentSuffix(this.theme, task, this.currentSessionId);
 			const line =
 				prefix +
-				this.theme.fg("accent", formatTodoId(todo.id)) +
+				this.theme.fg("accent", formatTaskId(task.id)) +
 				" " +
-				this.theme.fg(titleColor, todo.title || "(untitled)") +
-				this.theme.fg("muted", tagText) +
+				this.theme.fg(titleColor, task.title || "(untitled)") +
 				assignmentText +
 				" " +
-				this.theme.fg(statusColor, `(${todo.status || "open"})`);
+				this.theme.fg(statusColor, `(${task.status})`);
 			this.listContainer.addChild(new Text(line, 0, 0));
 		}
-
-		if (startIndex > 0 || endIndex < this.filteredTodos.length) {
-			const scrollInfo = this.theme.fg("dim", `  (${this.selectedIndex + 1}/${this.filteredTodos.length})`);
-			this.listContainer.addChild(new Text(scrollInfo, 0, 0));
+		if (startIndex > 0 || endIndex < this.filteredTasks.length) {
+			this.listContainer.addChild(
+				new Text(this.theme.fg("dim", `  (${this.selectedIndex + 1}/${this.filteredTasks.length})`), 0, 0),
+			);
 		}
 	}
 
 	handleInput(keyData: string): void {
 		const kb = this.keybindings;
 		if (kb.matches(keyData, "tui.select.up")) {
-			if (this.filteredTodos.length === 0) return;
-			this.selectedIndex = this.selectedIndex === 0 ? this.filteredTodos.length - 1 : this.selectedIndex - 1;
+			if (this.filteredTasks.length === 0) return;
+			this.selectedIndex = this.selectedIndex === 0 ? this.filteredTasks.length - 1 : this.selectedIndex - 1;
 			this.updateList();
 			return;
 		}
 		if (kb.matches(keyData, "tui.select.down")) {
-			if (this.filteredTodos.length === 0) return;
-			this.selectedIndex = this.selectedIndex === this.filteredTodos.length - 1 ? 0 : this.selectedIndex + 1;
+			if (this.filteredTasks.length === 0) return;
+			this.selectedIndex = this.selectedIndex === this.filteredTasks.length - 1 ? 0 : this.selectedIndex + 1;
 			this.updateList();
 			return;
 		}
 		if (kb.matches(keyData, "tui.select.confirm")) {
-			const selected = this.filteredTodos[this.selectedIndex];
+			const selected = this.filteredTasks[this.selectedIndex];
 			if (selected) this.onSelectCallback(selected);
 			return;
 		}
 		if (kb.matches(keyData, "tui.select.cancel")) {
 			this.onCancelCallback();
-			return;
-		}
-		if (matchesKey(keyData, Key.ctrlShift("r"))) {
-			const selected = this.filteredTodos[this.selectedIndex];
-			if (selected && this.onQuickAction) this.onQuickAction(selected, "refine");
-			return;
-		}
-		if (matchesKey(keyData, Key.ctrlShift("w"))) {
-			const selected = this.filteredTodos[this.selectedIndex];
-			if (selected && this.onQuickAction) this.onQuickAction(selected, "work");
 			return;
 		}
 		this.searchInput.handleInput(keyData);
@@ -215,36 +172,30 @@ export class TodoSelectorComponent extends Container implements Focusable {
 	}
 }
 
-export class TodoActionMenuComponent extends Container {
+export class TaskActionMenuComponent extends Container {
 	private selectList: SelectList;
-	private onSelectCallback: (action: TodoMenuAction) => void;
-	private onCancelCallback: () => void;
 
-	constructor(theme: Theme, todo: TodoRecord, onSelect: (action: TodoMenuAction) => void, onCancel: () => void) {
+	constructor(theme: Theme, task: TaskRecord, onSelect: (action: TodoMenuAction) => void, onCancel: () => void) {
 		super();
-		this.onSelectCallback = onSelect;
-		this.onCancelCallback = onCancel;
-
-		const closed = isTodoClosed(todo.status);
-		const title = todo.title || "(untitled)";
+		const closed = isTaskClosed(task.status);
+		const title = task.title || "(untitled)";
 		const options: SelectItem[] = [
-			{ value: "view", label: "view", description: "View todo" },
-			{ value: "work", label: "work", description: "Work on todo" },
+			{ value: "view", label: "view", description: "View task context" },
+			{ value: "work", label: "work", description: "Work on task" },
 			{ value: "refine", label: "refine", description: "Refine task" },
-			...(closed
-				? [{ value: "reopen", label: "reopen", description: "Reopen todo" }]
-				: [{ value: "close", label: "close", description: "Close todo" }]),
-			...(todo.assigned_to_session
-				? [{ value: "release", label: "release", description: "Release assignment" }]
+			...(task.status === "blocked"
+				? [{ value: "reopen", label: "reopen", description: "Move task back to pending" }]
 				: []),
-			{ value: "copyPath", label: "copy path", description: "Copy absolute path to clipboard" },
-			{ value: "copyText", label: "copy text", description: "Copy title and body to clipboard" },
-			{ value: "delete", label: "delete", description: "Delete todo" },
+			...(closed
+				? [{ value: "reopen", label: "reopen", description: "Reopen task" }]
+				: [{ value: "close", label: "complete", description: "Complete task" }]),
+			...(task.assignedToSession ? [{ value: "release", label: "release", description: "Release assignment" }] : []),
+			{ value: "copyPath", label: "copy path", description: "Copy legacy task path to clipboard" },
+			{ value: "copyText", label: "copy text", description: "Copy task text to clipboard" },
+			{ value: "delete", label: "delete", description: "Soft-delete task" },
 		];
-
 		this.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
-		this.addChild(new Text(theme.fg("accent", theme.bold(`Actions for ${formatTodoId(todo.id)} "${title}"`))));
-
+		this.addChild(new Text(theme.fg("accent", theme.bold(`Actions for ${formatTaskId(task.id)} "${title}"`))));
 		this.selectList = new SelectList(options, options.length, {
 			selectedPrefix: (text) => theme.fg("accent", text),
 			selectedText: (text) => theme.fg("accent", text),
@@ -252,94 +203,65 @@ export class TodoActionMenuComponent extends Container {
 			scrollInfo: (text) => theme.fg("dim", text),
 			noMatch: (text) => theme.fg("warning", text),
 		});
-
-		this.selectList.onSelect = (item) => this.onSelectCallback(item.value as TodoMenuAction);
-		this.selectList.onCancel = () => this.onCancelCallback();
-
+		this.selectList.onSelect = (item) => onSelect(item.value as TodoMenuAction);
+		this.selectList.onCancel = onCancel;
 		this.addChild(this.selectList);
-		this.addChild(new Text(theme.fg("dim", "Enter to confirm • Esc back")));
+		this.addChild(new Text(theme.fg("dim", "Enter to confirm - Esc back")));
 		this.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 	}
 
 	handleInput(keyData: string): void {
 		this.selectList.handleInput(keyData);
 	}
-
-	override invalidate(): void {
-		super.invalidate();
-	}
 }
 
-export class TodoDeleteConfirmComponent extends Container {
+export class TaskDeleteConfirmComponent extends Container {
 	private selectList: SelectList;
-	private onConfirm: (confirmed: boolean) => void;
 
 	constructor(theme: Theme, message: string, onConfirm: (confirmed: boolean) => void) {
 		super();
-		this.onConfirm = onConfirm;
-
-		const options: SelectItem[] = [
-			{ value: "yes", label: "Yes" },
-			{ value: "no", label: "No" },
-		];
-
 		this.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 		this.addChild(new Text(theme.fg("accent", message)));
-
-		this.selectList = new SelectList(options, options.length, {
-			selectedPrefix: (text) => theme.fg("accent", text),
-			selectedText: (text) => theme.fg("accent", text),
-			description: (text) => theme.fg("muted", text),
-			scrollInfo: (text) => theme.fg("dim", text),
-			noMatch: (text) => theme.fg("warning", text),
-		});
-
-		this.selectList.onSelect = (item) => this.onConfirm(item.value === "yes");
-		this.selectList.onCancel = () => this.onConfirm(false);
-
+		this.selectList = new SelectList(
+			[
+				{ value: "yes", label: "Yes" },
+				{ value: "no", label: "No" },
+			],
+			2,
+			{
+				selectedPrefix: (text) => theme.fg("accent", text),
+				selectedText: (text) => theme.fg("accent", text),
+				description: (text) => theme.fg("muted", text),
+				scrollInfo: (text) => theme.fg("dim", text),
+				noMatch: (text) => theme.fg("warning", text),
+			},
+		);
+		this.selectList.onSelect = (item) => onConfirm(item.value === "yes");
+		this.selectList.onCancel = () => onConfirm(false);
 		this.addChild(this.selectList);
-		this.addChild(new Text(theme.fg("dim", "Enter to confirm • Esc back")));
+		this.addChild(new Text(theme.fg("dim", "Enter to confirm - Esc back")));
 		this.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 	}
 
 	handleInput(keyData: string): void {
 		this.selectList.handleInput(keyData);
 	}
-
-	override invalidate(): void {
-		super.invalidate();
-	}
 }
 
-export class TodoDetailOverlayComponent {
-	private todo: TodoRecord;
-	private theme: Theme;
-	private tui: TUI;
+export class TaskDetailOverlayComponent {
 	private markdown: Markdown;
 	private scrollOffset = 0;
 	private viewHeight = 0;
 	private totalLines = 0;
-	private onAction: (action: TodoOverlayAction) => void;
-	private keybindings: KeybindingMatcher;
 
 	constructor(
-		tui: TUI,
-		theme: Theme,
-		keybindings: KeybindingMatcher,
-		todo: TodoRecord,
-		onAction: (action: TodoOverlayAction) => void,
+		private tui: TUI,
+		private theme: Theme,
+		private keybindings: KeybindingMatcher,
+		private task: TaskRecord,
+		private onAction: (action: TodoOverlayAction) => void,
 	) {
-		this.tui = tui;
-		this.theme = theme;
-		this.keybindings = keybindings;
-		this.todo = todo;
-		this.onAction = onAction;
-		this.markdown = new Markdown(this.getMarkdownText(), 1, 0, getMarkdownTheme());
-	}
-
-	private getMarkdownText(): string {
-		const body = this.todo.body?.trim();
-		return body ? body : "_No details yet._";
+		this.markdown = new Markdown(formatContextMarkdown(task), 1, 0, getMarkdownTheme());
 	}
 
 	handleInput(keyData: string): void {
@@ -360,110 +282,81 @@ export class TodoDetailOverlayComponent {
 			this.scrollBy(1);
 			return;
 		}
-		if (kb.matches(keyData, "tui.select.pageUp") || matchesKey(keyData, Key.left)) {
+		if (kb.matches(keyData, "tui.select.pageUp")) {
 			this.scrollBy(-this.viewHeight || -1);
 			return;
 		}
-		if (kb.matches(keyData, "tui.select.pageDown") || matchesKey(keyData, Key.right)) {
+		if (kb.matches(keyData, "tui.select.pageDown")) {
 			this.scrollBy(this.viewHeight || 1);
-			return;
 		}
 	}
 
 	render(width: number): string[] {
-		const maxHeight = this.getMaxHeight();
-		const headerLines = 3;
-		const footerLines = 3;
-		const borderLines = 2;
+		const maxHeight = Math.max(10, Math.floor((this.tui.terminal.rows || 24) * 0.8));
 		const innerWidth = Math.max(10, width - 2);
-		const contentHeight = Math.max(1, maxHeight - headerLines - footerLines - borderLines);
-
+		const contentHeight = Math.max(1, maxHeight - 8);
 		const markdownLines = this.markdown.render(innerWidth);
 		this.totalLines = markdownLines.length;
 		this.viewHeight = contentHeight;
 		const maxScroll = Math.max(0, this.totalLines - contentHeight);
 		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScroll));
-
 		const visibleLines = markdownLines.slice(this.scrollOffset, this.scrollOffset + contentHeight);
-		const lines: string[] = [];
-
-		lines.push(this.buildTitleLine(innerWidth));
-		lines.push(this.buildMetaLine(innerWidth));
-		lines.push("");
-
-		for (const line of visibleLines) {
-			lines.push(truncateToWidth(line, innerWidth));
-		}
-		while (lines.length < headerLines + contentHeight) {
-			lines.push("");
-		}
-
+		const lines = [this.buildTitleLine(innerWidth), this.buildMetaLine(innerWidth), "", ...visibleLines];
+		while (lines.length < 3 + contentHeight) lines.push("");
 		lines.push("");
 		lines.push(this.buildActionLine(innerWidth));
-
 		const borderColor = (text: string) => this.theme.fg("borderMuted", text);
-		const top = borderColor(`┌${"─".repeat(innerWidth)}┐`);
-		const bottom = borderColor(`└${"─".repeat(innerWidth)}┘`);
-		const framedLines = lines.map((line) => {
+		const top = borderColor(`+${"-".repeat(innerWidth)}+`);
+		const bottom = borderColor(`+${"-".repeat(innerWidth)}+`);
+		const framed = lines.map((line) => {
 			const truncated = truncateToWidth(line, innerWidth);
 			const padding = Math.max(0, innerWidth - visibleWidth(truncated));
-			return borderColor("│") + truncated + " ".repeat(padding) + borderColor("│");
+			return borderColor("|") + truncated + " ".repeat(padding) + borderColor("|");
 		});
-
-		return [top, ...framedLines, bottom].map((line) => truncateToWidth(line, width));
+		return [top, ...framed, bottom].map((line) => truncateToWidth(line, width));
 	}
 
 	invalidate(): void {
-		this.markdown = new Markdown(this.getMarkdownText(), 1, 0, getMarkdownTheme());
-	}
-
-	private getMaxHeight(): number {
-		const rows = this.tui.terminal.rows || 24;
-		return Math.max(10, Math.floor(rows * 0.8));
+		this.markdown = new Markdown(formatContextMarkdown(this.task), 1, 0, getMarkdownTheme());
 	}
 
 	private buildTitleLine(width: number): string {
-		const titleText = this.todo.title ? ` ${this.todo.title} ` : ` Todo ${formatTodoId(this.todo.id)} `;
+		const titleText = this.task.title ? ` ${this.task.title} ` : ` Task ${formatTaskId(this.task.id)} `;
 		const titleWidth = visibleWidth(titleText);
-		if (titleWidth >= width) {
-			return truncateToWidth(this.theme.fg("accent", titleText.trim()), width);
-		}
+		if (titleWidth >= width) return truncateToWidth(this.theme.fg("accent", titleText.trim()), width);
 		const leftWidth = Math.max(0, Math.floor((width - titleWidth) / 2));
 		const rightWidth = Math.max(0, width - titleWidth - leftWidth);
 		return (
-			this.theme.fg("borderMuted", "─".repeat(leftWidth)) +
+			this.theme.fg("borderMuted", "-".repeat(leftWidth)) +
 			this.theme.fg("accent", titleText) +
-			this.theme.fg("borderMuted", "─".repeat(rightWidth))
+			this.theme.fg("borderMuted", "-".repeat(rightWidth))
 		);
 	}
 
 	private buildMetaLine(width: number): string {
-		const status = this.todo.status || "open";
-		const statusColor = isTodoClosed(status) ? "dim" : "success";
-		const tagText = this.todo.tags.length ? this.todo.tags.join(", ") : "no tags";
+		const statusColor = isTaskClosed(this.task.status)
+			? "dim"
+			: this.task.status === "blocked"
+				? "warning"
+				: "success";
 		const line =
-			this.theme.fg("accent", formatTodoId(this.todo.id)) +
-			this.theme.fg("muted", " • ") +
-			this.theme.fg(statusColor, status) +
-			this.theme.fg("muted", " • ") +
-			this.theme.fg("muted", tagText);
+			this.theme.fg("accent", formatTaskId(this.task.id)) +
+			this.theme.fg("muted", " - ") +
+			this.theme.fg(statusColor, this.task.status) +
+			this.theme.fg("muted", ` - rev ${this.task.revision}`);
 		return truncateToWidth(line, width);
 	}
 
 	private buildActionLine(width: number): string {
-		const work = this.theme.fg("accent", "enter") + this.theme.fg("muted", " work on todo");
-		const back = this.theme.fg("dim", "esc back");
-		const nav = this.theme.fg("dim", "↑/↓: move. ←/→: page.");
-		const pieces = [work, back, nav];
-
-		let line = pieces.join(this.theme.fg("muted", " • "));
+		let line =
+			this.theme.fg("accent", "enter") +
+			this.theme.fg("muted", " work on task - ") +
+			this.theme.fg("dim", "esc back - up/down scroll");
 		if (this.totalLines > this.viewHeight) {
 			const start = Math.min(this.totalLines, this.scrollOffset + 1);
 			const end = Math.min(this.totalLines, this.scrollOffset + this.viewHeight);
-			const scrollInfo = this.theme.fg("dim", ` ${start}-${end}/${this.totalLines}`);
-			line += scrollInfo;
+			line += this.theme.fg("dim", ` ${start}-${end}/${this.totalLines}`);
 		}
-
 		return truncateToWidth(line, width);
 	}
 

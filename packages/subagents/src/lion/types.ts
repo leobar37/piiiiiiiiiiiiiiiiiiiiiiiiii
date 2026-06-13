@@ -39,7 +39,7 @@ export interface LionTasksResult {
 
 export const LION_DEFAULT_MAX_ATTEMPTS = 3;
 
-export type LionStrategyName = "plan" | "simple" | "review";
+export type LionStrategyName = "plan" | "simple" | "review" | "none";
 export type LionPhase = "planning" | "building";
 export type LionPlanKind = "structured" | "overview";
 export type LionTaskStatus = "pending" | "in_progress" | "complete" | "blocked" | "retryable";

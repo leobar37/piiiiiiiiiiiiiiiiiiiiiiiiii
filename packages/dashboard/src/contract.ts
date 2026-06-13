@@ -3,15 +3,10 @@
  *
  * This module re-exports only type-level constructs so that the frontend
  * can import them without pulling in server-side runtime dependencies.
+ *
+ * NOTE: The dashboard no longer exposes session or event APIs. Sessions are
+ * managed by the subagents backend rendered inside iframes.
  */
 
-// Event types -- for the frontend event consumer
-export type { ServerEvent, ServerEventType } from "./events/types.js";
-export type { ProjectInfo, ProjectSessionInfo } from "./projects/types.js";
-// Session types -- for typed oRPC clients
-export type {
-	LiveSessionInfo,
-	LiveSessionInfo as SessionInfo,
-	SessionHostConfig,
-	SessionStatus,
-} from "./session/types.js";
+export type { DashboardRouter } from "./procedures/index.js";
+export type { DashboardConfig } from "./types.js";

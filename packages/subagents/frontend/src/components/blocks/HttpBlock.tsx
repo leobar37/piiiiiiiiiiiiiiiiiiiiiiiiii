@@ -78,14 +78,14 @@ export function HttpBlock({ content }: HttpBlockProps) {
 						: "text-text-primary";
 
 	return (
-		<div className="my-3 border border-border-subtle rounded-lg overflow-hidden">
+		<div className="my-3 min-w-0 overflow-hidden rounded-lg border border-border-subtle">
 			<div className="flex items-center gap-2 px-3 py-2 bg-bg-base border-b border-border-subtle">
 				{isRequest ? (
 					<>
 						<span className={`text-xs font-mono font-semibold ${methodColor}`}>
 							{parsed.method}
 						</span>
-						<span className="text-xs font-mono text-text-secondary truncate">{parsed.url}</span>
+						<span className="min-w-0 break-all font-mono text-xs text-text-secondary">{parsed.url}</span>
 					</>
 				) : (
 					<span className="text-xs font-mono text-text-secondary">{parsed.status}</span>
@@ -120,7 +120,7 @@ export function HttpBlock({ content }: HttpBlockProps) {
 						</svg>
 					</button>
 					{showBody && (
-						<pre className="px-3 py-2 bg-bg-base text-xs font-mono text-text-primary overflow-x-auto">
+						<pre className="overflow-x-hidden whitespace-pre-wrap break-words bg-bg-base px-3 py-2 font-mono text-xs text-text-primary">
 							{tryFormatBody(parsed.body)}
 						</pre>
 					)}

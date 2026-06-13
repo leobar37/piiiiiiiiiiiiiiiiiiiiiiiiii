@@ -1,230 +1,161 @@
 # @local/pi-subagents
 
-Sub-agent controller library for `pi-coding-agent`. Orchestrates multiple isolated agent sessions with full lifecycle control, bidirectional events, runtime interrogation, conversation summarization, and an RPC-style adapter API.
+Session core and web dashboard backend for the [Pi](https://github.com/earendil-works/pi-mono) coding agent. This package hosts the HTTP server, real-time event streaming, standalone agent sessions, and Lion orchestration. It is consumed by the Pi dashboard as the agent backend.
 
-This is a **library package** — it does not register commands or tools in a parent pi session. It is consumed programmatically by an orchestrator that decides when and how to spawn, control, and observe sub-agents.
+This is a **library package** — it does not register commands or tools in a parent pi session. It is consumed programmatically by an orchestrator that decides when and how to spawn, control, and observe sessions.
 
 ---
 
 ## Architecture
 
 ```
-SubAgentController
-  ├── definitions: Map<string, SubAgentDefinition>     # Base templates
-  ├── instances:   Map<string, SubAgentInstance>       # Live sessions
-  └── eventBus:    SubAgentEventBus                    # Typed pub/sub
-
-SubAgentInstance (one per task)
-  ├── AgentSession (from pi-coding-agent)
-  ├── Lifecycle state machine (created → running → completed/failed/cancelled)
-  ├── Event forwarding (AgentSessionEvent → SubAgentEvent)
-  ├── Query handler (interrogation via steer())
-  ├── Summarizer (reads sessionManager branch, formats as markdown)
-  └── RPC Adapter (direct methods: prompt, steer, bash, compact, setModel, ...)
+HttpServerTransport (Bun HTTP server)
+├── /rpc — oRPC API (threads, lion, logs)
+├── /events — SSE streaming
+├── / — Static SPA files (subagents frontend)
+│
+├── StandaloneSessionManager — Creates real AgentSession instances
+├── DashboardThreadSessionCache — Resumes persisted sessions
+├── DashboardStateManager — Persists and replays events
+├── SubAgentController — Legacy subagent orchestration (still used by Lion)
+│
+└── Lion Runtime (orchestration extension)
+    ├── Strategies: none, simple, plan, review
+    ├── Task runner with phase-aware delegation
+    ├── Checklist service for durable plans
+    └── Subagent widget UI
 ```
 
 ---
 
 ## Core Concepts
 
-### Definitions are Templates
+### Web Session Server
 
-A `SubAgentDefinition` is a **base template** — it provides defaults for system prompt, capabilities, tools, and runtime limits. It does not dictate what a specific task should do.
+The `HttpServerTransport` is a Bun HTTP server that serves:
 
-```typescript
-const executorDefinition: SubAgentDefinition = {
-  name: "executor",
-  description: "Task execution worker",
-  systemPrompt: "You are a task executor. Follow the instructions provided to you precisely.",
-  capabilities: { canEdit: true, canExecute: true, canWrite: true, canResearch: false },
-  thinkingLevel: "high",
-  allowQuery: true,
-  verboseTools: true,
-}
-```
+- `/rpc` — oRPC endpoints for thread CRUD, Lion state, and logs
+- `/events` — Server-Sent Events for real-time session updates
+- `/` — Static SPA files (the subagents frontend)
 
-### Tasks Provide Dynamic Overrides
+Each session is accessible at `/thread/<threadId>` where the subagents frontend renders the session UI.
 
-A `DelegationTask` merges with its base definition at runtime. The orchestrator can override **every** aspect of the sub-agent's behavior per task:
+### Standalone Sessions
+
+`StandaloneSessionManager` creates real, persistent `AgentSession` instances directly from the dashboard, independent of Lion runs or subagent delegation. These are the sessions users interact with in the dashboard canvas.
 
 ```typescript
-const task: DelegationTask = {
-  id: "fix-auth-bug",
-  definition: "executor",
-  description: "Fix null pointer in auth.ts",
-  prompt: "Fix the null pointer exception in src/auth.ts line 45. Do not touch any other files.",
-  systemPrompt: "You are a bug-fix specialist. Focus on minimal, safe fixes. Always run tests before declaring completion.",
-  systemPromptMode: "append",
-  capabilities: { canEdit: true, canExecute: true, canWrite: false, canResearch: false },
-  tools: ["read", "edit", "bash"],
-  thinkingLevel: "high",
-  maxTurns: 10,
-  outputArtifact: ".delegations/fix-auth-bug.output.md", // optional — only needed with FsArtifactStore
-}
+const manager = new StandaloneSessionManager(cwd, modelRegistry, settingsManager);
+const info = await manager.create({ name: "My Session" });
+// info.instanceId — the threadId used in URLs and API calls
 ```
 
-The `config-resolver.ts` module performs the merge:
+### Thread Types
 
-| Field | Merge rule |
-|-------|-----------|
-| `description` | `task.description ?? definition.description` |
-| `systemPrompt` | `merge(definition.systemPrompt, task.systemPrompt, task.systemPromptMode)` |
-| `capabilities` | `{ ...definition.capabilities, ...task.capabilities }` |
-| `tools` | `task.tools ?? definition.tools` |
-| `disabledTools` | `[...definition.disabledTools, ...task.disabledTools]` |
-| `model`, `thinkingLevel`, `maxTurns`, `timeout`, `allowQuery`, `verboseTools` | `task.* ?? definition.*` |
+| Kind | Description | Lifecycle |
+|------|-------------|-----------|
+| `main` | The primary Pi coding-agent session | Controlled by the parent process |
+| `standalone` | Independently created agent sessions | Created via `threads.create`, live in backend memory |
+| `subagent` | Delegated tasks from Lion orchestration | Created by `SubAgentController`, tracked in `RunStore` |
+
+### Lion Orchestration
+
+Lion is an orchestration extension with four strategies:
+
+| Strategy | Active | Phase | Plan Required | Use Case |
+|----------|--------|-------|---------------|----------|
+| `none` | `false` | `planning` | No | Default state. Chat normally, subagents on demand. |
+| `simple` | `true` | `building` | No | Lightweight delegation without durable tracking. |
+| `plan` | `true` | `planning` / `building` | Yes | Structured plan with checklist and task dependencies. |
+| `review` | `true` | `planning` / `building` | Yes | Read-only code review with `.reviews/` checklist. |
+
+Commands: `/lion-simple`, `/lion-activate`, `/lion-code-review`, `/lion-build`, `/lion-validate`, `/lion-dashboard`.
+
+---
+
+## API Endpoints (oRPC)
+
+### Threads
+
+| Endpoint | Description |
+|----------|-------------|
+| `threads.list` | List all threads (main + standalone + subagent) |
+| `threads.create` | Create a new standalone session |
+| `threads.get` | Get thread state by ID |
+| `threads.session` | Get session messages |
+| `threads.messages` | Get raw messages array |
+| `threads.events` | Get event history |
+| `threads.run` | Get run record for subagent threads |
+| `threads.prompt` | Send message (prompt / follow_up / steer) |
+| `threads.abort` | Abort current turn |
+| `threads.commands` | List available slash commands |
+| `threads.models` | List available models |
+| `threads.model` | Select model for thread |
+
+### Lion
+
+| Endpoint | Description |
+|----------|-------------|
+| `lion.state` | Get current Lion state |
+| `lion.setStrategy` | Change active strategy |
+| `lion.checklist` | Read plan or review checklist |
+
+### Logs
+
+| Endpoint | Description |
+|----------|-------------|
+| `logs.session` | Query session logs |
+| `logs.list` | List available log sessions |
+
+---
+
+## Event Streaming
+
+Connect to `/events` for Server-Sent Events. All session activity emits events:
+
+| Event | Emitted when |
+|-------|-------------|
+| `instance.created` | New session created |
+| `instance.state` | Session state changes |
+| `session.event` | Raw agent session event |
+| `lifecycle.change` | Subagent state transitions |
+| `task.start` / `task.end` | Lion task execution |
+| `progress.update` | Assistant produces text |
+| `error` | Error occurred |
 
 ---
 
 ## Quick Start
 
 ```typescript
-import { SubAgentController, BUILTIN_DEFINITIONS } from "@local/pi-subagents";
+import { HttpServerTransport, SubAgentController } from "@local/pi-subagents";
 
 const controller = new SubAgentController({
   definitions: BUILTIN_DEFINITIONS,
   cwd: process.cwd(),
-  onEvent: (event) => {
-    console.log(`[${event.type}] ${event.instanceId}`);
-  },
 });
 
-// Execute a single task
-const result = await controller.executeTask({
-  id: "audit-deps",
-  definition: "analyzer",
-  description: "Audit package.json for outdated dependencies",
-  prompt: "Read package.json and report all dependencies that have major version updates available.",
-  systemPromptMode: "append",
+const transport = new HttpServerTransport({
+  controller,
+  port: 0, // auto-assign
+  serveFrontend: true,
 });
 
-console.log(result.status, result.summary);
+await transport.start();
+console.log(`Dashboard at http://localhost:${transport.port}`);
 ```
 
 ---
 
-## Interrogation (query a running sub-agent)
+## Legacy Subagent Controller
 
-Ask a question to a sub-agent that is still running. It receives the question via `steer()` and the answer is captured from the next assistant message.
+`SubAgentController` still orchestrates Lion subagent delegations. It manages:
 
-```typescript
-const answer = await controller.queryInstance("audit-deps", {
-  queryId: "q-1",
-  question: "Which dependency has the most outdated version?",
-  timeoutMs: 30000,
-});
+- `definitions` — Base templates for subagent roles
+- `instances` — Live subagent sessions
+- `eventBus` — Typed pub/sub for all events
 
-console.log(answer.answer);   // The assistant's response
-console.log(answer.failed);   // true if timed out or not running
-```
-
----
-
-## Summarization
-
-Extract a markdown summary of the sub-agent's recent conversation. No LLM call — it reads the session branch and formats it.
-
-```typescript
-const summary = controller.summarizeInstance("audit-deps", {
-  maxMessages: 20,
-  maxTurns: 5,
-  includeTools: true,
-});
-
-console.log(summary.text);
-console.log(summary.turnCount, summary.toolCallCount);
-```
-
----
-
-## RPC Adapter API
-
-Every `SubAgentInstance` exposes the full RPC-mode API as direct programmatic methods. The controller proxies them by `taskId`.
-
-### Prompting
-```typescript
-await controller.promptInstance("audit-deps", "Check devDependencies too");
-await controller.steerInstance("audit-deps", "Focus on security-related updates");
-await controller.abortInstance("audit-deps");
-```
-
-### Model & Thinking
-```typescript
-await controller.setInstanceModel("audit-deps", myModel);
-await controller.cycleInstanceModel("audit-deps");
-controller.instanceSetThinkingLevel("audit-deps", "low");
-```
-
-### Bash
-```typescript
-const result = await controller.instanceBash("audit-deps", "npm outdated");
-console.log(result.output, result.exitCode);
-```
-
-### Compaction
-```typescript
-await controller.compactInstance("audit-deps", "Summarize the audit findings so far");
-```
-
-### Introspection
-```typescript
-const state = controller.getInstanceState("audit-deps");
-console.log(state.model?.id, state.isStreaming, state.messageCount);
-
-const messages = controller.getInstanceMessages("audit-deps");
-```
-
----
-
-## Execution Strategies
-
-Execute multiple tasks with dependency resolution:
-
-```typescript
-const plan: ExecutionPlan = {
-  strategy: "dependency-graph",
-  tasks: [
-    { id: "scout", definition: "analyzer", prompt: "Map the auth flow" },
-    { id: "plan", definition: "planner", prompt: "Plan the migration", dependsOn: ["scout"] },
-    { id: "implement", definition: "executor", prompt: "Implement the plan", dependsOn: ["plan"] },
-    { id: "review", definition: "reviewer", prompt: "Review the implementation", dependsOn: ["implement"] },
-  ],
-};
-
-const results = await controller.executePlan(plan);
-```
-
-Strategies: `"sequential"`, `"parallel"`, `"dependency-graph"`.
-
----
-
-## Event Model
-
-All sub-agents emit events through a shared `SubAgentEventBus`.
-
-| Event | Emitted when |
-|-------|-------------|
-| `lifecycle.change` | State transitions (created → starting → running → ...) |
-| `task.start` | Agent loop starts |
-| `task.end` | Agent loop ends (with result) |
-| `turn.complete` | Each LLM turn finishes |
-| `tool.execute` | Each tool call starts/ends (if `verboseTools`) |
-| `progress.update` | Assistant produces text (first 200 chars) |
-| `query.response` | A query receives an answer |
-| `summary.available` | A summary is generated |
-| `error` | Error (fatal or non-fatal) |
-
-Subscribe:
-
-```typescript
-controller.getEventBus().on("task.end", (event) => {
-  console.log(`${event.taskId} finished with ${event.result.status}`);
-});
-
-controller.getEventBus().on("*", (event) => {
-  // All events
-});
-```
+See the source for `SubAgentInstance`, `TaskExecutor`, and `DelegationTask` types.
 
 ---
 
@@ -236,23 +167,9 @@ The dashboard writes one JSONL log per Pi session:
 .pi/dashboard/logs/<sessionId>.jsonl
 ```
 
-Each line is a structured record:
+Each line is a structured record with timestamp, sessionId, threadId, type, source, level, and data.
 
-```json
-{
-  "timestamp": 1780780000000,
-  "sessionId": "019e...",
-  "threadId": "main:019e...",
-  "type": "model.select.success",
-  "source": "dashboard",
-  "level": "info",
-  "data": { "provider": "kimi-coding", "modelId": "kimi-for-coding" }
-}
-```
-
-Logs are session-scoped, not Lion-scoped, so they are available for the normal Pi dashboard even when Lion is inactive. The dashboard records model selection requests/results, prompt requests/results, and dashboard event stream records when a session id can be resolved.
-
-Dashboard logs are exposed through ORPC:
+Logs are exposed through oRPC:
 
 ```typescript
 await orpc.logs.session({
@@ -262,71 +179,6 @@ await orpc.logs.session({
   level: "info",
   limit: 200,
 });
-
-await orpc.logs.list();
-```
-
-Filters are optional. If `sessionId` is omitted, the active main Pi session is used when available.
-
----
-
-## Built-in Definitions
-
-| Name | Default capabilities | Default tools | Purpose |
-|------|---------------------|---------------|---------|
-| `planner` | read-only | `read`, `glob`, `grep`, `bash` | Analyze and plan |
-| `executor` | full (read, execute, write) | all | Execute tasks (blank slate) |
-| `analyzer` | read-only | `read`, `glob`, `grep`, `bash` | Investigate and report |
-| `reviewer` | read + execute | `read`, `glob`, `grep`, `bash` | Review without editing |
-
-All built-ins are templates. The orchestrator should pass task-specific `systemPrompt`, `capabilities`, and `tools` via `DelegationTask` overrides.
-
----
-
-## Lifecycle Control
-
-```typescript
-await controller.pauseInstance("audit-deps");   // Abort current turn, state → paused
-await controller.resumeInstance("audit-deps");  // Send "Continue.", state → running
-await controller.cancelInstance("audit-deps");  // Abort, state → cancelled
-```
-
----
-
-## Artifacts (Optional Addon)
-
-Artifact persistence is **not** part of the core controller. It is an optional addon via `SubAgentArtifactStore`. The library ships with a filesystem implementation:
-
-```typescript
-import { SubAgentController, FsArtifactStore } from "@local/pi-subagents";
-
-const controller = new SubAgentController({
-  definitions: BUILTIN_DEFINITIONS,
-  cwd: process.cwd(),
-  artifactStore: new FsArtifactStore(".delegations"),
-});
-```
-
-When a store is provided, the controller automatically persists each task result on completion:
-
-```
-.delegations/
-├── <taskId>.result.md    # Result summary (output)
-└── <taskId>.events.jsonl # NDJSON event log
-```
-
-Without a store, the controller runs entirely in-memory — no files are written.
-
-### Custom Store
-
-Implement the interface for custom backends (S3, database, etc.):
-
-```typescript
-class MyStore implements SubAgentArtifactStore {
-  async saveResult(taskId: string, result: DelegationResult): Promise<void> { ... }
-  async saveEventLog(taskId: string, events: SubAgentEvent[]): Promise<void> { ... }
-  async readResult(taskId: string): Promise<string | null> { ... }
-}
 ```
 
 ---
@@ -335,23 +187,20 @@ class MyStore implements SubAgentArtifactStore {
 
 ```typescript
 import type {
+  HttpServerTransport,
+  HttpServerTransportOptions,
+  StandaloneSessionManager,
+  DashboardThreadState,
+  DashboardLionState,
+  SubAgentTransport,
+  SubAgentTransportEvent,
   SubAgentController,
   SubAgentInstance,
-  SubAgentEventBus,
-  SubAgentSummarizer,
-  SubAgentDefinition,
-  SubAgentCapabilities,
-  EffectiveSubAgentConfig,
-  DelegationTask,
-  ExecutionPlan,
-  DelegationResult,
-  QueryRequest,
-  QueryResponse,
-  ConversationSummary,
-  SubAgentRpcState,
+  LionState,
+  LionStrategyName,
+  LionEvent,
   SubAgentEvent,
   SubAgentEventMap,
-  SubAgentState,
 } from "@local/pi-subagents";
 ```
 

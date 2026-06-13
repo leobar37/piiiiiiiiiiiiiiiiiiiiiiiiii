@@ -14,7 +14,7 @@ export function ThinkingBlock({ thinking, redacted, isStreaming }: ThinkingBlock
 
 	if (redacted) {
 		return (
-			<div className="my-1 inline-flex max-w-full items-center gap-1.5 rounded border border-border-subtle bg-bg-surface/50 px-2 py-1 text-[11px] leading-4 text-text-muted">
+			<div className="my-0.5 inline-flex max-w-full items-center gap-1.5 text-[11px] leading-4 text-text-muted">
 				<Link className="h-3 w-3 shrink-0" aria-hidden="true" />
 				Thinking content redacted
 			</div>
@@ -24,11 +24,11 @@ export function ThinkingBlock({ thinking, redacted, isStreaming }: ThinkingBlock
 	if (!thinking.trim()) return null;
 
 	return (
-		<div className="my-1 w-fit max-w-full overflow-hidden rounded border border-border-subtle bg-bg-surface/45">
+		<div className="my-0.5 w-fit max-w-full">
 			<button
 				type="button"
 				onClick={toggle}
-				className={`flex max-w-full cursor-pointer select-none items-center gap-2 px-2 py-1 text-[11px] leading-4 text-text-muted transition-colors hover:text-text-secondary ${isStreaming ? "animate-pulse-opacity" : ""}`}
+				className={`flex max-w-full cursor-pointer select-none items-center gap-1.5 py-0.5 text-[11px] leading-4 text-text-muted transition-colors hover:text-text-secondary ${isStreaming ? "animate-pulse-opacity" : ""}`}
 			>
 				<Sparkles className="h-3 w-3 shrink-0 text-text-tertiary" aria-hidden="true" />
 				<span className="font-medium">Thinking</span>
@@ -36,7 +36,7 @@ export function ThinkingBlock({ thinking, redacted, isStreaming }: ThinkingBlock
 				<ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
 			</button>
 			{isExpanded && (
-				<div className="max-h-40 max-w-2xl overflow-auto border-t border-border-subtle px-2 py-1.5 font-mono text-[11px] leading-snug text-text-secondary whitespace-pre-wrap">
+				<div className="max-h-40 max-w-2xl overflow-y-auto overflow-x-hidden break-words pl-4 pt-1 font-mono text-[11px] leading-snug text-text-secondary whitespace-pre-wrap">
 					{thinking}
 				</div>
 			)}

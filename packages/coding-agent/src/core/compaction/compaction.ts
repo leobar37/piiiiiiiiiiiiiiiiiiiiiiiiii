@@ -124,6 +124,11 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	keepRecentTokens: 20000,
 };
 
+export interface CompactionBudget {
+	outputReserveTokens?: number;
+	safetyMarginTokens?: number;
+}
+
 // ============================================================================
 // Token calculation
 // ============================================================================
@@ -216,9 +221,20 @@ export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEst
 /**
  * Check if compaction should trigger based on context usage.
  */
-export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
+export function getEffectiveReserveTokens(settings: CompactionSettings, budget?: CompactionBudget): number {
+	const outputReserveTokens = budget?.outputReserveTokens ?? 0;
+	if (outputReserveTokens <= 0) return settings.reserveTokens;
+	return Math.max(settings.reserveTokens, outputReserveTokens + (budget?.safetyMarginTokens ?? 0));
+}
+
+export function shouldCompact(
+	contextTokens: number,
+	contextWindow: number,
+	settings: CompactionSettings,
+	budget?: CompactionBudget,
+): boolean {
 	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+	return contextTokens > contextWindow - getEffectiveReserveTokens(settings, budget);
 }
 
 // ============================================================================

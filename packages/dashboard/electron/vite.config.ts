@@ -9,7 +9,7 @@ export default defineConfig({
 				preload: resolve(__dirname, "preload.ts"),
 			},
 			formats: ["cjs"],
-			fileName: (_format, entryName) => `${entryName}.js`,
+			fileName: (_format, entryName) => `${entryName}.cjs`,
 		},
 		outDir: resolve(__dirname, "dist"),
 		emptyOutDir: true,

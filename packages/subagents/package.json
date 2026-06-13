@@ -6,9 +6,17 @@
   "private": true,
   "keywords": ["pi-package"],
   "main": "./dist/index.js",
+  "types": "./src/index.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./sdk": "./dist/sdk/index.js"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./sdk": "./dist/sdk/index.js",
+    "./contract": {
+      "types": "./src/api/contract.ts",
+      "default": "./dist/api/contract.js"
+    }
   },
   "scripts": {
     "build": "bun run build.ts",
@@ -30,6 +38,6 @@
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-agent-core": "*",
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-tui": "*"
+    "@earendil-works/pi-tui": "^0.79.2"
   }
 }

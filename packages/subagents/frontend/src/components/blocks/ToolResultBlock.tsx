@@ -48,10 +48,8 @@ export function ToolResultBlock({ toolName, content, isError }: ToolResultBlockP
 			<button
 				type="button"
 				onClick={() => setIsExpanded((value) => !value)}
-				className={`inline-flex max-w-full items-center gap-1.5 rounded border bg-bg-base/70 px-2 py-1 text-[11px] leading-4 transition ${
-					isError
-						? "border-error/25 text-error hover:border-error/45"
-						: "border-success/20 text-success hover:border-success/40"
+				className={`inline-flex max-w-full items-center gap-1.5 px-0 py-0.5 text-[11px] leading-4 transition ${
+					isError ? "text-error hover:text-error" : "text-success hover:text-success"
 				}`}
 			>
 				{isError ? (
@@ -67,9 +65,9 @@ export function ToolResultBlock({ toolName, content, isError }: ToolResultBlockP
 				/>
 			</button>
 			{isExpanded ? (
-				<div className={`mt-1 max-w-full rounded border bg-bg-base/70 px-2 py-1 ${isError ? "border-error/20" : "border-success/20"}`}>
+				<div className="mt-1 max-w-full pl-4">
 					{renderAsPre ? (
-						<pre className="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-text-secondary">
+						<pre className="max-h-32 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-text-secondary">
 							{formatted}
 						</pre>
 					) : (

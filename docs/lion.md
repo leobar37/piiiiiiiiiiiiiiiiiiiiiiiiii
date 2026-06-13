@@ -6,6 +6,11 @@ Lion is an orchestration extension for the pi coding agent. It provides structur
 
 Lion keeps build authorization in slash commands and routes all model-facing subagent delegation through `lion_tasks`.
 
+- Lion has four strategies: `none`, `simple`, `plan`, and `review`.
+- `none` is the default when Lion is not active. No orchestration prompt is injected and subagents are used on demand.
+- `simple` is lightweight orchestration without a durable plan.
+- `plan` is durable structured planning with checklist tracking.
+- `review` is read-only code review with durable `.reviews/` checklists.
 - `lion_activate_plan` may select or switch the active plan, but it does not authorize implementation.
 - In planning mode, `lion_tasks` may run analyzer, planner, reviewer, or validator subagents as read-only delegations.
 - `/lion-validate` injects validation instructions back into the orchestrator; the orchestrator must use `lion_tasks` for the validator delegation.
@@ -40,13 +45,15 @@ sequenceDiagram
 
 ### Commands
 
-| Command | Purpose |
-|---------|-----------|
-| `/lion-activate` | Activate durable plan mode, optionally with a plan reference |
-| `/lion-build` | Allow build/execution roles and active-plan task execution |
-| `/lion-simple` | Activate lightweight orchestration without a durable plan |
-| `/lion-validate` | Ask the orchestrator to validate the active plan through `lion_tasks` |
-| `/lion-dashboard` | Open the Lion subagent dashboard and expose its URL in status |
+| Command | Strategy | Purpose |
+|---------|----------|---------|
+| *(default)* | `none` | Lion is available but not actively orchestrating. Subagents on demand. |
+| `/lion-simple` | `simple` | Activate lightweight orchestration without a durable plan. |
+| `/lion-activate` | `plan` | Activate durable plan mode, optionally with a plan reference. |
+| `/lion-code-review` | `review` | Create a durable read-only code review plan. |
+| `/lion-build` | — | Allow build/execution roles and active-plan task execution. |
+| `/lion-validate` | — | Ask the orchestrator to validate the active plan through `lion_tasks`. |
+| `/lion-dashboard` | — | Open the Lion subagent dashboard and expose its URL in status. |
 
 ### Model-Facing Tool
 
@@ -78,14 +85,24 @@ lion_tasks({
 })
 ```
 
+## Strategies
+
+| Strategy | Active | Phase | Plan Required | Use Case |
+|----------|--------|-------|---------------|----------|
+| `none` | `false` | `planning` | No | Default state. Chat normally, subagents on demand. |
+| `simple` | `true` | `building` | No | Lightweight delegation without durable tracking. |
+| `plan` | `true` | `planning` / `building` | Yes | Structured plan with checklist and task dependencies. |
+| `review` | `true` | `planning` / `building` | Yes | Read-only code review with `.reviews/` checklist. |
+
 ## Modelo de Datos
 
 ```mermaid
 classDiagram
     class LionState {
-        +version: 1
+        +version: 2
         +active: boolean
-        +mode: LionMode
+        +strategy: LionStrategyName
+        +phase: LionPhase
         +activePlanPath: string
         +activePlanSlug: string
         +planKind: LionPlanKind

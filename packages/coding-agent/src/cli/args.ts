@@ -21,6 +21,7 @@ export interface Args {
 	help?: boolean;
 	version?: boolean;
 	mode?: Mode;
+	web?: boolean;
 	noSession?: boolean;
 	session?: string;
 	fork?: string;
@@ -162,6 +163,8 @@ export function parseArgs(args: string[]): Args {
 			result.verbose = true;
 		} else if (arg === "--offline") {
 			result.offline = true;
+		} else if (arg === "--web") {
+			result.web = true;
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--")) {
@@ -247,6 +250,7 @@ ${chalk.bold("Options:")}
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --offline                      Disable startup network operations (same as PI_OFFLINE=1)
+  --web                          Start in web mode (no TUI, dashboard only)
   --help, -h                     Show this help
   --version, -v                  Show version number
 

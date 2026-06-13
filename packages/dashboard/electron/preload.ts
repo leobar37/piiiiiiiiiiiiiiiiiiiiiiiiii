@@ -14,6 +14,10 @@ export interface ElectronApi {
 		readonly chrome: string;
 		readonly node: string;
 	};
+	/**
+	 * Resolves with the subagents backend URL once it is available.
+	 */
+	getBackendUrl(): Promise<string>;
 	chooseProjectDirectory(): Promise<string | null>;
 }
 
@@ -24,9 +28,8 @@ const api: ElectronApi = {
 		chrome: process.versions.chrome,
 		node: process.versions.node,
 	},
-	chooseProjectDirectory() {
-		return ipcRenderer.invoke("project:choose-directory") as Promise<string | null>;
-	},
+	getBackendUrl: () => ipcRenderer.invoke("get-backend-url"),
+	chooseProjectDirectory: () => ipcRenderer.invoke("choose-project-directory"),
 };
 
 contextBridge.exposeInMainWorld("__PI_ELECTRON__", api);
@@ -34,6 +37,6 @@ contextBridge.exposeInMainWorld("__PI_ELECTRON__", api);
 // Augment the global Window interface for TypeScript in the renderer
 declare global {
 	interface Window {
-		readonly __PI_ELECTRON__: ElectronApi;
+		readonly __PI_ELECTRON__?: ElectronApi;
 	}
 }

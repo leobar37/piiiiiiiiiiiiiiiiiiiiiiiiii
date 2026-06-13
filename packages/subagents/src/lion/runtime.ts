@@ -22,9 +22,11 @@ import { type MainLogEntry, RunLogger } from "./run-logger.js";
 import { createInitialLionState } from "./state.js";
 import { readLionState, writeLionState } from "./state-store.js";
 import { getLionStrategy } from "./strategies/index.js";
+import { canChangeLionStrategy } from "./strategy-match.js";
 import { createLionSubAgentController } from "./subagents/index.js";
-import type { LionBuildResult, LionEvent, LionPhase, LionPlan, LionState } from "./types.js";
+import type { LionBuildResult, LionEvent, LionPhase, LionPlan, LionState, LionStrategyName } from "./types.js";
 import { LionUI } from "./ui.js";
+import { createRunId, normalizeInactiveStrategy } from "./utils.js";
 
 export const LION_ORCHESTRATOR_FEEDBACK_TYPE = "lion-orchestrator-feedback";
 
@@ -51,6 +53,7 @@ export class LionRuntime {
 	#widgetTimer: ReturnType<typeof setInterval> | null;
 	#configManager: SubAgentRuntimeConfigManager | null;
 	#cwd: string;
+	#sessionId: string | null;
 	dashboard: LionDashboard | null;
 
 	constructor(pi: ExtensionAPI, cwd: string) {
@@ -74,6 +77,7 @@ export class LionRuntime {
 		this.#runLogger = null;
 		this.#unsubscribeRunLogger = null;
 		this.#configManager = null;
+		this.#sessionId = null;
 	}
 
 	get pi(): ExtensionAPI {
@@ -238,9 +242,10 @@ export class LionRuntime {
 
 	restore(ctx: ExtensionContext): void {
 		this.rememberUiContext(ctx);
+		this.#sessionId = ctx.sessionManager.getSessionId();
 		const saved = readLionState(this.#cwd, ctx);
 		if (saved) {
-			this.#state = saved.state;
+			this.#state = normalizeInactiveStrategy(saved.state);
 			this.#core = saved.core;
 		} else {
 			this.#state = createInitialLionState();
@@ -259,7 +264,7 @@ export class LionRuntime {
 		this.mainSession.record(event, ctx);
 	}
 	persist(): void {
-		writeLionState(this.#cwd, this.#state, this.#core);
+		writeLionState(this.#cwd, this.#state, this.#core, this.#sessionId);
 	}
 
 	queueFeedback(ctx: ExtensionContext, content: string, details: Record<string, unknown>): void {
@@ -428,6 +433,52 @@ export class LionRuntime {
 	setLastRun(runId: string): void {
 		this.#state = { ...this.#state, lastRunId: runId };
 		this.logState("set_last_run", { runId });
+	}
+	setStrategy(strategy: LionStrategyName): void {
+		if (!canChangeLionStrategy(this.#state, strategy)) {
+			throw new Error(
+				`Cannot switch Lion strategy from ${this.#state.strategy}/${this.#state.phase} to ${strategy}`,
+			);
+		}
+		if (strategy === this.#state.strategy) return;
+
+		if (strategy === "none") {
+			this.#state = createInitialLionState();
+		} else if (strategy === "simple") {
+			this.#state = {
+				...this.#state,
+				active: true,
+				strategy: "simple",
+				phase: "building",
+				activePlanPath: null,
+				activePlanSlug: null,
+				planKind: null,
+				activeTaskId: null,
+			};
+		} else if (strategy === "plan") {
+			const keepPlan = this.#state.strategy === "plan" && this.#state.activePlanPath;
+			this.#state = {
+				...this.#state,
+				active: true,
+				strategy: "plan",
+				phase: "planning",
+				activePlanPath: keepPlan ? this.#state.activePlanPath : null,
+				activePlanSlug: keepPlan ? this.#state.activePlanSlug : null,
+				planKind: keepPlan ? this.#state.planKind : null,
+				activeTaskId: null,
+			};
+		} else {
+			throw new Error(`Strategy ${strategy} cannot be activated through setStrategy`);
+		}
+
+		this.logState("set_strategy", { strategy });
+		this.emit({
+			type: "lion.mode.changed",
+			timestamp: Date.now(),
+			runId: this.#activeRunId ?? createRunId(),
+			strategy: this.#state.strategy,
+			phase: this.#state.phase,
+		});
 	}
 	applyBuildResult(result: LionBuildResult): void {
 		this.#state = { ...this.#state, phase: "planning", activeTaskId: null, lastBuild: result };

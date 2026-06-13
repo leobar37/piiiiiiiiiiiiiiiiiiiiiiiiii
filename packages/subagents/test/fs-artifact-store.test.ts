@@ -21,6 +21,7 @@ describe("FsArtifactStore", () => {
 			instanceId: "inst-1",
 			taskId: "task-1",
 			definitionName: "analyzer",
+			cwd: "/tmp/test",
 			state: "completed",
 			startTime: 1000,
 			endTime: 2500,

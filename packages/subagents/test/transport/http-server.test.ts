@@ -4,6 +4,7 @@ import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ThreadPromptImage } from "../../src/api/session-control.js";
 import { SubAgentEventBus } from "../../src/event-bus.js";
 import { SubAgentRunStore } from "../../src/run-store.js";
 import { HttpServerTransport } from "../../src/transport/http-server.js";
@@ -23,6 +24,9 @@ function createMockController(cwd: string) {
 		getInstances: () => [],
 		getInstance: () => undefined,
 		getInstanceById: () => undefined,
+		getModelRegistry: () => undefined,
+		getSettingsManager: () => undefined,
+		getAuthStorage: () => undefined,
 	};
 }
 
@@ -38,9 +42,9 @@ function createMockMainSession(): DashboardSessionSource {
 }
 
 function createControllableMainSession(
-	calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer" }>,
+	calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer"; images?: ThreadPromptImage[] }>,
 	modelCalls: Array<{ provider: string; modelId: string }> = [],
-	options: { acceptModelSelection?: boolean } = {},
+	options: { acceptModelSelection?: boolean; cwd?: string } = {},
 ): DashboardSessionSource {
 	let modelProvider = "kimi-coding";
 	let modelId = "kimi-for-coding";
@@ -49,6 +53,7 @@ function createControllableMainSession(
 			instanceId: "main:session-1",
 			taskId: "main",
 			definitionName: "main-agent",
+			cwd: options.cwd ?? "/tmp/main-session",
 			kind: "main",
 			state: "paused",
 			startTime: null,
@@ -66,8 +71,8 @@ function createControllableMainSession(
 		}),
 		getMessages: () => [],
 		getEvents: () => [],
-		sendMessage: async (_threadId, message, mode) => {
-			calls.push({ message, mode });
+		sendMessage: async (_threadId, message, mode, images) => {
+			calls.push({ message, mode, images });
 		},
 		getCommands: () => [{ name: "lion-build", description: "Activate Lion build mode", source: "extension" }],
 		getModels: () => [
@@ -188,8 +193,40 @@ describe("HttpServerTransport", () => {
 		expect(Array.isArray(body.json)).toBe(true);
 	});
 
+	it("creates standalone threads in the requested cwd", async () => {
+		const selectedCwd = join(tmpDir, "selected-project");
+		mkdirSync(selectedCwd, { recursive: true });
+		transport = new HttpServerTransport({
+			controller: controller as any,
+			port: 0,
+			host: "127.0.0.1",
+			mainSession: createMockMainSession(),
+		});
+		await transport.start();
+		await waitForServer();
+
+		const createRes = await callRpc(transport.port, "/threads/create", {
+			name: "Selected project",
+			cwd: selectedCwd,
+		});
+		expect(createRes.status).toBe(200);
+		const createBody = (await createRes.json()) as { json: { threadId: string; cwd: string } };
+		expect(createBody.json.cwd).toBe(selectedCwd);
+
+		const getRes = await callRpc(transport.port, "/threads/get", { threadId: createBody.json.threadId });
+		expect(getRes.status).toBe(200);
+		const getBody = (await getRes.json()) as { json: Record<string, unknown> };
+		expect(getBody.json).toMatchObject({
+			instanceId: createBody.json.threadId,
+			definitionName: "standalone",
+			cwd: selectedCwd,
+			kind: "main",
+		});
+	});
+
 	it("serves dashboard prompt and commands for the main thread", async () => {
-		const calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer" }> = [];
+		const calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer"; images?: ThreadPromptImage[] }> =
+			[];
 		const modelCalls: Array<{ provider: string; modelId: string }> = [];
 		transport = new HttpServerTransport({
 			controller: controller as any,
@@ -220,6 +257,19 @@ describe("HttpServerTransport", () => {
 			status: "sent",
 		});
 		expect(calls).toEqual([{ message: "Continue the run", mode: "follow_up" }]);
+
+		const imagePromptRes = await callRpc(transport.port, "/threads/prompt", {
+			threadId: "main:session-1",
+			message: "",
+			mode: "prompt",
+			images: [{ type: "image", data: "abc", mimeType: "image/png", name: "clip.png" }],
+		});
+		expect(imagePromptRes.status).toBe(200);
+		expect(calls[1]).toEqual({
+			message: "",
+			mode: "prompt",
+			images: [{ type: "image", data: "abc", mimeType: "image/png", name: "clip.png" }],
+		});
 
 		const modelsRes = await callRpc(transport.port, "/threads/models", { threadId: "main:session-1" });
 		expect(modelsRes.status).toBe(200);
@@ -279,12 +329,13 @@ describe("HttpServerTransport", () => {
 		const listLogsBody = (await listLogsRes.json()) as { json: Array<Record<string, unknown>> };
 		expect(listLogsBody.json[0]).toMatchObject({
 			sessionId: "session-1",
-			entryCount: 4,
+			entryCount: 6,
 		});
 	});
 
 	it("logs failed main-thread model selections without hiding the API error", async () => {
-		const calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer" }> = [];
+		const calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer"; images?: ThreadPromptImage[] }> =
+			[];
 		transport = new HttpServerTransport({
 			controller: controller as any,
 			port: 0,
@@ -319,6 +370,74 @@ describe("HttpServerTransport", () => {
 				error: "Model is unavailable or not authenticated",
 			},
 		});
+	});
+
+	it("aborts the main dashboard thread through the main session bridge", async () => {
+		let abortCount = 0;
+		const mainSession: DashboardSessionSource = {
+			...createControllableMainSession([]),
+			abort: (threadId) => {
+				expect(threadId).toBe("main:session-1");
+				abortCount++;
+			},
+		};
+		transport = new HttpServerTransport({
+			controller: controller as any,
+			port: 0,
+			host: "127.0.0.1",
+			mainSession,
+		});
+		await transport.start();
+		await waitForServer();
+
+		const res = await callRpc(transport.port, "/threads/abort", { threadId: "main:session-1" });
+
+		expect(res.status).toBe(200);
+		expect(abortCount).toBe(1);
+	});
+
+	it("aborts live subagent threads by task id", async () => {
+		const abortCalls: string[] = [];
+		const liveState: SubAgentInstanceState = {
+			instanceId: "instance-1",
+			taskId: "task-1",
+			definitionName: "executor",
+			cwd: tmpDir,
+			state: "running",
+			startTime: 100,
+			endTime: null,
+			turnCount: 1,
+			lastActivityAt: 150,
+			currentTool: null,
+			error: null,
+			toolCount: 0,
+			currentToolStartedAt: null,
+			durationMs: 50,
+		};
+		const liveController = {
+			...controller,
+			getInstanceById: (threadId: string) =>
+				threadId === "instance-1"
+					? {
+							getState: () => liveState,
+						}
+					: undefined,
+			abortInstance: async (taskId: string) => {
+				abortCalls.push(taskId);
+			},
+		};
+		transport = new HttpServerTransport({
+			controller: liveController as any,
+			port: 0,
+			host: "127.0.0.1",
+		});
+		await transport.start();
+		await waitForServer();
+
+		const res = await callRpc(transport.port, "/threads/abort", { threadId: "instance-1" });
+
+		expect(res.status).toBe(200);
+		expect(abortCalls).toEqual(["task-1"]);
 	});
 
 	it("serves persisted completed runs in /rpc/threads.list", async () => {
@@ -417,7 +536,8 @@ describe("HttpServerTransport", () => {
 			toolCount: 4,
 		});
 
-		const calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer" }> = [];
+		const calls: Array<{ message: string; mode: "prompt" | "follow_up" | "steer"; images?: ThreadPromptImage[] }> =
+			[];
 		transport = new HttpServerTransport({
 			controller: controller as any,
 			port: 0,
@@ -463,6 +583,7 @@ describe("HttpServerTransport", () => {
 				instanceId: "instance-1",
 				taskId: "task-1",
 				definitionName: "executor",
+				cwd: tmpDir,
 				state: "running",
 				startTime: 100,
 				endTime: null,
@@ -643,6 +764,7 @@ describe("HttpServerTransport", () => {
 				instanceId: "instance-1",
 				taskId: "task-1",
 				definitionName: "executor",
+				cwd: tmpDir,
 				state: "completed",
 				startTime: 100,
 				endTime: 200,

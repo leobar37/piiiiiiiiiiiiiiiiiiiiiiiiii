@@ -11,6 +11,22 @@ export function nowSeconds(): number {
 	return Math.floor(Date.now() / 1000);
 }
 
+export function unique(values: string[]): string[] {
+	const seen = new Set<string>();
+	const result: string[] = [];
+	for (const value of values) {
+		const trimmed = value.trim();
+		if (!trimmed || seen.has(trimmed)) continue;
+		seen.add(trimmed);
+		result.push(trimmed);
+	}
+	return result;
+}
+
+export function formatDateTime(timestampSeconds: number): string {
+	return new Date(timestampSeconds * 1000).toISOString();
+}
+
 export function cloneGoal(goal: Goal): Goal {
 	return {
 		id: goal.id,
@@ -30,7 +46,7 @@ export function charCount(value: string): number {
 }
 
 export function escapeXmlText(input: string): string {
-	return input.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+	return input.replaceAll("\u0026", "\u0026amp;").replaceAll("<", "\u0026lt;").replaceAll(">", "\u0026gt;");
 }
 
 export function validateObjective(input: string): string {

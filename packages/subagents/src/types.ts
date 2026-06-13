@@ -9,6 +9,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { SessionLogger } from "@local/pi-logger";
 import type { SubAgentEventBus } from "./event-bus.js";
+import type { TaskRecord } from "./tasks/types.js";
 import type { SubAgentTransport } from "./transport/types.js";
 
 // =============================================================================
@@ -31,6 +32,7 @@ export interface SubAgentInstanceState {
 	instanceId: string;
 	taskId: string;
 	definitionName: string;
+	cwd: string;
 	parentThreadId?: string;
 	parentToolCallId?: string;
 	runId?: string;
@@ -112,7 +114,7 @@ export interface SubAgentDefinition {
 export type EffectiveSubAgentConfig = SubAgentDefinition;
 
 export interface SubAgentOrchestrationContext {
-	strategy: "plan" | "simple" | "review";
+	strategy: "plan" | "simple" | "review" | "none";
 	planSlug?: string;
 	planPath?: string;
 }
@@ -381,6 +383,15 @@ export interface SubAgentEventMap {
 		messages: AgentMessage[];
 		timestamp: number;
 	};
+
+	"task.changed": {
+		type: "task.changed";
+		action: "created" | "updated" | "completed" | "blocked" | "deleted";
+		taskId: string;
+		task: TaskRecord;
+		timestamp: number;
+		instanceId?: undefined;
+	};
 }
 
 export type SubAgentEventType =
@@ -400,7 +411,8 @@ export type SubAgentEventType =
 	| "instance.session"
 	| "session.event"
 	| "session.message.complete"
-	| "session.snapshot";
+	| "session.snapshot"
+	| "task.changed";
 export type SubAgentEvent = SubAgentEventMap[SubAgentEventType];
 
 // =============================================================================

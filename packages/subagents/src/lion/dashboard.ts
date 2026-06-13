@@ -5,6 +5,17 @@ function isDashboardMode(): boolean {
 	return process.env.LION_DASHBOARD_MODE === "true";
 }
 
+function getDashboardPort(): number {
+	const rawPort = process.env.PI_SUBAGENTS_DASHBOARD_PORT;
+	if (!rawPort) return 0;
+
+	const port = Number(rawPort);
+	if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+		throw new Error(`Invalid PI_SUBAGENTS_DASHBOARD_PORT: ${rawPort}`);
+	}
+	return port;
+}
+
 export interface LionDashboard {
 	start(): Promise<URL>;
 	stop(): Promise<void>;
@@ -41,11 +52,12 @@ class LionDashboardServer implements LionDashboard {
 		if (!controller) throw new Error("Dashboard is not attached to a Pi session yet.");
 
 		this.transport = new HttpServerTransport({
-			port: 0,
+			port: getDashboardPort(),
 			host: "127.0.0.1",
 			controller,
 			mainSession: this.runtime.mainSession,
 			lionState: () => this.runtime.state,
+			setLionStrategy: async (strategy) => this.runtime.setStrategy(strategy),
 		});
 
 		// Wire the transport into the controller's event bus so events flow to the dashboard

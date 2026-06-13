@@ -41,7 +41,7 @@ import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
-import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
+import { InteractiveMode, runPrintMode, runRpcMode, runWebMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
@@ -93,9 +93,12 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
 
-type AppMode = "interactive" | "print" | "json" | "rpc";
+type AppMode = "interactive" | "print" | "json" | "rpc" | "web";
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
+	if (parsed.web) {
+		return "web";
+	}
 	if (parsed.mode === "rpc") {
 		return "rpc";
 	}
@@ -659,7 +662,7 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	time("createAgentSession");
 
-	if (appMode !== "interactive" && !session.model) {
+	if (appMode !== "interactive" && appMode !== "web" && !session.model) {
 		console.error(chalk.red(formatNoModelsAvailableMessage()));
 		process.exit(1);
 	}
@@ -673,6 +676,13 @@ export async function main(args: string[], options?: MainOptions) {
 	if (appMode === "rpc") {
 		printTimings();
 		await runRpcMode(runtime);
+	} else if (appMode === "web") {
+		printTimings();
+		await runWebMode(runtime, {
+			initialMessage,
+			initialImages,
+			initialMessages: parsed.messages,
+		});
 	} else if (appMode === "interactive") {
 		if (scopedModels.length > 0 && (parsed.verbose || !settingsManager.getQuietStartup())) {
 			const modelList = scopedModels

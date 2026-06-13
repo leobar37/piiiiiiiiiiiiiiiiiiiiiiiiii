@@ -9,6 +9,10 @@ import { registerLionTools } from "./tools.js";
 import { stopLionSubagentWidget } from "./ui/subagents-widget.js";
 import { createRunId } from "./utils.js";
 
+function shouldAutoActivate(): boolean {
+	return process.env.LION_AUTO_ACTIVATE === "true";
+}
+
 export function lionExtension(pi: ExtensionAPI): void {
 	const runtime = new LionRuntime(pi, process.cwd());
 
@@ -60,7 +64,17 @@ export function lionExtension(pi: ExtensionAPI): void {
 		}
 		restore(ctx);
 		runtime.attachMainSession(ctx);
-		if (runtime.state.active) {
+
+		// In web mode the dashboard should be available, but the user chooses
+		// the Lion strategy through the UI selector. Only activate Lion here
+		// if the persisted state is already active (e.g. restored plan session).
+		if (shouldAutoActivate()) {
+			if (!runtime.state.active) {
+				runtime.ensureController(ctx);
+				runtime.attachMainSession(ctx);
+			}
+			await ensureDashboard();
+		} else if (runtime.state.active) {
 			await ensureDashboard();
 		}
 	});

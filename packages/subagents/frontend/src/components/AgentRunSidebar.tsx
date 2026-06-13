@@ -10,6 +10,7 @@ interface AgentRunSidebarProps {
 	agent?: SubAgentInstanceState;
 	run?: SubAgentRunRecord;
 	isLoading?: boolean;
+	isOpen?: boolean;
 }
 
 function formatTime(value?: number | null): string {
@@ -48,7 +49,7 @@ async function copyText(text: string): Promise<void> {
 	}
 }
 
-export function AgentRunSidebar({ agent, run, isLoading }: AgentRunSidebarProps) {
+export function AgentRunSidebar({ agent, run, isLoading, isOpen = true }: AgentRunSidebarProps) {
 	const { data: lionState } = useLionState();
 	const activePlanReference = lionState?.activePlanPath ?? undefined;
 	const agents = useSubAgentStore((state) => state.agents);
@@ -58,15 +59,21 @@ export function AgentRunSidebar({ agent, run, isLoading }: AgentRunSidebarProps)
 	const isMain = agent?.kind === "main";
 	const isLionActive = isLionUiActive(lionState);
 	const showStatus = !isMain;
+	const isPlanStrategy = lionState?.strategy === "plan";
 	const { data: planChecklist } = useLionChecklist("plan", activePlanReference, {
-		enabled: isMain && isLionActive && lionState?.strategy === "plan" && Boolean(activePlanReference),
+		enabled: isMain && isLionActive && isPlanStrategy && Boolean(activePlanReference),
 		refetchInterval: 2000,
 	});
-	const runProgress = isMain && isLionActive && agent && lionState?.phase === "building" ? getRunProgress(agents, agent.instanceId) : null;
+	const runProgress = isMain && isLionActive && isPlanStrategy && agent && lionState?.phase === "building" ? getRunProgress(agents, agent.instanceId) : null;
 
 	return (
-		<aside className="hidden w-[340px] shrink-0 flex-col border-l border-border-subtle bg-bg-elevated lg:flex">
-			<div className="border-b border-border-subtle px-4 py-3">
+		<aside
+			className={`hidden shrink-0 flex-col border-l bg-bg-elevated lg:flex transition-all duration-300 ease-in-out overflow-hidden ${
+				isOpen ? "w-[340px] border-border-subtle" : "w-0 border-transparent"
+			}`}
+		>
+			<div className="min-w-[340px] flex-1 flex flex-col">
+				<div className="border-b border-border-subtle px-4 py-3">
 				<div className="text-xs uppercase tracking-wide text-text-tertiary">{isMain ? "Session" : "Run"}</div>
 				<div className="mt-1 truncate text-sm font-medium text-text-primary">{run?.description ?? agent?.description ?? agent?.definitionName ?? "Subagent"}</div>
 				<div className="mt-2 grid grid-cols-2 gap-2 text-xs text-text-secondary">
@@ -144,6 +151,7 @@ export function AgentRunSidebar({ agent, run, isLoading }: AgentRunSidebarProps)
 					<div>Started: {formatTime(run?.startedAt ?? agent?.startTime)}</div>
 					<div>Updated: {formatTime(run?.updatedAt ?? agent?.lastActivityAt)}</div>
 					<div>Completed: {formatTime(run?.completedAt ?? agent?.endTime)}</div>
+				</div>
 				</div>
 			</div>
 		</aside>

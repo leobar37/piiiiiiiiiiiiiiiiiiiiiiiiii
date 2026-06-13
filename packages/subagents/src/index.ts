@@ -107,6 +107,35 @@ export { createSubAgentSession } from "./session-factory.js";
 export { SubAgentSummarizer } from "./summarizer.js";
 export type { TaskExecutionResult, TaskExecutorOptions } from "./task-executor.js"; // Types
 export { TaskExecutor } from "./task-executor.js";
+export { TaskService } from "./tasks/service.js";
+export type { TaskListOptions } from "./tasks/store.js";
+export {
+	formatTaskId,
+	isTaskClosed,
+	isTaskStoreError,
+	normalizeTaskId,
+	resolveTodosDir,
+	resolveTodosDirLabel,
+	TaskStore,
+	toTaskStatus,
+	validateTaskId,
+} from "./tasks/store.js";
+export type {
+	CreateTaskInput,
+	LockInfo,
+	TaskChangeEvent,
+	TaskContext,
+	TaskEvent,
+	TaskEventType,
+	TaskPatch,
+	TaskRecord,
+	TaskSnapshot,
+	TaskStatus,
+	TaskStoreError,
+	TaskStoreResult,
+	UpdateTaskInput,
+} from "./tasks/types.js";
+export { TASK_STATUSES } from "./tasks/types.js";
 export type { HttpServerTransportOptions } from "./transport/http-server.js";
 // Transport
 export { HttpServerTransport } from "./transport/http-server.js";

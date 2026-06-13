@@ -23,6 +23,8 @@ export const LionChecklistKindSchema = z.enum(["plan", "review"]);
 
 export const LionTaskStatusSchema = z.enum(["pending", "in_progress", "complete", "blocked", "retryable"]);
 
+export const DashboardTaskStatusSchema = z.enum(["pending", "in_progress", "blocked", "completed", "deleted"]);
+
 // =============================================================================
 // Inputs
 // =============================================================================
@@ -33,10 +35,35 @@ export const ThreadIdInputSchema = z.object({
 
 export const ThreadPromptModeSchema = z.enum(["prompt", "follow_up", "steer"]);
 
-export const ThreadPromptInputSchema = z.object({
+const ThreadPromptImageSchema = z.object({
+	type: z.literal("image"),
+	data: z.string().trim().min(1),
+	mimeType: z.string().trim().min(1),
+	name: z.string().optional(),
+});
+
+export const ThreadPromptInputSchema = z
+	.object({
+		threadId: z.string(),
+		message: z.string(),
+		mode: ThreadPromptModeSchema,
+		images: z.array(ThreadPromptImageSchema).optional(),
+	})
+	.refine((input) => input.message.trim().length > 0 || (input.images?.length ?? 0) > 0, {
+		message: "Message or image is required",
+		path: ["message"],
+	});
+
+export const ThreadCreateInputSchema = z.object({
+	name: z.string().trim().min(1).optional(),
+	cwd: z.string().trim().min(1).optional(),
+});
+
+export const ThreadCreateResultSchema = z.object({
 	threadId: z.string(),
-	message: z.string().trim().min(1),
-	mode: ThreadPromptModeSchema,
+	name: z.string(),
+	createdAt: z.number(),
+	cwd: z.string(),
 });
 
 export const ThreadModelInputSchema = z.object({
@@ -62,19 +89,87 @@ export const DashboardLogQuerySchema = z.object({
 	limit: z.number().int().min(1).max(1000).optional(),
 });
 
+export const DashboardTaskContextSchema = z.object({
+	why: z.string().trim().min(1).optional(),
+	files: z.array(z.string().trim().min(1)).optional(),
+	doneWhen: z.array(z.string().trim().min(1)).optional(),
+	notes: z.string().trim().min(1).optional(),
+});
+
+export const DashboardTaskSchema = z.object({
+	id: z.string(),
+	title: z.string(),
+	status: DashboardTaskStatusSchema,
+	createdAt: z.string(),
+	updatedAt: z.string(),
+	completedAt: z.string().optional(),
+	revision: z.number(),
+	assignedToSession: z.string().optional(),
+	context: DashboardTaskContextSchema.optional(),
+});
+
+export const TaskListInputSchema = z.object({
+	includeDeleted: z.boolean().optional(),
+});
+
+export const TaskIdInputSchema = z.object({
+	id: z.string().trim().min(1),
+});
+
+export const TaskCreateInputSchema = z.object({
+	title: z.string().trim().min(1),
+	status: DashboardTaskStatusSchema.optional(),
+	assignedToSession: z.string().trim().min(1).optional(),
+	actorSessionId: z.string().trim().min(1).optional(),
+	context: DashboardTaskContextSchema.optional(),
+});
+
+export const TaskUpdateInputSchema = z.object({
+	id: z.string().trim().min(1),
+	title: z.string().trim().min(1).optional(),
+	status: DashboardTaskStatusSchema.optional(),
+	assignedToSession: z.string().trim().min(1).nullable().optional(),
+	actorSessionId: z.string().trim().min(1).optional(),
+	context: DashboardTaskContextSchema.optional(),
+	expectedRevision: z.number().int().min(1).optional(),
+});
+
+export const TaskBlockInputSchema = z.object({
+	id: z.string().trim().min(1),
+	reason: z.string().trim().min(1),
+	actorSessionId: z.string().trim().min(1).optional(),
+	expectedRevision: z.number().int().min(1).optional(),
+});
+
+export const TaskMutationResultSchema = z.object({
+	task: DashboardTaskSchema,
+});
+
 // =============================================================================
 // Lion
 // =============================================================================
 
 export const DashboardLionStateSchema = z.object({
 	active: z.boolean(),
-	strategy: z.enum(["plan", "simple", "review"]),
+	strategy: z.enum(["plan", "simple", "review", "none"]),
 	phase: z.enum(["planning", "building"]),
 	activePlanPath: z.string().nullable(),
 	activePlanSlug: z.string().nullable(),
 	planKind: z.enum(["structured", "overview"]).nullable(),
 	activeTaskId: z.string().nullable(),
 	lastRunId: z.string().nullable(),
+});
+
+export const LionStrategyNameSchema = z.enum(["plan", "simple", "review", "none"]);
+
+export const LionSetStrategyInputSchema = z.object({
+	strategy: LionStrategyNameSchema,
+});
+
+export const LionSetStrategyResultSchema = z.object({
+	strategy: LionStrategyNameSchema,
+	previousStrategy: LionStrategyNameSchema,
+	acceptedAt: z.number(),
 });
 
 export const LionChecklistProgressSchema = z.object({
@@ -119,6 +214,7 @@ export const DashboardThreadStateSchema = z.object({
 	instanceId: z.string(),
 	taskId: z.string(),
 	definitionName: z.string(),
+	cwd: z.string(),
 	parentThreadId: z.string().optional(),
 	parentToolCallId: z.string().optional(),
 	runId: z.string().optional(),
@@ -142,7 +238,7 @@ export const DashboardThreadStateSchema = z.object({
 	modelId: z.string().optional(),
 	orchestration: z
 		.object({
-			strategy: z.enum(["plan", "simple", "review"]),
+			strategy: z.enum(["plan", "simple", "review", "none"]),
 			planSlug: z.string().optional(),
 			planPath: z.string().optional(),
 		})
@@ -194,6 +290,10 @@ export const ThreadPromptResultSchema = z.object({
 	mode: ThreadPromptModeSchema,
 	status: z.literal("sent"),
 	acceptedAt: z.number(),
+});
+
+export const ThreadAbortInputSchema = z.object({
+	threadId: z.string(),
 });
 
 export const ThreadModelResultSchema = z.object({

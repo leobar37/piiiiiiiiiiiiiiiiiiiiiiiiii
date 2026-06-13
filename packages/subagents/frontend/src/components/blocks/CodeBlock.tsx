@@ -37,7 +37,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
 	}, [code]);
 
 	return (
-		<div className="relative group my-3">
+		<div className="relative group my-3 min-w-0 overflow-x-hidden">
 			<div className="flex items-center justify-between px-3 py-1.5 bg-bg-base border-b border-border-subtle rounded-t-lg">
 				<span className="text-[10px] uppercase tracking-wider text-text-muted font-mono">
 					{language || "text"}
@@ -68,9 +68,9 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
 					)}
 				</button>
 			</div>
-			<pre className="bg-bg-base border border-t-0 border-border-subtle rounded-b-lg p-3 overflow-x-auto">
+			<pre className="overflow-x-hidden whitespace-pre-wrap break-words rounded-b-lg border border-t-0 border-border-subtle bg-bg-base p-3">
 				<code
-					className="text-xs font-mono text-text-primary"
+					className="break-words font-mono text-xs text-text-primary"
 					dangerouslySetInnerHTML={{ __html: highlighted }}
 				/>
 			</pre>

@@ -32,8 +32,7 @@
 			"@earendil-works/pi-coding-agent/hooks": ["./packages/coding-agent/src/core/hooks/index.ts"],
 			"@earendil-works/pi-coding-agent/*": ["./packages/coding-agent/src/*"],
 			"typebox": ["./node_modules/typebox"],
-			"@earendil-works/pi-tui": ["./packages/tui/src/index.ts"],
-			"@earendil-works/pi-tui/*": ["./packages/tui/src/*"],
+
 			"@earendil-works/pi-web-ui": ["./packages/web-ui/src/index.ts"],
 			"@earendil-works/pi-web-ui/*": ["./packages/web-ui/src/*"],
 			"@local/pi-subagents": ["./packages/subagents/src/index.ts"],

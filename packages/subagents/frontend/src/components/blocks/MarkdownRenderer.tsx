@@ -60,7 +60,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
 					const isInline = !className;
 					if (isInline) {
 						return (
-							<code className="bg-bg-surface border border-border-subtle rounded px-1 py-0.5 text-xs font-mono text-text-primary">
+							<code className="break-all rounded border border-border-subtle bg-bg-surface px-1 py-0.5 font-mono text-xs text-text-primary">
 								{children}
 							</code>
 						);
@@ -104,8 +104,8 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
 					</blockquote>
 				),
 				table: ({ children }) => (
-					<div className="my-3 min-w-0 overflow-x-auto rounded-md border border-border-subtle bg-bg-base/50">
-						<table className="w-full min-w-max border-collapse text-left text-xs text-text-secondary">
+					<div className="my-3 min-w-0 overflow-x-hidden rounded-md border border-border-subtle bg-bg-base/50">
+						<table className="w-full table-fixed border-collapse text-left text-xs text-text-secondary">
 							{children}
 						</table>
 					</div>
@@ -126,12 +126,12 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
 					</tr>
 				),
 				th: ({ children }) => (
-					<th className="whitespace-nowrap border-b border-border-default px-3 py-2 text-xs font-semibold text-text-primary">
+					<th className="break-words border-b border-border-default px-3 py-2 text-xs font-semibold text-text-primary">
 						{children}
 					</th>
 				),
 				td: ({ children }) => (
-					<td className="max-w-[28rem] px-3 py-2 leading-5 text-text-secondary">
+					<td className="max-w-[28rem] break-words px-3 py-2 leading-5 text-text-secondary">
 						<div className="min-w-0 whitespace-normal break-words">
 							{children}
 						</div>

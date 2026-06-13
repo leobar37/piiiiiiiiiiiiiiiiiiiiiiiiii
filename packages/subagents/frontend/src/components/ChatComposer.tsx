@@ -1,11 +1,14 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Check, ChevronDown, SendHorizontal, Terminal } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import { Check, ChevronDown, Paperclip, SendHorizontal, Square, Terminal, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, ClipboardEvent, KeyboardEvent } from "react";
 import { useThreadCommands } from "../hooks/use-thread-commands.ts";
 import { useSelectThreadModel, useThreadModels } from "../hooks/use-thread-models.ts";
 import { type ComposerMode, useSendThreadMessage } from "../hooks/use-send-thread-message.ts";
-import type { DashboardModel, SubAgentInstanceState } from "../types.ts";
+import { useAbortThreadMessage } from "../hooks/use-abort-thread-message.ts";
+import { useSessionMessagesStore } from "../store/session-messages.ts";
+import type { DashboardImageAttachment, DashboardModel, SubAgentInstanceState } from "../types.ts";
+import { LionModeSelector } from "./LionModeSelector.tsx";
 
 interface ChatComposerProps {
 	instanceId: string;
@@ -28,14 +31,21 @@ const MODES = Object.keys(MODE_LABELS) as ComposerMode[];
 
 export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 	const [message, setMessage] = useState("");
+	const [attachments, setAttachments] = useState<DashboardImageAttachment[]>([]);
 	const [mode, setMode] = useState<ComposerMode>("prompt");
 	const [commandsOpen, setCommandsOpen] = useState(false);
 	const [modelsOpen, setModelsOpen] = useState(false);
 	const [isFocused, setIsFocused] = useState(false);
+	const [abortRequested, setAbortRequested] = useState(false);
 	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const shouldReduceMotion = useReducedMotion();
 	const sendMessage = useSendThreadMessage();
+	const abortMessage = useAbortThreadMessage();
 	const selectModel = useSelectThreadModel();
+	const isStreaming = useSessionMessagesStore((state) =>
+		state.streamingByInstance.get(instanceId) ?? false,
+	);
 	const { data: commands = [] } = useThreadCommands(instanceId);
 	const { data: models = [] } = useThreadModels(instanceId);
 	const query = extractCommandQuery(message);
@@ -44,7 +54,8 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 		() => resolveCurrentModel(models, thread?.modelProvider, thread?.modelId),
 		[models, thread?.modelId, thread?.modelProvider],
 	);
-	const actionError = sendMessage.error ?? selectModel.error;
+	const abortError = abortMessage.error;
+	const actionError = abortError ?? sendMessage.error ?? selectModel.error;
 	const filteredCommands = useMemo(() => {
 		const normalized = query.toLowerCase();
 		if (!normalized) return commands.slice(0, 10);
@@ -57,9 +68,22 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 	}, [commands, query]);
 
 	const trimmed = message.trim();
-	const canSend = Boolean(thread && trimmed && !sendMessage.isPending);
+	const canSend = Boolean(thread && (trimmed || attachments.length > 0) && !sendMessage.isPending);
 	const isSelectingModel = selectModel.isPending;
-	const statusText = sendMessage.isPending ? "Sending" : isSelectingModel ? "Selecting model" : null;
+	const canAbort = isStreaming && !abortMessage.isPending && !abortRequested;
+	const statusText = abortMessage.isPending
+		? "Stopping..."
+		: sendMessage.isPending
+			? "Sending..."
+			: isSelectingModel
+				? "Selecting model"
+				: null;
+
+	useEffect(() => {
+		if (!isStreaming) {
+			setAbortRequested(false);
+		}
+	}, [isStreaming]);
 
 	function resizeTextarea(target: HTMLTextAreaElement) {
 		target.style.height = "0px";
@@ -77,7 +101,17 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 			return;
 		}
 		if (event.key === "Escape") {
+			if (isStreaming) {
+				event.preventDefault();
+				void handleAbort();
+				return;
+			}
 			setCommandsOpen(false);
+			return;
+		}
+		if (event.key === "Tab" && commandsOpen && commandIntent && filteredCommands.length > 0) {
+			event.preventDefault();
+			insertCommand(filteredCommands[0].name);
 			return;
 		}
 		if (event.key === "Enter" && !event.shiftKey) {
@@ -86,16 +120,53 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 		}
 	}
 
+	async function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+		const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+		if (images.length === 0) return;
+		event.preventDefault();
+		await addImageFiles(images);
+	}
+
+	async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+		const files = Array.from(event.target.files ?? []).filter((file) => file.type.startsWith("image/"));
+		event.target.value = "";
+		await addImageFiles(files);
+	}
+
+	async function addImageFiles(files: File[]) {
+		if (files.length === 0) return;
+		const next = await Promise.all(files.map(readImageAttachment));
+		setAttachments((current) => [...current, ...next]);
+	}
+
+	function removeAttachment(index: number) {
+		setAttachments((current) => current.filter((_, candidateIndex) => candidateIndex !== index));
+	}
+
 	async function submit() {
 		if (!canSend) return;
 		const outbound = trimmed;
+		const outboundAttachments = attachments;
 		setMessage("");
+		setAttachments([]);
 		setCommandsOpen(false);
 		if (textareaRef.current) textareaRef.current.style.height = "44px";
 		try {
-			await sendMessage.mutateAsync({ threadId: instanceId, message: outbound, mode });
+			await sendMessage.mutateAsync({ threadId: instanceId, message: outbound, mode, images: outboundAttachments });
 		} catch {
 			setMessage(outbound);
+			setAttachments(outboundAttachments);
+		}
+	}
+
+	async function handleAbort() {
+		if (!canAbort) return;
+		setAbortRequested(true);
+		try {
+			await abortMessage.mutateAsync({ threadId: instanceId });
+		} catch (err) {
+			setAbortRequested(false);
+			console.error("Failed to abort:", err);
 		}
 	}
 
@@ -153,11 +224,55 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 					onFocus={() => setIsFocused(true)}
 					onBlur={() => setIsFocused(false)}
 					onKeyDown={handleKeyDown}
+					onPaste={(event) => void handlePaste(event)}
 					className="min-h-11 resize-none bg-transparent px-4 py-3 text-sm leading-normal text-text-primary outline-none placeholder:text-text-tertiary"
 				/>
 
+				{attachments.length > 0 ? (
+					<div className="flex min-w-0 flex-wrap gap-2 px-3 pb-3">
+						{attachments.map((attachment, index) => (
+							<div
+								key={`${attachment.name ?? attachment.mimeType}-${index}`}
+								className="group/attachment relative h-14 w-14 overflow-hidden rounded-md border border-border-subtle bg-bg-base"
+							>
+								<img
+									src={`data:${attachment.mimeType};base64,${attachment.data}`}
+									alt={attachment.name ?? "Attached image"}
+									className="h-full w-full object-cover"
+								/>
+								<button
+									type="button"
+									onClick={() => removeAttachment(index)}
+									title="Remove image"
+									aria-label="Remove image"
+									className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-bg-base/85 text-text-secondary opacity-0 transition hover:text-text-primary group-hover/attachment:opacity-100"
+								>
+									<X className="h-3 w-3" aria-hidden="true" />
+								</button>
+							</div>
+						))}
+					</div>
+				) : null}
+
 				<div className="flex items-center justify-between gap-3 px-3 pb-3">
 					<div className="flex min-w-0 items-center gap-2">
+						<input
+							ref={fileInputRef}
+							type="file"
+							accept="image/*"
+							multiple
+							onChange={(event) => void handleFileChange(event)}
+							className="hidden"
+						/>
+						<button
+							type="button"
+							onClick={() => fileInputRef.current?.click()}
+							title="Attach images"
+							aria-label="Attach images"
+							className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border-subtle bg-bg text-text-secondary transition hover:border-border-hover hover:text-text-primary"
+						>
+							<Paperclip className="h-4 w-4" aria-hidden="true" />
+						</button>
 						<ModelButton
 							currentModel={currentModel}
 							fallbackProvider={thread?.modelProvider}
@@ -165,6 +280,7 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 							isOpen={modelsOpen}
 							onClick={() => setModelsOpen((open) => !open)}
 						/>
+						<LionModeSelector />
 						<ModeTabs mode={mode} onChange={setMode} shouldReduceMotion={shouldReduceMotion} />
 					</div>
 
@@ -199,21 +315,59 @@ export function ChatComposer({ instanceId, thread }: ChatComposerProps) {
 						</AnimatePresence>
 						<motion.button
 							type="button"
-							onClick={() => void submit()}
-							disabled={!canSend}
-							whileTap={shouldReduceMotion || !canSend ? undefined : { scale: 0.94 }}
-							whileHover={shouldReduceMotion || !canSend ? undefined : { scale: 1.04 }}
-							className="flex h-9 w-9 items-center justify-center rounded-full bg-text-primary text-bg-base transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-text-muted disabled:text-bg-surface"
-							title="Send"
-							aria-label="Send"
+							onClick={() => void (isStreaming ? handleAbort() : submit())}
+							disabled={isStreaming ? !canAbort : !canSend}
+							whileTap={
+								shouldReduceMotion || (isStreaming ? !canAbort : !canSend) ? undefined : { scale: 0.94 }
+							}
+							whileHover={
+								shouldReduceMotion || (isStreaming ? !canAbort : !canSend) ? undefined : { scale: 1.04 }
+							}
+							className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+								isStreaming
+									? "bg-error text-bg-base hover:bg-error-hover disabled:cursor-not-allowed disabled:bg-text-muted disabled:text-bg-surface"
+									: "bg-text-primary text-bg-base hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-text-muted disabled:text-bg-surface"
+							}`}
+							title={isStreaming ? "Stop" : "Send"}
+							aria-label={isStreaming ? "Stop" : "Send"}
 						>
-							<SendHorizontal className="h-4 w-4" aria-hidden="true" />
+							{isStreaming ? (
+								<Square className="h-4 w-4" aria-hidden="true" />
+							) : (
+								<SendHorizontal className="h-4 w-4" aria-hidden="true" />
+							)}
 						</motion.button>
 					</div>
 				</div>
 			</motion.div>
 		</div>
 	);
+}
+
+async function readImageAttachment(file: File): Promise<DashboardImageAttachment> {
+	const dataUrl = await readFileAsDataUrl(file);
+	const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+	return {
+		type: "image",
+		data: base64,
+		mimeType: file.type || "image/png",
+		name: file.name,
+	};
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			if (typeof reader.result === "string") {
+				resolve(reader.result);
+				return;
+			}
+			reject(new Error("Image file could not be read"));
+		};
+		reader.onerror = () => reject(reader.error ?? new Error("Image file could not be read"));
+		reader.readAsDataURL(file);
+	});
 }
 
 interface ModelButtonProps {

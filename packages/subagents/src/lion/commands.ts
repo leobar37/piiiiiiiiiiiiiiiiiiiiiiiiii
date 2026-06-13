@@ -5,6 +5,7 @@ import { loadLionPlan, resolvePlanPath } from "./plans/index.js";
 import { buildPlanReviewPrompt } from "./prompts/index.js";
 import { createReviewPlanFromTodo, loadReviewPlan } from "./review-plan.js";
 import type { LionRuntime } from "./runtime.js";
+import { matchStrategyOnly } from "./strategy-match.js";
 import { TaskRunner } from "./task-runner.js";
 import { createRunId, formatPlanSummary } from "./utils.js";
 
@@ -467,50 +468,71 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 				return;
 			}
 
-			const isPlanMode = runtime.state.strategy === "plan";
-			const isReviewMode = runtime.state.strategy === "review";
 			const activePlanPath = runtime.state.activePlanPath;
+			const strategy = runtime.state.strategy;
 
-			if (isPlanMode && !activePlanPath) {
-				runtime.ui.showMessage("Lion build requires an active plan. Run /lion-activate <plan> first.");
-				return;
-			}
-			if (isReviewMode && !activePlanPath) {
-				runtime.ui.showMessage("Lion review build requires an active review. Run /lion-code-review first.");
+			const guardResult = matchStrategyOnly(strategy, {
+				plan: () => {
+					if (!activePlanPath) {
+						return { error: "Lion build requires an active plan. Run /lion-activate <plan> first." };
+					}
+					return null;
+				},
+				review: () => {
+					if (!activePlanPath) {
+						return { error: "Lion review build requires an active review. Run /lion-code-review first." };
+					}
+					return null;
+				},
+				simple: () => null,
+				none: () => null,
+			});
+			if (guardResult) {
+				runtime.ui.showMessage(guardResult.error);
 				return;
 			}
 
 			await ctx.waitForIdle();
 			const runId = createRunId();
-			runtime.logState("command_lion_build", { runId, planPath: activePlanPath, strategy: runtime.state.strategy });
+			runtime.logState("command_lion_build", { runId, planPath: activePlanPath, strategy });
 			runtime.setPhase("building");
 			runtime.persist();
 			runtime.ui.updateStatus(ctx, runtime.state);
 
-			const content = isPlanMode
-				? [
+			const content = matchStrategyOnly(strategy, {
+				plan: () =>
+					[
 						"Lion build mode activated.",
 						`Plan: ${runtime.state.activePlanSlug || activePlanPath}`,
 						"The orchestrator is now in control of task execution.",
 						'Immediately use lion_tasks with source: "active_plan_next_task" to select, execute, and record the next task.',
 						"Do not implement application code directly in the main thread.",
-					].join("\n")
-				: isReviewMode
-					? [
-							"Lion review execution mode activated.",
-							`Review: ${runtime.state.activePlanSlug || activePlanPath}`,
-							"The orchestrator is now in control of read-only review checklist execution.",
-							'Immediately use lion_checklist_start_next with kind "review", then run the returned lionTasksParams with lion_tasks.',
-							"Do not edit application code. Use validators to reject false positives before final reporting.",
-						].join("\n")
-					: [
-							"Lion execution mode activated.",
-							"Simple orchestration is active. No durable plan is required.",
-							"Delegate work with lion_tasks and synthesize results in the main thread.",
-							"Do not implement application code directly unless it is trivial.",
-						].join("\n");
+					].join("\n"),
+				review: () =>
+					[
+						"Lion review execution mode activated.",
+						`Review: ${runtime.state.activePlanSlug || activePlanPath}`,
+						"The orchestrator is now in control of read-only review checklist execution.",
+						'Immediately use lion_checklist_start_next with kind "review", then run the returned lionTasksParams with lion_tasks.',
+						"Do not edit application code. Use validators to reject false positives before final reporting.",
+					].join("\n"),
+				simple: () =>
+					[
+						"Lion execution mode activated.",
+						"Simple orchestration is active. No durable plan is required.",
+						"Delegate work with lion_tasks and synthesize results in the main thread.",
+						"Do not implement application code directly unless it is trivial.",
+					].join("\n"),
+				none: () =>
+					[
+						"Lion execution mode activated.",
+						"Simple orchestration is active. No durable plan is required.",
+						"Delegate work with lion_tasks and synthesize results in the main thread.",
+						"Do not implement application code directly unless it is trivial.",
+					].join("\n"),
+			});
 
-			const nextTools = isReviewMode ? ["lion_checklist_start_next", "lion_tasks"] : ["lion_tasks"];
+			const nextTools = strategy === "review" ? ["lion_checklist_start_next", "lion_tasks"] : ["lion_tasks"];
 
 			const message = {
 				customType: "lion-orchestrator-feedback",
@@ -520,14 +542,14 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 					runId,
 					planSlug: runtime.state.activePlanSlug,
 					planPath: activePlanPath,
-					strategy: runtime.state.strategy,
+					strategy,
 					phase: "building",
 					nextTools,
-					nextToolsRequired: isReviewMode ? ["lion_checklist_start_next"] : undefined,
+					nextToolsRequired: strategy === "review" ? ["lion_checklist_start_next"] : undefined,
 				},
 			};
 
-			if (isPlanMode) {
+			if (strategy === "plan") {
 				pi.sendMessage(message, { triggerTurn: false });
 			} else if (ctx.isIdle()) {
 				pi.sendMessage(message, { triggerTurn: true });
@@ -535,14 +557,15 @@ export function registerLionCommands(pi: ExtensionAPI, runtime: LionRuntime): vo
 				pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
 			}
 
-			const displayMessage = isPlanMode
-				? `Lion build mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`
-				: isReviewMode
-					? `Lion review execution mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`
-					: "Lion execution mode activated. Delegate with lion_tasks.";
+			const displayMessage = matchStrategyOnly(strategy, {
+				plan: () => `Lion build mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`,
+				review: () => `Lion review execution mode activated for ${runtime.state.activePlanSlug || activePlanPath}.`,
+				simple: () => "Lion execution mode activated. Delegate with lion_tasks.",
+				none: () => "Lion execution mode activated. Delegate with lion_tasks.",
+			});
 			runtime.ui.showMessage(displayMessage);
 
-			if (isPlanMode) {
+			if (strategy === "plan") {
 				const runner = new TaskRunner(runtime);
 				await runner.runActivePlanBuild(ctx, {
 					threadId: runtime.mainSession.getThread()?.instanceId ?? `main:${ctx.sessionManager.getSessionId()}`,

@@ -1,25 +1,37 @@
 import { defineConfig } from "vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
-export default defineConfig(({ command }) => ({
-	plugins: [react(), tailwindcss()],
+const backendUrl = process.env.PI_SUBAGENTS_BACKEND_URL ?? "http://127.0.0.1:9393";
+
+export default defineConfig({
+	plugins: [
+		tailwindcss(),
+		tanstackStart({
+			spa: {
+				enabled: true,
+				prerender: {
+					outputPath: "/index.html",
+				},
+			},
+		}),
+		react(),
+	],
 	resolve: {
 		alias: {
-			"/src/main.tsx": command === "serve" ? "/src/dev-main.tsx" : "/src/main.tsx",
 			"@subagents/contract": path.resolve(__dirname, "../src/api/contract.ts"),
 		},
 	},
 	server: {
 		proxy: {
-			"/rpc": "http://127.0.0.1:9393",
-			"/events": "http://127.0.0.1:9393",
+			"/rpc": backendUrl,
+			"/events": backendUrl,
 		},
 	},
 	build: {
 		outDir: "dist",
 	},
-	// Ensure MSW's Service Worker is served correctly in dev
 	publicDir: "public",
-}));
+});

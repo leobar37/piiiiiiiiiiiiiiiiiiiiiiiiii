@@ -81,6 +81,7 @@ function delegationResult(task: DelegationTask, status: DelegationResult["status
 			instanceId: `instance-${task.id}`,
 			taskId: task.id,
 			definitionName: task.definition,
+			cwd: TEST_CWD,
 			state: status === "completed" ? "completed" : "failed",
 			startTime: 1,
 			endTime: 2,
@@ -1147,7 +1148,7 @@ async function testLionReviewCommandRequiresActivePlan(): Promise<void> {
 
 	await pi.commands.get("lion-review")!.handler("", fakeCtx({}) as any);
 
-	assert.equal(runtime.state.strategy, "plan");
+	assert.equal(runtime.state.strategy, "none");
 	assert.equal(runtime.state.activePlanPath, null);
 }
 
@@ -1804,6 +1805,7 @@ function testRuntimeRestoreState(): void {
 				lastRunId: null,
 			},
 			createLionCore(),
+			"test-session",
 		);
 		const runtime = new LionRuntime(fakePi() as any, cwd);
 		runtime.restore(fakeCtx({ cwd }) as any);
@@ -1811,6 +1813,70 @@ function testRuntimeRestoreState(): void {
 		assert.equal(runtime.state.strategy, "plan");
 		assert.equal(runtime.state.phase, "planning");
 		assert.equal(runtime.state.activePlanSlug, "plan");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+}
+
+function testRuntimeRestoreStateIgnoresOtherSession(): void {
+	const cwd = mkdtempSync(join(tmpdir(), "lion-restore-other-session-"));
+	try {
+		writeLionState(
+			cwd,
+			{
+				version: 2,
+				active: true,
+				strategy: "plan",
+				phase: "planning",
+				activePlanPath: "/tmp/plan",
+				activePlanSlug: "plan",
+				planKind: "structured",
+				activeTaskId: null,
+				maxAttempts: 3,
+				lastRunId: null,
+			},
+			createLionCore(),
+			"previous-session",
+		);
+		const runtime = new LionRuntime(fakePi() as any, cwd);
+		runtime.restore(fakeCtx({ cwd, sessionId: "new-session" }) as any);
+		assert.equal(runtime.state.active, false);
+		assert.equal(runtime.state.strategy, "none");
+		assert.equal(runtime.state.activePlanSlug, null);
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+}
+
+function testRuntimeRestoreStateIgnoresOwnerlessActiveDocument(): void {
+	const cwd = mkdtempSync(join(tmpdir(), "lion-restore-ownerless-"));
+	try {
+		const statePath = getLionStatePath(cwd);
+		mkdirSync(join(cwd, ".pi", "lion"), { recursive: true });
+		writeFileSync(
+			statePath,
+			JSON.stringify({
+				version: 3,
+				state: {
+					version: 2,
+					active: true,
+					strategy: "plan",
+					phase: "planning",
+					activePlanPath: "/tmp/plan",
+					activePlanSlug: "plan",
+					planKind: "structured",
+					activeTaskId: null,
+					maxAttempts: 3,
+					lastRunId: null,
+				},
+				core: createLionCore(),
+				updatedAt: Date.now(),
+			}),
+		);
+		const runtime = new LionRuntime(fakePi() as any, cwd);
+		runtime.restore(fakeCtx({ cwd }) as any);
+		assert.equal(runtime.state.active, false);
+		assert.equal(runtime.state.strategy, "none");
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
@@ -1834,7 +1900,7 @@ function testRuntimeRestoreStateIgnoresLegacyVersion(): void {
 		const runtime = new LionRuntime(fakePi() as any, cwd);
 		runtime.restore(fakeCtx({ cwd }) as any);
 		assert.equal(runtime.state.active, false);
-		assert.equal(runtime.state.strategy, "plan");
+		assert.equal(runtime.state.strategy, "none");
 		assert.equal(runtime.state.phase, "planning");
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
@@ -1878,13 +1944,15 @@ function testRuntimePersist(): void {
 	const cwd = mkdtempSync(join(tmpdir(), "lion-persist-"));
 	try {
 		const runtime = new LionRuntime(fakePi() as any, cwd);
+		runtime.restore(fakeCtx({ cwd, sessionId: "persist-session" }) as any);
 		runtime.activatePlanning();
 		runtime.persist();
-		const saved = readLionState(cwd);
+		const saved = readLionState(cwd, fakeCtx({ cwd, sessionId: "persist-session" }) as any);
 		assert.ok(saved);
 		assert.equal(saved.state.active, true);
 		assert.equal(saved.state.strategy, "plan");
 		assert.equal(saved.state.phase, "planning");
+		assert.equal(readLionState(cwd, fakeCtx({ cwd, sessionId: "other-session" }) as any), null);
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
@@ -2245,6 +2313,7 @@ function testRuntimeRecordSubagentUiEventInstanceState(): void {
 			instanceId: "inst-1",
 			taskId: "task-1",
 			definitionName: "coder",
+			cwd: TEST_CWD,
 			state: "running",
 			startTime: 1,
 			endTime: null,
@@ -2276,6 +2345,7 @@ function testRuntimeRecordSubagentUiEventInstanceStateStarting(): void {
 			instanceId: "inst-1",
 			taskId: "task-1",
 			definitionName: "coder",
+			cwd: TEST_CWD,
 			state: "starting",
 			startTime: 1,
 			endTime: null,
@@ -2481,6 +2551,7 @@ function fakePiWithTools() {
 function fakeCtx(opts: {
 	entries?: any[];
 	cwd?: string;
+	sessionId?: string;
 	isIdle?: boolean;
 	hasPending?: boolean;
 	hasUI?: boolean;
@@ -2492,7 +2563,7 @@ function fakeCtx(opts: {
 			getEntries: () => opts.entries || [],
 			getLeafId: () => undefined,
 			getCwd: () => opts.cwd ?? "/tmp",
-			getSessionId: () => "test-session",
+			getSessionId: () => opts.sessionId ?? "test-session",
 			getSessionFile: () => undefined,
 			getSessionName: () => undefined,
 		},
@@ -2778,6 +2849,11 @@ const tests = [
 	{ name: "testResolvePlanPath", fn: testResolvePlanPath },
 	{ name: "testResolvePlanPathWithDir", fn: testResolvePlanPathWithDir },
 	{ name: "testRuntimeRestoreState", fn: testRuntimeRestoreState },
+	{ name: "testRuntimeRestoreStateIgnoresOtherSession", fn: testRuntimeRestoreStateIgnoresOtherSession },
+	{
+		name: "testRuntimeRestoreStateIgnoresOwnerlessActiveDocument",
+		fn: testRuntimeRestoreStateIgnoresOwnerlessActiveDocument,
+	},
 	{ name: "testRuntimeRestoreStateIgnoresLegacyVersion", fn: testRuntimeRestoreStateIgnoresLegacyVersion },
 	{ name: "testRuntimeRestoreStateInvalidVersion", fn: testRuntimeRestoreStateInvalidVersion },
 	{ name: "testRuntimeRestoreStateNoEntries", fn: testRuntimeRestoreStateNoEntries },

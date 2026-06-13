@@ -90,3 +90,26 @@
 .animate-fade-in {
 	animation: fade-in 0.2s ease-out both;
 }
+
+.agent-canvas .react-flow__pane {
+	cursor: grab;
+}
+
+.agent-canvas .react-flow__pane.dragging {
+	cursor: grabbing;
+}
+
+.agent-canvas .react-flow__controls-button {
+	background: var(--color-bg-elevated);
+	border-bottom: 1px solid var(--color-border-subtle);
+	color: var(--color-text-secondary);
+}
+
+.agent-canvas .react-flow__controls-button:hover {
+	background: var(--color-bg-hover);
+	color: var(--color-text-primary);
+}
+
+.agent-canvas .react-flow__minimap-mask {
+	fill: rgba(99, 102, 241, 0.16);
+}

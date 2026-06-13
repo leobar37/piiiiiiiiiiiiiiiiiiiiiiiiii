@@ -242,6 +242,17 @@ interface ToolDefinitionEntry {
 
 /** Standard thinking levels */
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+const COMBINED_CONTEXT_SAFETY_MARGIN_TOKENS = 4096;
+
+function getCombinedContextOutputReserveTokens(model: Model<any> | undefined): number | undefined {
+	if (!model || model.api !== "anthropic-messages") {
+		return undefined;
+	}
+	const compat = model.compat as { countsMaxTokensAgainstContextWindow?: boolean } | undefined;
+	const countsMaxTokensAgainstContextWindow =
+		compat?.countsMaxTokensAgainstContextWindow === true || model.provider === "kimi-coding";
+	return countsMaxTokensAgainstContextWindow ? model.maxTokens : undefined;
+}
 
 // ============================================================================
 // AgentSession Class
@@ -1319,10 +1330,11 @@ export class AgentSession {
 	 *
 	 * @param content User message content (string or content array)
 	 * @param options.deliverAs Delivery mode when streaming: "steer" or "followUp"
+	 * @param options.executeCommands Whether slash extension commands should execute before prompting
 	 */
 	async sendUserMessage(
 		content: string | (TextContent | ImageContent)[],
-		options?: { deliverAs?: "steer" | "followUp" },
+		options?: { deliverAs?: "steer" | "followUp"; executeCommands?: boolean },
 	): Promise<void> {
 		// Normalize content to text string + optional images
 		let text: string;
@@ -1344,9 +1356,8 @@ export class AgentSession {
 			if (images.length === 0) images = undefined;
 		}
 
-		// Use prompt() with expandPromptTemplates: false to skip command handling and template expansion
 		await this.prompt(text, {
-			expandPromptTemplates: false,
+			expandPromptTemplates: options?.executeCommands ?? false,
 			streamingBehavior: options?.deliverAs,
 			images,
 			source: "extension",
@@ -1850,7 +1861,12 @@ export class AgentSession {
 		} else {
 			contextTokens = calculateContextTokens(assistantMessage.usage);
 		}
-		if (shouldCompact(contextTokens, contextWindow, settings)) {
+		if (
+			shouldCompact(contextTokens, contextWindow, settings, {
+				outputReserveTokens: getCombinedContextOutputReserveTokens(this.model),
+				safetyMarginTokens: COMBINED_CONTEXT_SAFETY_MARGIN_TOKENS,
+			})
+		) {
 			await this._runAutoCompaction("threshold", false);
 		}
 	}

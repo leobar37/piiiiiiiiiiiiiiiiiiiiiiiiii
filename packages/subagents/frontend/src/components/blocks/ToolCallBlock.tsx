@@ -29,15 +29,15 @@ export function ToolCallBlock({ id, name, args, currentThreadId }: ToolCallBlock
 			<button
 				type="button"
 				onClick={toggle}
-				className="inline-flex max-w-full items-center gap-1.5 rounded border border-border-subtle bg-bg-base/70 px-2 py-1 text-[11px] leading-4 text-text-tertiary transition hover:border-border-hover hover:text-text-secondary"
+				className="inline-flex max-w-full items-center gap-1.5 py-0.5 text-[11px] leading-4 text-text-tertiary transition hover:text-text-secondary"
 			>
 				<Wrench className="h-3 w-3 shrink-0" aria-hidden="true" />
 				<span className="truncate font-mono">{name}</span>
 				<ChevronDown className={`h-3 w-3 shrink-0 text-text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
 			</button>
 			{isExpanded && (
-				<div className="mt-1 max-w-full rounded border border-border-subtle bg-bg-base/70 px-2 py-1">
-					<pre className="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-snug text-text-secondary">
+				<div className="mt-1 max-w-full pl-4">
+					<pre className="max-h-32 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-text-secondary">
 						{JSON.stringify(args, null, 2)}
 					</pre>
 				</div>

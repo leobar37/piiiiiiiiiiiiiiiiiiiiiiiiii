@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { orpc } from "../api/client.ts";
 import { invalidateThreadMessages, updateThreadMessagesCache } from "../lib/thread-message-cache.ts";
 import { useSessionMessagesStore } from "../store/session-messages.ts";
-import type { ChatMessage } from "../types.ts";
+import type { ChatMessage, DashboardImageAttachment, MessageBlock } from "../types.ts";
 
 export type ComposerMode = "prompt" | "follow_up" | "steer";
 
@@ -10,6 +10,7 @@ export interface SendThreadMessageInput {
 	threadId: string;
 	message: string;
 	mode: ComposerMode;
+	images?: DashboardImageAttachment[];
 }
 
 export function useSendThreadMessage() {
@@ -25,7 +26,7 @@ export function useSendThreadMessage() {
 				id: optimisticId,
 				instanceId: input.threadId,
 				role: "user",
-				blocks: [{ type: "text", text: input.message }],
+				blocks: createOptimisticBlocks(input.message, input.images),
 				timestamp: Date.now(),
 				optimistic: true,
 			};
@@ -44,4 +45,12 @@ export function useSendThreadMessage() {
 			invalidateThreadMessages(queryClient, input.threadId);
 		},
 	});
+}
+
+function createOptimisticBlocks(message: string, images: DashboardImageAttachment[] | undefined): MessageBlock[] {
+	const blocks: MessageBlock[] = [{ type: "text", text: message }];
+	for (const image of images ?? []) {
+		blocks.push({ type: "image", data: image.data, mimeType: image.mimeType });
+	}
+	return blocks;
 }

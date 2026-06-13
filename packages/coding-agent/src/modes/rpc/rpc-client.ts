@@ -41,6 +41,8 @@ export interface RpcClientOptions {
 export interface ModelInfo {
 	provider: string;
 	id: string;
+	name: string;
+	api: string;
 	contextWindow: number;
 	reasoning: boolean;
 }
@@ -155,6 +157,10 @@ export class RpcClient {
 		return this.stderr;
 	}
 
+	getPid(): number | undefined {
+		return this.process?.pid;
+	}
+
 	// =========================================================================
 	// Command Methods
 	// =========================================================================
@@ -164,8 +170,19 @@ export class RpcClient {
 	 * Returns immediately after sending; use onEvent() to receive streaming events.
 	 * Use waitForIdle() to wait for completion.
 	 */
-	async prompt(message: string, images?: ImageContent[]): Promise<void> {
-		await this.send({ type: "prompt", message, images });
+	async prompt(
+		message: string,
+		options?: {
+			images?: ImageContent[];
+			streamingBehavior?: "steer" | "followUp";
+		},
+	): Promise<void> {
+		await this.send({
+			type: "prompt",
+			message,
+			images: options?.images,
+			streamingBehavior: options?.streamingBehavior,
+		});
 	}
 
 	/**
@@ -442,7 +459,7 @@ export class RpcClient {
 	 */
 	async promptAndWait(message: string, images?: ImageContent[], timeout = 60000): Promise<AgentEvent[]> {
 		const eventsPromise = this.collectEvents(timeout);
-		await this.prompt(message, images);
+		await this.prompt(message, { images });
 		return eventsPromise;
 	}
 

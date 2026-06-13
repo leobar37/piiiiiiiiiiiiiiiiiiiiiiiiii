@@ -1,77 +1,54 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { keyHint } from "@earendil-works/pi-coding-agent";
 import { fuzzyMatch } from "@earendil-works/pi-tui";
-import { TODO_ID_PATTERN, TODO_ID_PREFIX, type TodoFrontMatter, type TodoRecord } from "./types.js";
+import { formatTaskId, isTaskClosed, normalizeTaskId, validateTaskId } from "./task-store.js";
+import type { TaskRecord, TaskStatus } from "./types.js";
 
-export function formatTodoId(id: string): string {
-	return `${TODO_ID_PREFIX}${id}`;
+export { formatTaskId, normalizeTaskId, validateTaskId };
+
+export function getTaskTitle(task: TaskRecord): string {
+	return task.title || "(untitled)";
 }
 
-export function normalizeTodoId(id: string): string {
-	let trimmed = id.trim();
-	if (trimmed.startsWith("#")) {
-		trimmed = trimmed.slice(1);
-	}
-	if (trimmed.toUpperCase().startsWith(TODO_ID_PREFIX)) {
-		trimmed = trimmed.slice(TODO_ID_PREFIX.length);
-	}
-	return trimmed;
+export function getTaskStatus(task: TaskRecord): TaskStatus {
+	return task.status || "pending";
 }
 
-export function validateTodoId(id: string): { id: string } | { error: string } {
-	const normalized = normalizeTodoId(id);
-	if (!normalized || !TODO_ID_PATTERN.test(normalized)) {
-		return { error: "Invalid todo id. Expected TODO-<hex>." };
-	}
-	return { id: normalized.toLowerCase() };
+export function isTaskVisible(task: TaskRecord): boolean {
+	return task.status !== "deleted";
 }
 
-export function displayTodoId(id: string): string {
-	return formatTodoId(normalizeTodoId(id));
+export function buildTaskSearchText(task: TaskRecord): string {
+	const assignment = task.assignedToSession ? `assigned:${task.assignedToSession}` : "";
+	const files = task.context?.files?.join(" ") ?? "";
+	const doneWhen = task.context?.doneWhen?.join(" ") ?? "";
+	return [
+		formatTaskId(task.id),
+		task.id,
+		task.title,
+		task.status,
+		assignment,
+		task.context?.why ?? "",
+		files,
+		doneWhen,
+		task.context?.notes ?? "",
+	]
+		.join(" ")
+		.trim();
 }
 
-export function isTodoClosed(status: string): boolean {
-	return ["closed", "done"].includes(status.toLowerCase());
-}
-
-export function clearAssignmentIfClosed(todo: TodoFrontMatter): void {
-	if (isTodoClosed(getTodoStatus(todo))) {
-		todo.assigned_to_session = undefined;
-	}
-}
-
-export function sortTodos(todos: TodoFrontMatter[]): TodoFrontMatter[] {
-	return [...todos].sort((a, b) => {
-		const aClosed = isTodoClosed(a.status);
-		const bClosed = isTodoClosed(b.status);
-		if (aClosed !== bClosed) return aClosed ? 1 : -1;
-		const aAssigned = !aClosed && Boolean(a.assigned_to_session);
-		const bAssigned = !bClosed && Boolean(b.assigned_to_session);
-		if (aAssigned !== bAssigned) return aAssigned ? -1 : 1;
-		return (a.created_at || "").localeCompare(b.created_at || "");
-	});
-}
-
-export function buildTodoSearchText(todo: TodoFrontMatter): string {
-	const tags = todo.tags.join(" ");
-	const assignment = todo.assigned_to_session ? `assigned:${todo.assigned_to_session}` : "";
-	return `${formatTodoId(todo.id)} ${todo.id} ${todo.title} ${tags} ${todo.status} ${assignment}`.trim();
-}
-
-export function filterTodos(todos: TodoFrontMatter[], query: string): TodoFrontMatter[] {
+export function filterTasks(tasks: TaskRecord[], query: string): TaskRecord[] {
 	const trimmed = query.trim();
-	if (!trimmed) return todos;
-
+	if (!trimmed) return tasks;
 	const tokens = trimmed
 		.split(/\s+/)
 		.map((token) => token.trim())
 		.filter(Boolean);
+	if (tokens.length === 0) return tasks;
 
-	if (tokens.length === 0) return todos;
-
-	const matches: Array<{ todo: TodoFrontMatter; score: number }> = [];
-	for (const todo of todos) {
-		const text = buildTodoSearchText(todo);
+	const matches: Array<{ task: TaskRecord; score: number }> = [];
+	for (const task of tasks) {
+		const text = buildTaskSearchText(task);
 		let totalScore = 0;
 		let matched = true;
 		for (const token of tokens) {
@@ -82,187 +59,170 @@ export function filterTodos(todos: TodoFrontMatter[], query: string): TodoFrontM
 			}
 			totalScore += result.score;
 		}
-		if (matched) {
-			matches.push({ todo, score: totalScore });
-		}
+		if (matched) matches.push({ task, score: totalScore });
 	}
-
-	return matches
-		.sort((a, b) => {
-			const aClosed = isTodoClosed(a.todo.status);
-			const bClosed = isTodoClosed(b.todo.status);
-			if (aClosed !== bClosed) return aClosed ? 1 : -1;
-			const aAssigned = !aClosed && Boolean(a.todo.assigned_to_session);
-			const bAssigned = !bClosed && Boolean(b.todo.assigned_to_session);
-			if (aAssigned !== bAssigned) return aAssigned ? -1 : 1;
-			return a.score - b.score;
-		})
-		.map((match) => match.todo);
+	return matches.sort((a, b) => a.score - b.score).map((match) => match.task);
 }
 
-export function getTodoTitle(todo: TodoFrontMatter): string {
-	return todo.title || "(untitled)";
+export function formatAssignmentSuffix(task: TaskRecord): string {
+	return task.assignedToSession ? ` (assigned: ${task.assignedToSession})` : "";
 }
 
-export function getTodoStatus(todo: TodoFrontMatter): string {
-	return todo.status || "open";
-}
-
-export function formatAssignmentSuffix(todo: TodoFrontMatter): string {
-	return todo.assigned_to_session ? ` (assigned: ${todo.assigned_to_session})` : "";
-}
-
-export function renderAssignmentSuffix(theme: Theme, todo: TodoFrontMatter, currentSessionId?: string): string {
-	if (!todo.assigned_to_session) return "";
-	const isCurrent = todo.assigned_to_session === currentSessionId;
+export function renderAssignmentSuffix(theme: Theme, task: TaskRecord, currentSessionId?: string): string {
+	if (!task.assignedToSession) return "";
+	const isCurrent = task.assignedToSession === currentSessionId;
 	const color = isCurrent ? "success" : "dim";
 	const suffix = isCurrent ? ", current" : "";
-	return theme.fg(color, ` (assigned: ${todo.assigned_to_session}${suffix})`);
+	return theme.fg(color, ` (assigned: ${task.assignedToSession}${suffix})`);
 }
 
-export function formatTodoHeading(todo: TodoFrontMatter): string {
-	const tagText = todo.tags.length ? ` [${todo.tags.join(", ")}]` : "";
-	return `${formatTodoId(todo.id)} ${getTodoTitle(todo)}${tagText}${formatAssignmentSuffix(todo)}`;
+export function formatTaskHeading(task: TaskRecord): string {
+	return `${formatTaskId(task.id)} ${getTaskTitle(task)}${formatAssignmentSuffix(task)}`;
 }
 
-export function splitTodosByAssignment(todos: TodoFrontMatter[]): {
-	assignedTodos: TodoFrontMatter[];
-	openTodos: TodoFrontMatter[];
-	closedTodos: TodoFrontMatter[];
+export function splitTasksByStatus(tasks: TaskRecord[]): {
+	activeTasks: TaskRecord[];
+	pendingTasks: TaskRecord[];
+	blockedTasks: TaskRecord[];
+	completedTasks: TaskRecord[];
+	deletedTasks: TaskRecord[];
 } {
-	const assignedTodos: TodoFrontMatter[] = [];
-	const openTodos: TodoFrontMatter[] = [];
-	const closedTodos: TodoFrontMatter[] = [];
-	for (const todo of todos) {
-		if (isTodoClosed(getTodoStatus(todo))) {
-			closedTodos.push(todo);
-			continue;
-		}
-		if (todo.assigned_to_session) {
-			assignedTodos.push(todo);
-		} else {
-			openTodos.push(todo);
-		}
+	const activeTasks: TaskRecord[] = [];
+	const pendingTasks: TaskRecord[] = [];
+	const blockedTasks: TaskRecord[] = [];
+	const completedTasks: TaskRecord[] = [];
+	const deletedTasks: TaskRecord[] = [];
+	for (const task of tasks) {
+		if (task.status === "in_progress") activeTasks.push(task);
+		else if (task.status === "blocked") blockedTasks.push(task);
+		else if (task.status === "completed") completedTasks.push(task);
+		else if (task.status === "deleted") deletedTasks.push(task);
+		else pendingTasks.push(task);
 	}
-	return { assignedTodos, openTodos, closedTodos };
+	return { activeTasks, pendingTasks, blockedTasks, completedTasks, deletedTasks };
 }
 
-export function formatTodoList(todos: TodoFrontMatter[]): string {
-	if (!todos.length) return "No todos.";
-
-	const { assignedTodos, openTodos, closedTodos } = splitTodosByAssignment(todos);
+export function formatTaskList(tasks: TaskRecord[]): string {
+	if (!tasks.length) return "No tasks.";
+	const { activeTasks, pendingTasks, blockedTasks, completedTasks } = splitTasksByStatus(tasks);
 	const lines: string[] = [];
-	const pushSection = (label: string, sectionTodos: TodoFrontMatter[]) => {
-		lines.push(`${label} (${sectionTodos.length}):`);
-		if (!sectionTodos.length) {
+	const pushSection = (label: string, sectionTasks: TaskRecord[]) => {
+		lines.push(`${label} (${sectionTasks.length}):`);
+		if (!sectionTasks.length) {
 			lines.push("  none");
 			return;
 		}
-		for (const todo of sectionTodos) {
-			lines.push(`  ${formatTodoHeading(todo)}`);
+		for (const task of sectionTasks) {
+			lines.push(`  ${formatTaskHeading(task)}`);
 		}
 	};
-
-	pushSection("Assigned todos", assignedTodos);
-	pushSection("Open todos", openTodos);
-	pushSection("Closed todos", closedTodos);
+	pushSection("In progress", activeTasks);
+	pushSection("Pending", pendingTasks);
+	pushSection("Blocked", blockedTasks);
+	pushSection("Completed", completedTasks);
 	return lines.join("\n");
 }
 
-export function serializeTodoForAgent(todo: TodoRecord): string {
-	const payload = { ...todo, id: formatTodoId(todo.id) };
-	return JSON.stringify(payload, null, 2);
+export function serializeTaskForAgent(task: TaskRecord): string {
+	return JSON.stringify({ ...task, id: formatTaskId(task.id) }, null, 2);
 }
 
-export function serializeTodoListForAgent(todos: TodoFrontMatter[]): string {
-	const { assignedTodos, openTodos, closedTodos } = splitTodosByAssignment(todos);
-	const mapTodo = (todo: TodoFrontMatter) => ({ ...todo, id: formatTodoId(todo.id) });
+export function serializeTaskListForAgent(tasks: TaskRecord[]): string {
+	const { activeTasks, pendingTasks, blockedTasks, completedTasks } = splitTasksByStatus(tasks);
+	const mapTask = (task: TaskRecord) => ({ ...task, id: formatTaskId(task.id) });
 	return JSON.stringify(
 		{
-			assigned: assignedTodos.map(mapTodo),
-			open: openTodos.map(mapTodo),
-			closed: closedTodos.map(mapTodo),
+			in_progress: activeTasks.map(mapTask),
+			pending: pendingTasks.map(mapTask),
+			blocked: blockedTasks.map(mapTask),
+			completed: completedTasks.map(mapTask),
 		},
 		null,
 		2,
 	);
 }
 
-export function renderTodoHeading(theme: Theme, todo: TodoFrontMatter, currentSessionId?: string): string {
-	const closed = isTodoClosed(getTodoStatus(todo));
+export function renderTaskHeading(theme: Theme, task: TaskRecord, currentSessionId?: string): string {
+	const closed = isTaskClosed(task.status);
 	const titleColor = closed ? "dim" : "text";
-	const tagText = todo.tags.length ? theme.fg("dim", ` [${todo.tags.join(", ")}]`) : "";
-	const assignmentText = renderAssignmentSuffix(theme, todo, currentSessionId);
-	return (
-		theme.fg("accent", formatTodoId(todo.id)) +
-		" " +
-		theme.fg(titleColor, getTodoTitle(todo)) +
-		tagText +
-		assignmentText
-	);
+	const assignmentText = renderAssignmentSuffix(theme, task, currentSessionId);
+	return `${theme.fg("accent", formatTaskId(task.id))} ${theme.fg(titleColor, getTaskTitle(task))}${assignmentText}`;
 }
 
-export function renderTodoList(
+export function renderTaskList(
 	theme: Theme,
-	todos: TodoFrontMatter[],
+	tasks: TaskRecord[],
 	expanded: boolean,
 	currentSessionId?: string,
 ): string {
-	if (!todos.length) return theme.fg("dim", "No todos");
-
-	const { assignedTodos, openTodos, closedTodos } = splitTodosByAssignment(todos);
+	if (!tasks.length) return theme.fg("dim", "No tasks");
+	const { activeTasks, pendingTasks, blockedTasks, completedTasks } = splitTasksByStatus(tasks);
+	const sections: Array<{ label: string; tasks: TaskRecord[] }> = [
+		{ label: "In progress", tasks: activeTasks },
+		{ label: "Pending", tasks: pendingTasks },
+		{ label: "Blocked", tasks: blockedTasks },
+		{ label: "Completed", tasks: completedTasks },
+	];
 	const lines: string[] = [];
-	const pushSection = (label: string, sectionTodos: TodoFrontMatter[]) => {
-		lines.push(theme.fg("muted", `${label} (${sectionTodos.length})`));
-		if (!sectionTodos.length) {
+	sections.forEach((section, index) => {
+		if (index > 0) lines.push("");
+		lines.push(theme.fg("muted", `${section.label} (${section.tasks.length})`));
+		if (!section.tasks.length) {
 			lines.push(theme.fg("dim", "  none"));
 			return;
 		}
-		const maxItems = expanded ? sectionTodos.length : Math.min(sectionTodos.length, 3);
-		for (let i = 0; i < maxItems; i++) {
-			lines.push(`  ${renderTodoHeading(theme, sectionTodos[i], currentSessionId)}`);
+		const maxItems = expanded ? section.tasks.length : Math.min(section.tasks.length, 3);
+		for (let i = 0; i < maxItems; i += 1) {
+			lines.push(`  ${renderTaskHeading(theme, section.tasks[i], currentSessionId)}`);
 		}
-		if (!expanded && sectionTodos.length > maxItems) {
-			lines.push(theme.fg("dim", `  ... ${sectionTodos.length - maxItems} more`));
+		if (!expanded && section.tasks.length > maxItems) {
+			lines.push(theme.fg("dim", `  ... ${section.tasks.length - maxItems} more`));
 		}
-	};
-
-	const sections: Array<{ label: string; todos: TodoFrontMatter[] }> = [
-		{ label: "Assigned todos", todos: assignedTodos },
-		{ label: "Open todos", todos: openTodos },
-		{ label: "Closed todos", todos: closedTodos },
-	];
-
-	sections.forEach((section, index) => {
-		if (index > 0) lines.push("");
-		pushSection(section.label, section.todos);
 	});
-
 	return lines.join("\n");
 }
 
-export function renderTodoDetail(theme: Theme, todo: TodoRecord, expanded: boolean): string {
-	const summary = renderTodoHeading(theme, todo);
+export function renderTaskDetail(theme: Theme, task: TaskRecord, expanded: boolean): string {
+	const summary = renderTaskHeading(theme, task);
 	if (!expanded) return summary;
-
-	const tags = todo.tags.length ? todo.tags.join(", ") : "none";
-	const createdAt = todo.created_at || "unknown";
-	const bodyText = todo.body?.trim() ? todo.body.trim() : "No details yet.";
-	const bodyLines = bodyText.split("\n");
-
 	const lines = [
 		summary,
-		theme.fg("muted", `Status: ${getTodoStatus(todo)}`),
-		theme.fg("muted", `Tags: ${tags}`),
-		theme.fg("muted", `Created: ${createdAt}`),
+		theme.fg("muted", `Status: ${getTaskStatus(task)}`),
+		theme.fg("muted", `Revision: ${task.revision}`),
+		theme.fg("muted", `Created: ${task.createdAt}`),
+		theme.fg("muted", `Updated: ${task.updatedAt}`),
 		"",
-		theme.fg("muted", "Body:"),
-		...bodyLines.map((line) => theme.fg("text", `  ${line}`)),
+		theme.fg("muted", "Context:"),
+		...formatContextLines(task).map((line) => theme.fg("text", `  ${line}`)),
 	];
-
 	return lines.join("\n");
+}
+
+export function formatContextMarkdown(task: TaskRecord): string {
+	const lines = formatContextLines(task);
+	return lines.length ? lines.join("\n") : "_No task context yet._";
 }
 
 export function appendExpandHint(theme: Theme, text: string): string {
 	return `${text}\n${theme.fg("dim", `(${keyHint("app.tools.expand", "to expand")})`)}`;
+}
+
+function formatContextLines(task: TaskRecord): string[] {
+	const context = task.context;
+	if (!context) return [];
+	const lines: string[] = [];
+	if (context.why) lines.push(`Why: ${context.why}`);
+	if (context.files?.length) {
+		lines.push("Files:");
+		lines.push(...context.files.map((file) => `- ${file}`));
+	}
+	if (context.doneWhen?.length) {
+		lines.push("Done when:");
+		lines.push(...context.doneWhen.map((item) => `- ${item}`));
+	}
+	if (context.notes) {
+		lines.push("Notes:");
+		lines.push(context.notes);
+	}
+	return lines;
 }

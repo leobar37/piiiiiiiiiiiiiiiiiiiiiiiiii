@@ -1,7 +1,9 @@
 import type { InstructionBuilder } from "../types.js";
 
+const NO_PLAN_STRATEGIES = new Set(["simple", "none"]);
+
 function sourceTruthInstruction(ctx: Parameters<InstructionBuilder>[0]): string {
-	if (ctx.orchestration?.strategy === "simple") {
+	if (ctx.orchestration?.strategy && NO_PLAN_STRATEGIES.has(ctx.orchestration.strategy)) {
 		return "Use the delegated scope and referenced files as the source of truth. Do not assume a durable plan or plan task file exists.";
 	}
 	return "Use referenced plan, task, and source files as the source of truth. Do not assume the delegation brief contains the full task.";

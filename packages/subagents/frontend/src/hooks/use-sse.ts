@@ -6,6 +6,7 @@ import { convertAgentMessages } from "../utils/message-converter.ts";
 import { generateNextEvent } from "../mocks/sse-emitter.ts";
 import { dashboardDebugLedger } from "../dev/debug-ledger.ts";
 import { queryClient } from "../lib/query-client.ts";
+import { invalidateTaskQueries } from "../lib/task-query-cache.ts";
 import { setThreadMessagesCache } from "../lib/thread-message-cache.ts";
 
 function isDev(): boolean {
@@ -244,6 +245,11 @@ export function applySessionMessageEvent(event: SubAgentEvent): void {
 }
 
 export function syncDashboardQueries(event: SubAgentEvent): void {
+	if (event.type === "task.changed") {
+		invalidateTaskQueries(queryClient);
+		return;
+	}
+
 	const instanceId = event.instanceId;
 	if (!instanceId) return;
 

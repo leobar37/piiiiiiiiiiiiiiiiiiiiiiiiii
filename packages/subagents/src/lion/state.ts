@@ -5,7 +5,7 @@ export function createInitialLionState(): LionState {
 	return {
 		version: 2,
 		active: false,
-		strategy: "plan",
+		strategy: "none",
 		phase: "planning",
 		activePlanPath: null,
 		activePlanSlug: null,

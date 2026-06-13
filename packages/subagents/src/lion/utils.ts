@@ -1,5 +1,5 @@
 import { basename, relative } from "node:path";
-import type { LionBuildResult, LionPlan, LionReviewVerdict, LionTaskStatus } from "./types.js";
+import type { LionBuildResult, LionPlan, LionReviewVerdict, LionState, LionTaskStatus } from "./types.js";
 
 export function slugFromPath(path: string): string {
 	return basename(path.replace(/\/$/, ""));
@@ -65,4 +65,15 @@ import { randomUUID } from "node:crypto";
 
 export function createRunId(): string {
 	return `lion-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+}
+
+/**
+ * Normalizes a restored Lion state to ensure inactive sessions use strategy "none".
+ * This handles migration from older states where inactive sessions defaulted to "plan".
+ */
+export function normalizeInactiveStrategy(state: LionState): LionState {
+	if (!state.active && state.strategy !== "none") {
+		return { ...state, strategy: "none" };
+	}
+	return state;
 }

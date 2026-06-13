@@ -194,6 +194,7 @@ export class TaskRunner {
 						instanceId: `subagent-${runId}-task-${i}-failed`,
 						taskId: `${runId}-task-${i}`,
 						definitionName: t.definition,
+						cwd,
 						state: "failed" as const,
 						startTime: null,
 						endTime: Date.now(),
@@ -358,6 +359,8 @@ export class TaskRunner {
 
 	private applyPhasePolicy(task: PreparedTaskConfig): PreparedTaskConfig {
 		const state = this.runtime.state;
+		if (state.strategy === "none" || state.strategy === "simple") return task;
+
 		if (state.strategy === "review") {
 			if (task.definition === "executor") {
 				throw new Error("executor tasks are not allowed in Lion review mode.");
@@ -366,17 +369,7 @@ export class TaskRunner {
 				if (!isReviewPlanningRole(task.definition)) {
 					throw new Error(`${task.definition} tasks require /lion-build in review mode.`);
 				}
-				return {
-					...task,
-					capabilities: {
-						...task.capabilities,
-						canEdit: false,
-						canWrite: false,
-						canExecute: false,
-					},
-					tools: ["read", "glob", "grep"],
-					disabledTools: ["edit", "write", "multi-edit", "bash"],
-				};
+				return this.#asReadOnlyTask(task);
 			}
 			return {
 				...task,
@@ -389,26 +382,30 @@ export class TaskRunner {
 				disabledTools: uniqueStrings([...(task.disabledTools ?? []), "edit", "write", "multi-edit"]),
 			};
 		}
-		if (state.strategy !== "plan") return task;
 
+		// plan mode
 		if (state.phase === "planning") {
 			if (!isPlanningRole(task.definition)) {
 				throw new Error(`${task.definition} tasks require /lion-build in plan mode.`);
 			}
-			return {
-				...task,
-				capabilities: {
-					...task.capabilities,
-					canEdit: false,
-					canWrite: false,
-					canExecute: false,
-				},
-				tools: ["read", "glob", "grep"],
-				disabledTools: ["edit", "write", "multi-edit", "bash"],
-			};
+			return this.#asReadOnlyTask(task);
 		}
 
 		return task;
+	}
+
+	#asReadOnlyTask(task: PreparedTaskConfig): PreparedTaskConfig {
+		return {
+			...task,
+			capabilities: {
+				...task.capabilities,
+				canEdit: false,
+				canWrite: false,
+				canExecute: false,
+			},
+			tools: ["read", "glob", "grep"],
+			disabledTools: ["edit", "write", "multi-edit", "bash"],
+		};
 	}
 
 	private recordSelectedPlanTaskResult(

@@ -7,8 +7,9 @@ import { ChatComposer } from "../src/components/ChatComposer";
 import { LionModeBadge } from "../src/components/LionModeBadge";
 import { MessageItem } from "../src/components/MessageItem";
 import { groupSubagents, SubagentListPanel } from "../src/components/SubagentListPanel";
+import { TaskSidebarSection } from "../src/components/TaskSidebarSection";
 import { useSubAgentStore } from "../src/store/use-subagent-store";
-import type { ChatMessage, LionDashboardState, SubAgentInstanceState, SubAgentRunRecord } from "../src/types";
+import type { ChatMessage, LionDashboardState, SubAgentInstanceState, SubAgentRunRecord, TaskRecord } from "../src/types";
 
 const baseAgent: SubAgentInstanceState = {
 	instanceId: "subagent-1",
@@ -101,6 +102,27 @@ const baseRun: SubAgentRunRecord = {
 	toolCount: 2,
 };
 
+const sidebarTasks: TaskRecord[] = [
+	{
+		id: "deadbeef",
+		title: "Wire task sidebar",
+		status: "in_progress",
+		createdAt: "2026-06-12T00:00:00.000Z",
+		updatedAt: "2026-06-12T00:00:00.000Z",
+		revision: 1,
+		assignedToSession: "session-1",
+		context: { notes: "Keep context compact." },
+	},
+	{
+		id: "feedface",
+		title: "Review task store",
+		status: "pending",
+		createdAt: "2026-06-12T00:00:00.000Z",
+		updatedAt: "2026-06-12T00:00:00.000Z",
+		revision: 1,
+	},
+];
+
 function createLionState(overrides: Partial<LionDashboardState>): LionDashboardState {
 	return {
 		active: true,
@@ -151,6 +173,17 @@ describe("Lion dashboard UI", () => {
 		expect(html).not.toContain("paused");
 	});
 
+	it("renders task groups in the main session sidebar", () => {
+		const html = renderWithQueryClient(<TaskSidebarSection sessionId="session-1" tasksOverride={sidebarTasks} />);
+
+		expect(html).toContain("Tasks");
+		expect(html).toContain("Active");
+		expect(html).toContain("Pending");
+		expect(html).toContain("Wire task sidebar");
+		expect(html).toContain("Keep context compact.");
+		expect(html).toContain("Review task store");
+	});
+
 	it("shows run input and output for subagents", () => {
 		const html = renderWithQueryClient(<AgentRunSidebar agent={baseAgent} run={baseRun} />);
 
@@ -165,14 +198,21 @@ describe("Lion dashboard UI", () => {
 	it("formats simple mode state", () => {
 		const html = renderToString(<LionModeBadge state={createLionState({ strategy: "simple", phase: "building" })} />);
 
-		expect(html).toContain("Simple mode");
+		expect(html).toContain("Simple");
 		expect(html).toContain("Building");
+	});
+
+	it("hides badge when strategy is none", () => {
+		const html = renderToString(<LionModeBadge state={createLionState({ strategy: "none", active: true })} />);
+
+		expect(html).not.toContain("Lion");
+		expect(html).not.toContain("Normal");
 	});
 
 	it("formats plan mode state with the active plan", () => {
 		const html = renderToString(<LionModeBadge state={createLionState({ activePlanSlug: "dashboard-plan" })} />);
 
-		expect(html).toContain("Plan mode");
+		expect(html).toContain("Plan");
 		expect(html).toContain("Planning");
 		expect(html).toContain("dashboard-plan");
 	});
@@ -180,7 +220,7 @@ describe("Lion dashboard UI", () => {
 	it("hides Lion mode state when Lion is inactive", () => {
 		const html = renderToString(<LionModeBadge state={createLionState({ active: false })} />);
 
-		expect(html).not.toContain("Plan mode");
+		expect(html).not.toContain("Plan");
 		expect(html).not.toContain("Lion inactive");
 	});
 
@@ -197,7 +237,7 @@ describe("Lion dashboard UI", () => {
 			/>,
 		);
 
-		expect(html).not.toContain("Plan mode");
+		expect(html).not.toContain("Plan");
 	});
 
 	it("renders only subagents in the persistent list", () => {
@@ -299,7 +339,7 @@ describe("Lion dashboard UI", () => {
 		expect(html.indexOf("Thinking")).toBeLessThan(html.indexOf("Hola."));
 	});
 
-	it("renders assistant tools outside the text bubble", () => {
+	it("renders assistant tools grouped outside the text bubble", () => {
 		const message: ChatMessage = {
 			id: "assistant-tools",
 			instanceId: "main:session-1",
@@ -318,6 +358,8 @@ describe("Lion dashboard UI", () => {
 		expect(html).toContain("bash");
 		expect(html).toContain("Result");
 		expect(html.indexOf("Running checks.")).toBeLessThan(html.indexOf("bash"));
-		expect(html).toContain("pl-2");
+		expect(html.indexOf("bash")).toBeLessThan(html.indexOf("Result"));
+		expect(html).not.toContain("pl-2");
+		expect(html).not.toContain("border-success");
 	});
 });

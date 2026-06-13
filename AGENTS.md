@@ -19,6 +19,7 @@
 - Do not preserve backward compatibility unless the user explicitly asks for it
 - Never hardcode key checks with, eg. `matchesKey(keyData, "ctrl+x")`. All keybindings must be configurable. Add default to matching object (`DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS`)
 - NEVER modify `packages/ai/src/models.generated.ts` directly. Update `packages/ai/scripts/generate-models.ts` instead.
+- **Use `ts-pattern` for strategy/phase branching** in Lion code. Prefer `matchStrategy`, `matchStrategyOnly`, and `matchPhase` from `packages/subagents/src/lion/strategy-match.ts` over nested ternaries or long if-chains. Use lookup tables (`Record<K, V>`) for simple label mappings in frontend code.
 
 ## Commands
 
@@ -121,6 +122,93 @@ Use these sections under `## [Unreleased]`:
 
 - **Internal changes (from issues)**: `Fixed foo bar ([#123](https://github.com/earendil-works/pi-mono/issues/123))`
 - **External contributions**: `Added feature X ([#456](https://github.com/earendil-works/pi-mono/pull/456) by [@username](https://github.com/username))`
+
+## Adding a New Lion Strategy (packages/subagents)
+
+Adding a new strategy requires changes across multiple files:
+
+### 1. Core Types (`packages/subagents/src/lion/types.ts`)
+
+- Add strategy name to `LionStrategyName` type union (e.g., `"spec"`)
+- Update `LionState` if the new strategy requires new state fields
+
+### 2. Strategy Implementation (`packages/subagents/src/lion/strategies/`)
+
+Create strategy file exporting:
+
+- `NewLionStrategy` class implementing `LionStrategy`
+- `buildMainPrompt(state)` — system prompt for the orchestrator
+- `decorateTaskPrompt(task, context)` — context injection for subagents
+- `buildCompactionInstructions(state, context)` — state summary for compaction
+
+### 3. Strategy Registration
+
+- Add to `packages/subagents/src/lion/strategies/index.ts` via `getLionStrategy()`
+- Add to `packages/subagents/src/lion/strategy-match.ts` pattern helpers
+- Add schema support in `packages/subagents/src/api/schemas.ts` (`DashboardLionStateSchema`)
+- Add transport type support in `packages/subagents/src/transport/types.ts`
+
+### 4. State and Runtime
+
+- Update `createInitialLionState()` if the default behavior changes
+- Add activation method in `packages/subagents/src/lion/runtime.ts` (e.g., `activateSpec()`)
+- Register command in `packages/subagents/src/lion/commands.ts`
+
+### 5. Frontend
+
+- Update `packages/subagents/frontend/src/types.ts` (`LionDashboardState.strategy`)
+- Update `LionModeBadge.tsx` for new strategy label
+- Update conditional UI in `AgentRunSidebar.tsx` if the strategy affects sidebar content
+
+### 6. Documentation
+
+- Update `docs/lion.md` strategies table
+- Update `packages/subagents/CHANGELOG.md`
+
+## Session Architecture
+
+Sessions are now web-based, not TUI-based. The architecture has three layers:
+
+### 1. Session Core (`packages/subagents`)
+
+The `HttpServerTransport` hosts the session backend:
+
+- **Bun HTTP server** with oRPC API and SSE streaming
+- **StandaloneSessionManager** — creates real `AgentSession` instances on demand
+- **DashboardThreadSessionCache** — resumes persisted sessions from disk
+- **DashboardStateManager** — persists events and replays them to new clients
+- **Lion Runtime** — orchestration with strategies (none, simple, plan, review)
+
+Thread kinds: `main` (parent session), `standalone` (user-created), `subagent` (Lion delegation).
+
+### 2. Subagents Frontend (`packages/subagents/frontend`)
+
+TanStack Start SPA that renders individual sessions:
+
+- `/_layout/thread/$threadId` — session detail view
+- Connects to backend via oRPC client
+- Subscribes to SSE events for real-time updates
+- Handles messaging, model selection, command execution
+
+### 3. Dashboard Canvas (`packages/dashboard`)
+
+Electron app with React Flow canvas:
+
+- Each canvas node is an iframe to `/thread/<threadId>` on the subagents backend
+- Creates sessions via `threads.create` API
+- Persists canvas layout (node positions) to `localStorage`
+- Does NOT execute sessions — all execution happens in the subagents backend
+
+### Session Flow
+
+```
+User clicks "Add session" in dashboard
+  → Dashboard calls POST /rpc/threads.create
+  → Subagents backend creates StandaloneSessionManager session
+  → Dashboard adds canvas node with iframe to /thread/<id>
+  → Subagents frontend loads inside iframe
+  → User interacts directly with the session via the iframe
+```
 
 ## Adding a New LLM Provider (packages/ai)
 

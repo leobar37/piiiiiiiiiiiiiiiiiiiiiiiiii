@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Fixed Anthropic-compatible providers with combined input/output context limits to clamp `max_tokens` before oversized requests.
 - Fixed GitHub Copilot Claude test coverage to use the current Claude Sonnet 4.6 model ID.
 - Fixed OpenAI Responses requests for models that support disabling reasoning to send `reasoning.effort: "none"` when thinking is off.
 

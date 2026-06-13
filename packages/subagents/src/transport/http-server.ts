@@ -1,13 +1,17 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { AuthStorage, ModelRegistry, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { SubagentsApiContext } from "../api/context.js";
 import { createSubagentsRouter } from "../api/router.js";
 import { DashboardThreadSessionCache } from "../api/session-control.js";
 import { DashboardSessionLogStore } from "../api/session-log-store.js";
+import { StandaloneSessionManager } from "../api/standalone-sessions.js";
 import type { SubAgentController } from "../controller.js";
 import { LionChecklistService } from "../lion/checklist-service.js";
+import type { LionStrategyName } from "../lion/types.js";
 import { SubAgentRunStore } from "../run-store.js";
+import { TaskService } from "../tasks/service.js";
 import { DashboardStateManager } from "./state-manager.js";
 import type { DashboardLionState, DashboardSessionSource, SubAgentTransport, SubAgentTransportEvent } from "./types.js";
 
@@ -20,8 +24,10 @@ export interface HttpServerTransportOptions {
 	 * Defaults to the bundled frontend/dist relative to this file.
 	 */
 	staticDir?: string;
+	serveFrontend?: boolean;
 	mainSession?: DashboardSessionSource;
 	lionState?: () => DashboardLionState;
+	setLionStrategy?(strategy: LionStrategyName): Promise<void> | void;
 }
 
 function isDashboardMode(): boolean {
@@ -49,9 +55,11 @@ function resolveStaticDir(options: HttpServerTransportOptions): string {
 	if (options.staticDir) return options.staticDir;
 	const baseDir = import.meta.dirname ?? ".";
 	const candidates = [
-		// dist/index.js -> packages/subagents/frontend/dist
+		// TanStack Start outputs the static shell under dist/client
+		join(baseDir, "..", "frontend", "dist", "client"),
+		join(baseDir, "..", "..", "frontend", "dist", "client"),
+		// Fallback to legacy flat dist layout
 		join(baseDir, "..", "frontend", "dist"),
-		// src/transport/http-server.ts -> packages/subagents/frontend/dist
 		join(baseDir, "..", "..", "frontend", "dist"),
 	];
 	return candidates.find((candidate) => existsSync(join(candidate, "index.html"))) ?? candidates[0];
@@ -78,29 +86,42 @@ export class HttpServerTransport implements SubAgentTransport {
 	private unsubscribeMainSession?: () => void;
 	private runStore: SubAgentRunStore;
 	private checklistService: LionChecklistService;
+	private taskService: TaskService;
 	private sessionCache: DashboardThreadSessionCache;
 	private logStore: DashboardSessionLogStore;
 	private orpcHandler: RPCHandler<SubagentsApiContext>;
 	private orpcContext: SubagentsApiContext;
+	private standaloneSessions: StandaloneSessionManager;
 
 	constructor(private options: HttpServerTransportOptions) {
 		this.staticDir = resolveStaticDir(options);
 		this.runStore = new SubAgentRunStore(options.controller.getCwd());
 		this.checklistService = new LionChecklistService();
+		this.taskService = new TaskService(options.controller.getCwd(), (event) => this.emit(event));
 		this.stateManager = new DashboardStateManager(options.controller.getCwd(), this.runStore);
 		this.sessionCache = new DashboardThreadSessionCache((event) => this.emit(event));
 		this.logStore = new DashboardSessionLogStore(options.controller.getCwd());
+		this.standaloneSessions = new StandaloneSessionManager(
+			options.controller.getCwd(),
+			options.controller.getModelRegistry() ?? ModelRegistry.create(AuthStorage.create()),
+			options.controller.getSettingsManager() ?? SettingsManager.create(options.controller.getCwd()),
+			options.controller.getAuthStorage(),
+			(event) => this.emit(event),
+		);
 		this.orpcContext = {
 			controller: options.controller,
 			runStore: this.runStore,
 			stateManager: this.stateManager,
 			mainSession: options.mainSession,
 			lionState: options.lionState,
+			setLionStrategy: options.setLionStrategy,
 			checklistService: this.checklistService,
+			taskService: this.taskService,
 			sessionCache: this.sessionCache,
 			logStore: this.logStore,
 			emitEvent: (event) => this.emit(event),
 			cwd: options.controller.getCwd(),
+			standaloneSessions: this.standaloneSessions,
 		};
 		const router = createSubagentsRouter(this.orpcContext);
 		this.orpcHandler = new RPCHandler(router);
@@ -220,15 +241,17 @@ export class HttpServerTransport implements SubAgentTransport {
 			return new Response(null, { status: 204, headers: CORS_HEADERS });
 		}
 
+		const frontendDisabled = isDashboardMode() && this.options.serveFrontend !== true;
+
 		if (req.method === "GET" && pathname === "/") {
-			if (isDashboardMode()) {
+			if (frontendDisabled) {
 				return new Response("Not Found", { status: 404 });
 			}
 			return this.serveStaticFile("index.html", "text/html; charset=utf-8");
 		}
 
 		if (req.method === "GET" && pathname.startsWith("/assets/")) {
-			if (isDashboardMode()) {
+			if (frontendDisabled) {
 				return new Response("Not Found", { status: 404 });
 			}
 			return this.serveAsset(pathname);
@@ -246,7 +269,7 @@ export class HttpServerTransport implements SubAgentTransport {
 
 		// Fallback to index.html for SPA routing
 		if (req.method === "GET") {
-			if (isDashboardMode()) {
+			if (frontendDisabled) {
 				return new Response("Not Found", { status: 404 });
 			}
 			return this.serveStaticFile("index.html", "text/html; charset=utf-8");

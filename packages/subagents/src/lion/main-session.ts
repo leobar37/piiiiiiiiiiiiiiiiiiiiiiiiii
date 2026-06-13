@@ -1,7 +1,12 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ExtensionEvent } from "@earendil-works/pi-coding-agent";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
-import { formatDashboardCommands, formatDashboardModels, type ThreadPromptMode } from "../api/session-control.js";
+import {
+	formatDashboardCommands,
+	formatDashboardModels,
+	type ThreadPromptImage,
+	type ThreadPromptMode,
+} from "../api/session-control.js";
 import type { DashboardSessionSource, DashboardThreadState } from "../transport/types.js";
 import type { SubAgentEvent, SubAgentInstanceState } from "../types.js";
 import type { LionBuildResult } from "./types.js";
@@ -51,6 +56,7 @@ export class MainSessionBridge implements DashboardSessionSource {
 			instanceId: threadId,
 			taskId: "main",
 			definitionName: "main-agent",
+			cwd: ctx.sessionManager.getCwd(),
 			description: ctx.sessionManager.getSessionName() ?? "Main agent",
 			state: ctx.isIdle() ? "paused" : "running",
 			startTime: this.startTime,
@@ -238,19 +244,32 @@ export class MainSessionBridge implements DashboardSessionSource {
 		return this.events;
 	}
 
-	async sendMessage(threadId: string, message: string, mode: ThreadPromptMode): Promise<void> {
+	async sendMessage(
+		threadId: string,
+		message: string,
+		mode: ThreadPromptMode,
+		images?: ThreadPromptImage[],
+	): Promise<void> {
 		if (!this.thread || this.thread.instanceId !== threadId || !this.pi) {
 			throw new Error("Main session is not controllable");
 		}
+		const content = images?.length ? [{ type: "text" as const, text: message }, ...images] : message;
 		if (mode === "follow_up") {
-			this.pi.sendUserMessage(message, { deliverAs: "followUp" });
+			this.pi.sendUserMessage(content, { deliverAs: "followUp" });
 			return;
 		}
 		if (mode === "steer") {
-			this.pi.sendUserMessage(message, { deliverAs: "steer" });
+			this.pi.sendUserMessage(content, { deliverAs: "steer" });
 			return;
 		}
-		this.pi.sendUserMessage(message);
+		this.pi.sendUserMessage(content, { executeCommands: true });
+	}
+
+	abort(threadId: string): void {
+		if (!this.thread || this.thread.instanceId !== threadId || !this.lastContext) {
+			throw new Error("Main session is not controllable");
+		}
+		this.lastContext.abort();
 	}
 
 	getCommands(threadId: string) {

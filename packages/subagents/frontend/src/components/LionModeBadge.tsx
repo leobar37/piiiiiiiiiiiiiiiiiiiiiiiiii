@@ -4,17 +4,31 @@ interface LionModeBadgeProps {
 	state?: LionDashboardState;
 }
 
+const STRATEGY_LABELS: Record<LionDashboardState["strategy"], string> = {
+	none: "Lion",
+	simple: "Simple",
+	review: "Review",
+	plan: "Plan",
+};
+
+const PHASE_LABELS: Record<LionDashboardState["phase"], string> = {
+	planning: "Planning",
+	building: "Building",
+};
+
 export function formatLionModeLabel(state?: LionDashboardState): string | null {
 	if (!state || !isLionUiActive(state)) return null;
-	const activeState = state;
-	const mode = activeState.strategy === "simple" ? "Simple mode" : activeState.strategy === "review" ? "Review mode" : "Plan mode";
-	const phase = activeState.phase === "building" ? "Building" : "Planning";
-	const detail = activeState.strategy === "simple" ? null : activeState.activeTaskId ?? activeState.activePlanSlug;
-	return [mode, phase, detail].filter(Boolean).join(" · ");
+	const { strategy, phase, activeTaskId, activePlanSlug } = state;
+	if (strategy === "none") return null;
+	const mode = STRATEGY_LABELS[strategy];
+	const phaseLabel = PHASE_LABELS[phase];
+	const detail = strategy === "simple" ? null : activeTaskId ?? activePlanSlug;
+	return [mode, phaseLabel, detail].filter(Boolean).join(" · ");
 }
 
 export function isLionUiActive(state?: LionDashboardState): boolean {
 	if (!state?.active) return false;
+	if (state.strategy === "none") return false;
 	if (state.strategy === "simple") return true;
 	return Boolean(state.activePlanPath ?? state.activePlanSlug ?? state.activeTaskId ?? state.lastRunId);
 }
