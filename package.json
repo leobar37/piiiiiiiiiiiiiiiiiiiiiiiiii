@@ -14,6 +14,7 @@
 		"clean": "bun run clean --workspaces",
 		"build": "cd packages/ai && bun run build && cd ../agent && bun run build && cd ../coding-agent && bun run build",
 		"pi-dev": "bun run scripts/pi-dev.ts",
+		"pi-work": "bun run scripts/pi-work.ts",
 		"pi-desktop": "cd packages/dashboard && bun run electron:dev",
 		"pi-web": "cd packages/dashboard && bun run build:all && ./dist/cli.js",
 		"pi-web:dev": "cd packages/dashboard && bun run src/cli.ts",
