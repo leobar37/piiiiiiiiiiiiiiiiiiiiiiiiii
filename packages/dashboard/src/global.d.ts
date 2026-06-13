@@ -21,3 +21,11 @@ declare namespace Bun {
 		size: number;
 	}
 }
+
+declare module "bun:sqlite" {
+	export class Database {
+		constructor(filename?: string, options?: { readonly?: boolean; create?: boolean; readwrite?: boolean });
+		exec(sql: string): void;
+		close(): void;
+	}
+}

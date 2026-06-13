@@ -3,4 +3,5 @@ export interface DashboardConfig {
 	port?: number;
 	frontendDir?: string;
 	dev?: boolean;
+	dbPath?: string;
 }

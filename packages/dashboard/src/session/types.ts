@@ -6,6 +6,8 @@ export type SessionStatus = "created" | "starting" | "idle" | "streaming" | "err
 
 export interface LiveSessionInfo {
 	id: string;
+	/** Project catalog owner. Runtime code must not infer this from cwd. */
+	projectId?: string;
 	name?: string;
 	status: SessionStatus;
 	/** Whether the session has an active agent runtime (starting, idle, or streaming) */

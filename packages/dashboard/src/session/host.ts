@@ -203,6 +203,42 @@ export class SessionHost {
 		return result;
 	}
 
+	async listAll(): Promise<LiveSessionInfo[]> {
+		logger.debug("Listing all sessions");
+		const diskSessions = await SessionManager.listAll();
+		const seen = new Set<string>();
+		const result: LiveSessionInfo[] = [];
+
+		for (const disk of diskSessions) {
+			seen.add(disk.id);
+			this.diskSessionFiles.set(disk.id, disk.path);
+			const live = this.sessions.get(disk.id);
+			if (live) {
+				result.push(live.info);
+			} else {
+				result.push({
+					id: disk.id,
+					name: disk.name,
+					status: "stopped" as const,
+					isActive: false,
+					sessionFile: disk.path,
+					cwd: disk.cwd,
+					createdAt: disk.created.getTime(),
+					lastActivityAt: disk.modified.getTime(),
+					messageCount: disk.messageCount,
+				});
+			}
+		}
+
+		for (const live of this.sessions.values()) {
+			if (!seen.has(live.id)) {
+				result.push(live.info);
+			}
+		}
+
+		return result;
+	}
+
 	async remove(sessionId: string): Promise<boolean> {
 		const session = this.sessions.get(sessionId);
 		if (!session) return false;

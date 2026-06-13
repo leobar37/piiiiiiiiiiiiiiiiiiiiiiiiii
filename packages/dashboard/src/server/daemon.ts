@@ -14,13 +14,18 @@
  * ```
  */
 
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RPCHandler } from "@orpc/server/fetch";
 import { CORSPlugin } from "@orpc/server/plugins";
+import { createDashboardDb, type DashboardDbHandle } from "../db/client.js";
+import { ProjectsRepository } from "../db/repositories/projects-repository.js";
+import { SessionsRepository } from "../db/repositories/sessions-repository.js";
 import { EventStreamProvider } from "../events/provider.js";
 import { logger } from "../logging.js";
 import { createDashboardRouter } from "../procedures/index.js";
+import { ProjectService } from "../projects/service.js";
 import { SessionHost } from "../session/host.js";
 import type { DashboardConfig } from "../types.js";
 import { serveStaticFile } from "./static.js";
@@ -37,6 +42,11 @@ async function fileExists(path: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
+}
+
+function resolveDefaultFrontendDir(baseDir: string): string {
+	const candidates = [join(baseDir, "..", "..", "frontend", "dist"), join(baseDir, "..", "frontend", "dist")];
+	return candidates.find((candidate) => existsSync(join(candidate, "index.html"))) ?? candidates[0];
 }
 
 /** Wait for a URL to be reachable with a timeout. */
@@ -59,7 +69,7 @@ async function _waitForServer(url: string, timeoutMs = 30000, intervalMs = 200):
 export class DashboardDaemon {
 	private handler: RPCHandler<any> | null = null;
 	private server: ReturnType<typeof Bun.serve> | null = null;
-	private config: Required<DashboardConfig>;
+	private config: Required<Omit<DashboardConfig, "dbPath">> & Pick<DashboardConfig, "dbPath">;
 	private startTime = 0;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private viteProcess: any | null = null;
@@ -67,15 +77,24 @@ export class DashboardDaemon {
 	private viteServer: import("vite").ViteDevServer | null = null;
 	readonly eventProvider = new EventStreamProvider();
 	readonly sessionHost = new SessionHost();
+	readonly dbHandle: DashboardDbHandle;
+	readonly projectService: ProjectService;
 
 	constructor(config?: DashboardConfig) {
 		const __dirname = dirname(fileURLToPath(import.meta.url));
 		this.config = {
 			host: config?.host ?? "127.0.0.1",
 			port: config?.port ?? 9393,
-			frontendDir: config?.frontendDir ?? join(__dirname, "..", "..", "frontend", "dist"),
+			frontendDir: config?.frontendDir ?? resolveDefaultFrontendDir(__dirname),
 			dev: config?.dev ?? false,
+			dbPath: config?.dbPath,
 		};
+		this.dbHandle = createDashboardDb(config?.dbPath);
+		this.projectService = new ProjectService(
+			new ProjectsRepository(this.dbHandle.db),
+			new SessionsRepository(this.dbHandle.db),
+			this.sessionHost,
+		);
 	}
 
 	/**
@@ -109,7 +128,12 @@ export class DashboardDaemon {
 		}
 
 		const listenPort = port ?? this.config.port;
-		const router = createDashboardRouter(this.eventProvider, () => this.startTime, this.sessionHost);
+		const router = createDashboardRouter(
+			this.eventProvider,
+			() => this.startTime,
+			this.sessionHost,
+			this.projectService,
+		);
 		this.handler = new RPCHandler(router, {
 			plugins: [
 				new CORSPlugin({
@@ -210,6 +234,7 @@ export class DashboardDaemon {
 		this.server = null;
 		this.handler = null;
 		this.startTime = 0;
+		this.dbHandle.close();
 	}
 
 	get isRunning(): boolean {

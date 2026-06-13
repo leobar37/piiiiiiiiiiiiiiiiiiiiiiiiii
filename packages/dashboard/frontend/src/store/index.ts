@@ -4,9 +4,10 @@ export {
 	useSessionMessages,
 	useSessionStreaming,
 	useSessionList,
-	useSessionsByCwd,
+	useSessionsByProjectId,
 	useSessionModel,
 } from "./hooks.js";
+export { ProjectRuntimeProvider, useProjectRuntime } from "./projects/provider.js";
 export { useSessionEvents } from "./use-session-events.js";
 export { createActions } from "./actions.js";
 export { createOptimisticManager } from "./optimistic.js";

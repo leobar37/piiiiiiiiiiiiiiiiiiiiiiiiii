@@ -5,16 +5,14 @@
  */
 
 import { useState, useEffect } from "react";
+import "react-grab";
 import { Sidebar } from "./components/Sidebar.js";
 import { ChatView } from "./components/ChatView.js";
-import { SessionRuntimeProvider } from "./store/provider.js";
+import { ProjectRuntimeProvider, SessionRuntimeProvider } from "./store/index.js";
 
 const isDev = (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV;
 const GrabProvider = isDev
-	? ({ children }: { children: React.ReactNode }) => {
-			import("react-grab");
-			return <>{children}</>;
-	  }
+	? ({ children }: { children: React.ReactNode }) => <>{children}</>
 	: ({ children }: { children: React.ReactNode }) => <>{children}</>;
 
 function getHashSessionId(): string | null {
@@ -54,9 +52,11 @@ function AppContent() {
 export default function App() {
 	return (
 		<SessionRuntimeProvider>
-			<GrabProvider>
-				<AppContent />
-			</GrabProvider>
+			<ProjectRuntimeProvider>
+				<GrabProvider>
+					<AppContent />
+				</GrabProvider>
+			</ProjectRuntimeProvider>
 		</SessionRuntimeProvider>
 	);
 }

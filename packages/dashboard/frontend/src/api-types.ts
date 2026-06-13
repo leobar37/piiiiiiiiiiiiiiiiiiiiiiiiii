@@ -40,11 +40,51 @@ export interface EventFilterInput {
 }
 
 // ============================================================================
+// Project procedures
+// ============================================================================
+
+export interface ProjectInfo {
+	id: string;
+	name: string;
+	defaultCwd?: string;
+	createdAt: number;
+	updatedAt: number;
+	archivedAt?: number;
+	sessionCount: number;
+	lastActivityAt?: number;
+}
+
+export interface ListProjectsOutput {
+	projects: ProjectInfo[];
+}
+
+export interface CreateProjectInput {
+	name?: string;
+	defaultCwd?: string;
+}
+
+export interface CreateProjectOutput {
+	project: ProjectInfo;
+}
+
+export interface UpdateProjectInput {
+	projectId: string;
+	name?: string;
+	defaultCwd?: string | null;
+}
+
+export interface ArchiveProjectInput {
+	projectId: string;
+}
+
+// ============================================================================
 // Session procedures
 // ============================================================================
 
 export interface ListSessionsInput {
 	cwd?: string;
+	projectId?: string;
+	scope?: "global" | "project";
 }
 
 export interface ListSessionsOutput {
@@ -52,6 +92,7 @@ export interface ListSessionsOutput {
 }
 
 export interface CreateSessionInput {
+	projectId: string;
 	cwd?: string;
 }
 
@@ -110,6 +151,11 @@ export interface FollowUpInput {
 
 export interface AbortInput {
 	sessionId: string;
+}
+
+export interface MoveSessionInput {
+	sessionId: string;
+	projectId: string;
 }
 
 export interface SuccessOutput {
@@ -177,9 +223,15 @@ export interface DashboardClient {
 	logs: {
 		get(input?: LogsInput): Promise<LogsOutput>;
 	};
+	projects: {
+		list(input?: Record<string, never>): Promise<ListProjectsOutput>;
+		create(input: CreateProjectInput): Promise<CreateProjectOutput>;
+		update(input: UpdateProjectInput): Promise<CreateProjectOutput>;
+		archive(input: ArchiveProjectInput): Promise<SuccessOutput>;
+	};
 	sessions: {
 		list(input?: ListSessionsInput): Promise<ListSessionsOutput>;
-		create(input?: CreateSessionInput): Promise<CreateSessionOutput>;
+		create(input: CreateSessionInput): Promise<CreateSessionOutput>;
 		get(input: GetSessionInput): Promise<GetSessionOutput>;
 		remove(input: RemoveSessionInput): Promise<RemoveSessionOutput>;
 		open(input: OpenSessionInput): Promise<CreateSessionOutput>;
@@ -190,6 +242,7 @@ export interface DashboardClient {
 		steer(input: SteerInput): Promise<SuccessOutput>;
 		followUp(input: FollowUpInput): Promise<SuccessOutput>;
 		abort(input: AbortInput): Promise<SuccessOutput>;
+		move(input: MoveSessionInput): Promise<CreateSessionOutput>;
 		state: {
 			get(input: GetStateInput): Promise<SessionStateOutput>;
 		};

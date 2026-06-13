@@ -7,7 +7,11 @@
 
 // Event types -- for the frontend event consumer
 export type { ServerEvent, ServerEventType } from "./events/types.js";
-export type { DashboardRouter } from "./procedures/index.js";
-export type { SessionProcedures } from "./procedures/session.js";
+export type { ProjectInfo, ProjectSessionInfo } from "./projects/types.js";
 // Session types -- for typed oRPC clients
-export type { LiveSessionInfo, SessionHostConfig, SessionStatus } from "./session/types.js";
+export type {
+	LiveSessionInfo,
+	LiveSessionInfo as SessionInfo,
+	SessionHostConfig,
+	SessionStatus,
+} from "./session/types.js";

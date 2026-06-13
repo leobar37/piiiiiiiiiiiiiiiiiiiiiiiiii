@@ -5,7 +5,7 @@
  * then loads the React frontend with the backend URL injected via query param.
  */
 
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,15 @@ const KILL_TIMEOUT_MS = 3000;
 let backendProcess: ChildProcessWithoutNullStreams | null = null;
 let mainWindow: BrowserWindow | null = null;
 let backendUrl: string | null = null;
+
+ipcMain.handle("project:choose-directory", async () => {
+	const result = await dialog.showOpenDialog(mainWindow ?? undefined, {
+		properties: ["openDirectory", "createDirectory"],
+		title: "Choose project folder",
+	});
+	if (result.canceled) return null;
+	return result.filePaths[0] ?? null;
+});
 
 /**
  * Determine the path to the compiled backend binary.

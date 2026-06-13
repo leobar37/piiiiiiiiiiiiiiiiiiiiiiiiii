@@ -21,6 +21,7 @@ export const SessionStatusSchema = z.enum([
 
 export const SessionInfoSchema = z.object({
 	id: z.string(),
+	projectId: z.string().optional(),
 	name: z.string().optional(),
 	status: SessionStatusSchema,
 	isActive: z.boolean(),
@@ -31,6 +32,17 @@ export const SessionInfoSchema = z.object({
 	messageCount: z.number(),
 	sessionType: z.enum(["agent", "lion"]).optional(),
 }) satisfies z.ZodType<LiveSessionInfo>;
+
+export const ProjectInfoSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	defaultCwd: z.string().optional(),
+	createdAt: z.number(),
+	updatedAt: z.number(),
+	archivedAt: z.number().optional(),
+	sessionCount: z.number(),
+	lastActivityAt: z.number().optional(),
+});
 
 export const SessionStateSchema = z.object({
 	status: SessionStatusSchema,

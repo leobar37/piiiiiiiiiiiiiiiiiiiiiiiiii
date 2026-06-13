@@ -70,16 +70,16 @@ export function sessionListAtom(runtime: SessionRuntime): Atom<SessionEntry[]> {
 	});
 }
 
-/** Atom for sessions grouped by cwd. */
-export function sessionsByCwdAtom(runtime: SessionRuntime): Atom<Map<string, SessionEntry[]>> {
+/** Atom for sessions grouped by project id. */
+export function sessionsByProjectIdAtom(runtime: SessionRuntime): Atom<Map<string, SessionEntry[]>> {
 	return atom((get) => {
-		const index = get(runtime.indexes.sessionsByCwd.indexAtom);
+		const index = get(runtime.indexes.sessionsByProjectId.indexAtom);
 		const result = new Map<string, SessionEntry[]>();
-		for (const [cwd, sessionIds] of index) {
+		for (const [projectId, sessionIds] of index) {
 			const entries = sessionIds
 				.map((id) => get(runtime.maps.sessions.atomFor(id)))
 				.filter((e): e is SessionEntry => e !== undefined);
-			result.set(cwd, entries);
+			result.set(projectId, entries);
 		}
 		return result;
 	});

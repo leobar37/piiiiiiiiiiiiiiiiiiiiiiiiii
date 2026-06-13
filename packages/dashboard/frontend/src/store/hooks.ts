@@ -6,7 +6,7 @@ import {
 	sessionMessagesAtom,
 	streamingStateAtom,
 	sessionListAtom,
-	sessionsByCwdAtom,
+	sessionsByProjectIdAtom,
 	sessionModelAtom,
 	subagentAtom,
 	subagentsBySessionAtom,
@@ -52,9 +52,9 @@ export function useSessionList(): SessionEntry[] {
 	return useAtomValue(a, { store: runtime.store });
 }
 
-export function useSessionsByCwd(): Map<string, SessionEntry[]> {
+export function useSessionsByProjectId(): Map<string, SessionEntry[]> {
 	const runtime = useSessionRuntime();
-	const a = useMemo(() => sessionsByCwdAtom(runtime), [runtime]);
+	const a = useMemo(() => sessionsByProjectIdAtom(runtime), [runtime]);
 	return useAtomValue(a, { store: runtime.store });
 }
 

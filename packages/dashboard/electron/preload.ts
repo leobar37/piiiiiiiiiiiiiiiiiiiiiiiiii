@@ -5,7 +5,7 @@
  * All exposed APIs are read-only and safe.
  */
 
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 
 export interface ElectronApi {
 	readonly platform: string;
@@ -14,6 +14,7 @@ export interface ElectronApi {
 		readonly chrome: string;
 		readonly node: string;
 	};
+	chooseProjectDirectory(): Promise<string | null>;
 }
 
 const api: ElectronApi = {
@@ -22,6 +23,9 @@ const api: ElectronApi = {
 		electron: process.versions.electron,
 		chrome: process.versions.chrome,
 		node: process.versions.node,
+	},
+	chooseProjectDirectory() {
+		return ipcRenderer.invoke("project:choose-directory") as Promise<string | null>;
 	},
 };
 

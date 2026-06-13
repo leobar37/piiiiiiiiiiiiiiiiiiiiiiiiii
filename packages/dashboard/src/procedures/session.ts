@@ -9,6 +9,7 @@ import { os } from "@orpc/server";
 import { z } from "zod";
 import type { EventStreamProvider } from "../events/provider.js";
 import { logger } from "../logging.js";
+import type { ProjectService } from "../projects/service.js";
 import type { SessionHost } from "../session/host.js";
 import { ModelInfoSchema, SessionInfoSchema, SessionStateSchema } from "./schemas.js";
 
@@ -16,18 +17,42 @@ import { ModelInfoSchema, SessionInfoSchema, SessionStateSchema } from "./schema
 // Session procedures
 // ============================================================================
 
-export function createSessionProcedures(sessionHost: SessionHost, _eventProvider: EventStreamProvider) {
+export function createSessionProcedures(
+	sessionHost: SessionHost,
+	_eventProvider: EventStreamProvider,
+	projectService?: ProjectService,
+) {
 	return {
 		// ---------------------------------------------------------------------
 		// CRUD
 		// ---------------------------------------------------------------------
 
 		list: os
-			.input(z.object({ cwd: z.string().optional() }))
+			.input(
+				z
+					.object({
+						cwd: z.string().optional(),
+						projectId: z.string().optional(),
+						scope: z.enum(["global", "project"]).optional(),
+					})
+					.optional(),
+			)
 			.output(z.object({ sessions: z.array(SessionInfoSchema) }))
 			.handler(async ({ input }) => {
 				try {
-					const sessions = await sessionHost.list(input.cwd);
+					if (projectService) {
+						const scope = input?.scope ?? (input?.projectId ? "project" : "global");
+						const projectId = input?.projectId;
+						if (scope === "project" && !input?.projectId) {
+							throw new Error("projectId is required for project-scoped session lists");
+						}
+						if (scope === "global" && input?.projectId) {
+							throw new Error("projectId cannot be used with global session lists");
+						}
+						const sessions = await projectService.listSessions(scope === "project" ? projectId : undefined);
+						return { sessions };
+					}
+					const sessions = await sessionHost.list(input?.cwd);
 					return { sessions };
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
@@ -36,10 +61,14 @@ export function createSessionProcedures(sessionHost: SessionHost, _eventProvider
 			}),
 
 		create: os
-			.input(z.object({ cwd: z.string().optional() }))
+			.input(z.object({ projectId: z.string(), cwd: z.string().optional() }))
 			.output(z.object({ session: SessionInfoSchema }))
 			.handler(async ({ input }) => {
 				try {
+					if (projectService) {
+						const session = await projectService.createSession(input.projectId, input.cwd);
+						return { session };
+					}
 					const session = await sessionHost.create(input.cwd);
 					return { session: session.info };
 				} catch (err) {
@@ -63,6 +92,9 @@ export function createSessionProcedures(sessionHost: SessionHost, _eventProvider
 			.handler(async ({ input }) => {
 				try {
 					const success = await sessionHost.remove(input.sessionId);
+					if (success) {
+						await projectService?.removeSession(input.sessionId);
+					}
 					return { success };
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
@@ -99,6 +131,15 @@ export function createSessionProcedures(sessionHost: SessionHost, _eventProvider
 		// ---------------------------------------------------------------------
 		// Runtime lifecycle
 		// ---------------------------------------------------------------------
+
+		move: os
+			.input(z.object({ sessionId: z.string(), projectId: z.string() }))
+			.output(z.object({ session: SessionInfoSchema }))
+			.handler(async ({ input }) => {
+				if (!projectService) throw new Error("Project service is not available");
+				const session = await projectService.moveSession(input.sessionId, input.projectId);
+				return { session };
+			}),
 
 		start: os
 			.input(z.object({ sessionId: z.string() }))

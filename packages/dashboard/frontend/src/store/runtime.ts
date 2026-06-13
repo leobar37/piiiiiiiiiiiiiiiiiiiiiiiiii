@@ -83,7 +83,7 @@ export interface SessionRuntime {
 	};
 	indexes: {
 		messagesBySession: DerivedIndexAtoms<string, ChatMessage, string>;
-		sessionsByCwd: DerivedIndexAtoms<string, SessionEntry, string>;
+		sessionsByProjectId: DerivedIndexAtoms<string, SessionEntry, string>;
 		subagentsBySession: DerivedIndexAtoms<string, SubagentEntry, string>;
 		subagentTree: DerivedIndexAtoms<string, SubagentEntry, string | null>;
 	};
@@ -108,9 +108,9 @@ export function createSessionRuntime(): SessionRuntime {
 		(msg: ChatMessage) => msg.sessionId,
 	);
 
-	const sessionsByCwd = createDerivedIndex(
+	const sessionsByProjectId = createDerivedIndex(
 		sessions.mapAtom,
-		(entry: SessionEntry) => entry.info.cwd || "default",
+		(entry: SessionEntry) => entry.info.projectId ?? "__unassigned__",
 	);
 
 	const subagentsBySession = createDerivedIndex(
@@ -318,7 +318,7 @@ export function createSessionRuntime(): SessionRuntime {
 	const runtime: SessionRuntime = {
 		store,
 		maps: { sessions, messages, streaming, subagents },
-		indexes: { messagesBySession, sessionsByCwd, subagentsBySession, subagentTree },
+		indexes: { messagesBySession, sessionsByProjectId, subagentsBySession, subagentTree },
 		trackedSessions,
 		trackSession,
 		untrackSession,

@@ -3,11 +3,9 @@
  * Sections: global actions, temporal chat groups, expandable projects.
  */
 
-import { useMemo, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 
-import { useSessionsByCwd, useSessionList, useSessionRuntime, type SessionEntry } from "../store/index.js";
-import { createOptimisticManager } from "../store/optimistic.js";
-import { createActions } from "../store/actions.js";
+import { useProjectRuntime } from "../store/index.js";
 import { navigateToSession } from "../App.js";
 
 // ---------------------------------------------------------------------------
@@ -54,14 +52,6 @@ function IconSparkles(props: { className?: string }) {
 	);
 }
 
-function IconZap(props: { className?: string }) {
-	return (
-		<svg className={props.className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-			<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-		</svg>
-	);
-}
-
 function IconPanelLeftClose(props: { className?: string }) {
 	return (
 		<svg className={props.className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -95,59 +85,6 @@ function IconFolder(props: { className?: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Temporal grouping helpers
-// ---------------------------------------------------------------------------
-
-type TimeBucket = "hoy" | "ayer" | "ultimos7" | "ultimos30" | "anteriores";
-
-const BUCKET_LABELS: Record<TimeBucket, string> = {
-	hoy: "Hoy",
-	ayer: "Ayer",
-	ultimos7: "\u00daltimos 7 d\u00edas",
-	ultimos30: "\u00daltimos 30 d\u00edas",
-	anteriores: "Anteriores",
-};
-
-const BUCKET_ORDER: TimeBucket[] = ["hoy", "ayer", "ultimos7", "ultimos30", "anteriores"];
-
-function getTimeBucket(ts: number): TimeBucket {
-	const now = new Date();
-	const date = new Date(ts);
-	const diffMs = now.getTime() - date.getTime();
-	const diffDays = Math.floor(diffMs / 86_400_000);
-
-	const isSameDay = (a: Date, b: Date) =>
-		a.getFullYear() === b.getFullYear() &&
-		a.getMonth() === b.getMonth() &&
-		a.getDate() === b.getDate();
-
-	if (isSameDay(now, date)) return "hoy";
-
-	const yesterday = new Date(now);
-	yesterday.setDate(yesterday.getDate() - 1);
-	if (isSameDay(yesterday, date)) return "ayer";
-
-	if (diffDays < 7) return "ultimos7";
-	if (diffDays < 30) return "ultimos30";
-	return "anteriores";
-}
-
-function groupSessionsByTime(entries: SessionEntry[]): Map<TimeBucket, SessionEntry[]> {
-	const map = new Map<TimeBucket, SessionEntry[]>();
-	for (const entry of entries) {
-		const bucket = getTimeBucket(entry.info.lastActivityAt);
-		const arr = map.get(bucket) ?? [];
-		arr.push(entry);
-		map.set(bucket, arr);
-	}
-	// Sort each bucket by lastActivityAt desc
-	for (const arr of map.values()) {
-		arr.sort((a, b) => b.info.lastActivityAt - a.info.lastActivityAt);
-	}
-	return map;
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -156,38 +93,44 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeSessionId }: SidebarProps) {
-	const sessionsByCwd = useSessionsByCwd();
-	const sessionList = useSessionList();
-	const [expandedCwds, setExpandedCwds] = useState<Set<string>>(new Set());
+	const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
 	const [collapsed, setCollapsed] = useState(false);
+	const {
+		projects,
+		selectedProjectId,
+		selectedProject,
+		sessionsByProjectId,
+		visibleSessions,
+		isCreatingProject,
+		error,
+		selectProject,
+		createProjectFromDirectory,
+		createSessionInSelectedProject,
+	} = useProjectRuntime();
 
-	const runtime = useSessionRuntime();
-
-	// Stable actions instance
-	const actions = useMemo(() => {
-		const optimistic = createOptimisticManager(runtime);
-		return createActions(runtime, optimistic);
-	}, [runtime]);
-
-	const toggleCwd = (cwd: string) => {
-		const next = new Set(expandedCwds);
-		if (next.has(cwd)) {
-			next.delete(cwd);
+	const toggleProject = (projectId: string) => {
+		const next = new Set(expandedProjects);
+		if (next.has(projectId)) {
+			next.delete(projectId);
 		} else {
-			next.add(cwd);
+			next.add(projectId);
 		}
-		setExpandedCwds(next);
+		setExpandedProjects(next);
 	};
 
 	const handleNewChat = useCallback(async () => {
-		const session = await actions.createSession();
+		const session = await createSessionInSelectedProject();
 		if (session) {
 			navigateToSession(session.id);
 		}
-	}, [actions]);
+	}, [createSessionInSelectedProject]);
 
-	// Flatten all sessions for temporal grouping
-	const sessionsByTime = useMemo(() => groupSessionsByTime(sessionList), [sessionList]);
+	const handleAddProject = useCallback(async () => {
+		const project = await createProjectFromDirectory();
+		if (project) {
+			setExpandedProjects((current) => new Set(current).add(project.id));
+		}
+	}, [createProjectFromDirectory]);
 
 	// -----------------------------------------------------------------------
 	// Collapsed state
@@ -228,7 +171,8 @@ export function Sidebar({ activeSessionId }: SidebarProps) {
 				<div className="flex items-center gap-2">
 					<button
 						onClick={handleNewChat}
-						className="text-text-secondary hover:text-text-primary p-1 rounded-md hover:bg-bg-surface transition-colors"
+						disabled={!selectedProjectId}
+						className="text-text-secondary hover:text-text-primary p-1 rounded-md hover:bg-bg-surface transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed"
 						title="New chat"
 					>
 						<IconPlus className="w-4 h-4" />
@@ -245,19 +189,30 @@ export function Sidebar({ activeSessionId }: SidebarProps) {
 
 			{/* Global actions */}
 			<div className="px-3 py-2.5 flex flex-col gap-0.5">
+				<button
+					onClick={() => selectProject(null)}
+					className={`w-full rounded-lg px-3 py-2 text-sm transition-colors flex items-center gap-2.5 ${
+						selectedProjectId === null
+							? "bg-bg-surface text-text-primary"
+							: "text-text-secondary hover:bg-bg-surface hover:text-text-primary"
+					}`}
+				>
+					<IconSparkles className="w-4 h-4" />
+					Global
+				</button>
+
 				<button className="w-full rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-bg-surface hover:text-text-primary transition-colors flex items-center gap-2.5">
 					<IconSearch className="w-4 h-4" />
-					Buscar
+					Search
 				</button>
 
-				<button className="w-full rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-bg-surface hover:text-text-primary transition-colors flex items-center gap-2.5">
-					<IconSparkles className="w-4 h-4" />
-					Complementos
-				</button>
-
-				<button className="w-full rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-bg-surface hover:text-text-primary transition-colors flex items-center gap-2.5">
-					<IconZap className="w-4 h-4" />
-					Automatizaciones
+				<button
+					onClick={handleAddProject}
+					disabled={isCreatingProject}
+					className="w-full rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-bg-surface hover:text-text-primary transition-colors flex items-center gap-2.5 disabled:opacity-50"
+				>
+					<IconFolder className="w-4 h-4" />
+					{isCreatingProject ? "Choosing..." : "Add Project"}
 				</button>
 			</div>
 
@@ -266,72 +221,62 @@ export function Sidebar({ activeSessionId }: SidebarProps) {
 
 			{/* Scrollable content */}
 			<div className="flex-1 overflow-y-auto min-h-0">
-				{/* Temporal groups */}
-				{sessionsByTime.size > 0 && (
-					<div className="px-3 py-2">
-						{BUCKET_ORDER.filter((b) => sessionsByTime.has(b)).map((bucket) => (
-							<div key={bucket} className="mb-2">
-								<div className="px-3 py-1.5 text-xs font-medium uppercase tracking-wider text-text-muted">
-									{BUCKET_LABELS[bucket]}
-								</div>
-								<div className="flex flex-col gap-0.5">
-									{(sessionsByTime.get(bucket) ?? []).map((entry) => (
-										<button
-											key={entry.info.id}
-											onClick={() => navigateToSession(entry.info.id)}
-											className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-left transition-all ${
-												activeSessionId === entry.info.id
-													? "bg-bg-surface text-text-primary border-r-2 border-accent"
-													: "text-text-secondary hover:bg-bg-surface hover:text-text-primary"
-											}`}
-										>
-											<IconMessageSquare className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />
-											<span className="truncate flex-1">
-												{entry.info.name || entry.info.id.slice(0, 8)}
-											</span>
-											{entry.streaming && (
-												<span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse flex-shrink-0" />
-											)}
-										</button>
-									))}
-								</div>
-							</div>
-						))}
+				{error && (
+					<div className="mx-3 my-2 rounded-md border border-error/40 bg-error/10 px-3 py-2 text-xs text-error">
+						{error}
 					</div>
 				)}
 
-				{/* Divider between temporal and projects */}
-				{sessionsByTime.size > 0 && sessionsByCwd.size > 0 && (
-					<div className="mx-3.5 h-px bg-border-subtle my-1" />
-				)}
-
-				{/* Projects (cwd groups) */}
-				{sessionsByCwd.size > 0 && (
+				{selectedProject && (
 					<div className="px-3 py-2">
 						<div className="px-3 py-1.5 text-xs font-medium uppercase tracking-wider text-text-muted">
-							Proyectos
+							Project Canvas
 						</div>
-						{Array.from(sessionsByCwd.entries()).map(([cwd, entries]) => {
-							const dirName = cwd.split("/").pop() || cwd;
-							const isExpanded = expandedCwds.has(cwd);
+						<div className="px-3 py-1 text-sm font-medium text-text-primary truncate">
+							{selectedProject.name}
+						</div>
+						{selectedProject.defaultCwd && (
+							<div className="px-3 pb-2 text-[11px] text-text-muted truncate">
+								{selectedProject.defaultCwd}
+							</div>
+						)}
+					</div>
+				)}
+
+				{!selectedProject && (
+					<div className="px-3 py-2">
+						<div className="px-3 py-1.5 text-xs font-medium uppercase tracking-wider text-text-muted">
+							Projects
+						</div>
+						{projects.map((project) => {
+							const entries = sessionsByProjectId.get(project.id) ?? [];
+							const isExpanded = expandedProjects.has(project.id);
 
 							return (
-								<div key={cwd}>
-									<button
-										onClick={() => toggleCwd(cwd)}
-										className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-bg-surface hover:text-text-primary transition-colors"
-									>
-										{isExpanded ? (
-											<IconChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />
-										) : (
-											<IconChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />
-										)}
-										<IconFolder className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />
-										<span className="truncate flex-1">{dirName}</span>
-										<span className="text-[10px] text-text-muted flex-shrink-0">
-											{entries.length}
-										</span>
-									</button>
+								<div key={project.id}>
+									<div className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-bg-surface hover:text-text-primary transition-colors">
+										<button
+											onClick={() => selectProject(project.id)}
+											className="min-w-0 flex-1 flex items-center gap-2 text-left"
+										>
+											<IconFolder className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />
+											<span className="truncate flex-1">{project.name}</span>
+											<span className="text-[10px] text-text-muted flex-shrink-0">
+												{entries.length}
+											</span>
+										</button>
+										<button
+											onClick={() => toggleProject(project.id)}
+											className="p-0.5 rounded hover:bg-bg-hover"
+											title={isExpanded ? "Collapse project" : "Expand project"}
+										>
+											{isExpanded ? (
+												<IconChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />
+											) : (
+												<IconChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />
+											)}
+										</button>
+									</div>
 
 									{isExpanded && (
 										<div className="flex flex-col gap-0.5 pl-8 pr-1">
@@ -358,14 +303,45 @@ export function Sidebar({ activeSessionId }: SidebarProps) {
 								</div>
 							);
 						})}
+						{projects.length === 0 && (
+							<div className="px-3 py-3 text-sm text-text-muted">
+								Add a project to start a session.
+							</div>
+						)}
 					</div>
 				)}
 
-				{sessionsByCwd.size === 0 && sessionsByTime.size === 0 && (
-					<div className="px-4 py-8 text-sm text-text-muted text-center">
-						No hay sesiones. Inicia un nuevo chat.
+				<div className="px-3 py-2">
+					<div className="px-3 py-1.5 text-xs font-medium uppercase tracking-wider text-text-muted">
+						{selectedProject ? "Sessions" : "Recent Sessions"}
 					</div>
-				)}
+					<div className="flex flex-col gap-0.5">
+						{visibleSessions.map((entry) => (
+							<button
+								key={entry.info.id}
+								onClick={() => navigateToSession(entry.info.id)}
+								className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-left transition-all ${
+									activeSessionId === entry.info.id
+										? "bg-bg-surface text-text-primary border-r-2 border-accent"
+										: "text-text-secondary hover:bg-bg-surface hover:text-text-primary"
+								}`}
+							>
+								<IconMessageSquare className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />
+								<span className="truncate flex-1">
+									{entry.info.name || entry.info.id.slice(0, 8)}
+								</span>
+								{entry.streaming && (
+									<span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse flex-shrink-0" />
+								)}
+							</button>
+						))}
+					</div>
+					{visibleSessions.length === 0 && (
+						<div className="px-3 py-3 text-sm text-text-muted">
+							{selectedProject ? "No sessions in this project." : "No sessions yet."}
+						</div>
+					)}
+				</div>
 			</div>
 		</aside>
 	);

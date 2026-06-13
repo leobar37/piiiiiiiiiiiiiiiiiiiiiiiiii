@@ -7,8 +7,9 @@ import { normalizeMessageContent } from "./message-blocks.js";
 
 export function createActions(runtime: SessionRuntime, optimistic: OptimisticManager) {
 	return {
-		async loadSessions() {
-			const result = await orpc.sessions.list({});
+		async loadSessions(projectId?: string) {
+			const result = await orpc.sessions.list(projectId ? { projectId, scope: "project" } : { scope: "global" });
+			const incomingIds = new Set(result.sessions.map((info) => info.id));
 			for (const info of result.sessions) {
 				const entry = {
 					info,
@@ -18,11 +19,18 @@ export function createActions(runtime: SessionRuntime, optimistic: OptimisticMan
 				};
 				runtime.store.set(runtime.maps.sessions.mapAtom, { type: "set", key: info.id, value: entry });
 			}
+			const currentSessions = runtime.store.get(runtime.maps.sessions.mapAtom);
+			for (const [sessionId, entry] of currentSessions) {
+				const isInLoadedScope = projectId ? entry.info.projectId === projectId : true;
+				if (isInLoadedScope && !incomingIds.has(sessionId)) {
+					runtime.store.set(runtime.maps.sessions.mapAtom, { type: "delete", key: sessionId });
+				}
+			}
 			return result.sessions;
 		},
 
-		async createSession(cwd?: string) {
-			const result = await orpc.sessions.create({ cwd });
+		async createSession(projectId: string, cwd?: string) {
+			const result = await orpc.sessions.create({ projectId, cwd });
 			const entry = {
 				info: result.session,
 				streaming: false,

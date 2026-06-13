@@ -6,7 +6,7 @@
  * payload specific to its type.
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 // ============================================================================
 // ServerEvent union
